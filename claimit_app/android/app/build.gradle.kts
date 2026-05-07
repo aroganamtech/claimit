@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.claimit_app"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
