@@ -1,0 +1,1548 @@
+# Claimit — Full Platform Scope Document
+### Rewards. Discounts. Cashbacks.
+**Version:** 1.0 | **Tech Stack:** React + Vite · FastAPI · MongoDB Atlas
+
+---
+
+## 1. Project Overview
+
+**Product Name:** Claimit
+**Tagline:** *Every Bill is a Reward.*
+
+### Problem Statement
+Local businesses struggle to retain customers without expensive loyalty programs. Customers forget to return to shops they enjoyed. Advertisers have no cost-effective, hyperlocal ad platform to reach nearby shoppers. Sales affiliates (network marketers) have no structured digital tool to track shops they've onboarded. Claimit solves all three problems in one unified platform.
+
+### Target Users
+
+| Persona | Description | Pain Point |
+|---|---|---|
+| **Shop Owner** | Runs a local grocery, salon, gym, electronics store, etc. | Wants customer loyalty but can't afford complex CRM systems |
+| **Advertiser / Brand** | A digital marketing agency or brand wanting to push hyperlocal ads | Needs a targeted ad placement platform for local discovery apps |
+| **Sales Agent (Network Marketer)** | Person who onboards shops to Claimit | Needs a dashboard to manage their shop portfolio and track earnings |
+
+### Core Value Proposition
+Claimit is a three-sided loyalty + advertising + affiliate platform. Shops pay ₹999/year to list and offer cashback rewards to customers. Advertisers pay per-ad-slot to reach local buyers through Claimit's consumer app. Sales agents earn commissions by onboarding shops. All three portals share the same auth infrastructure but have separate dashboards and workflows.
+
+### Monetization
+- Shop annual subscription: ₹999/year
+- Advertising revenue: ₹840–₹1400 per 7-day ad slot (Home Page Banner, Promo Reelz, Brand Deals, Nearby Deals)
+- 1% shop incentive back to Claimit per transaction processed through the platform
+
+---
+
+## 2. User Roles
+
+### Three Portal Logins
+
+The platform has **one shared website** with **three distinct login entry points** shown in the top navigation:
+
+| Button Label | Portal Name | Role |
+|---|---|---|
+| **Login-Ads** | Advertiser Portal | `advertiser` |
+| **Sales Login** | Sales Agent Portal | `sales_agent` |
+| **Shop Login** | Shop Owner Portal | `shop_owner` |
+
+All three share the same registration / OTP flow, but redirect to different dashboards post-login.
+
+### Permission Matrix
+
+| Feature | Advertiser | Sales Agent | Shop Owner | Super Admin |
+|---|---|---|---|---|
+| Create Ads | ✅ | ❌ | ❌ | ✅ |
+| View Ad Analytics | ✅ | ❌ | ❌ | ✅ |
+| Register Shop | ❌ | ✅ | ✅ | ✅ |
+| Manage Offers | ❌ | ❌ | ✅ | ✅ |
+| View Transaction History | ✅ | ✅ | ✅ | ✅ |
+| View Earnings (team) | ❌ | ✅ | ❌ | ✅ |
+| Add Team Members | ❌ | ✅ | ❌ | ✅ |
+| Store Details Management | ❌ | ❌ | ✅ | ✅ |
+| Ratings & Reviews | ❌ | ❌ | ✅ | ✅ |
+| Approve Shops | ❌ | ❌ | ❌ | ✅ |
+| Manage All Users | ❌ | ❌ | ❌ | ✅ |
+
+---
+
+## 3. Authentication & Registration Flow
+
+All three portals share the same registration and OTP verification flow. The portal type is passed as a `role` param (advertiser / sales_agent / shop_owner) during registration so the backend tags the user correctly.
+
+### 3.1 Shared Header (All Pages)
+Every page — authenticated or not — renders the top navigation bar:
+- **Left:** Claimit logo (yellow circle + wordmark "claimit")
+- **Right nav links:** Help Centre · Support · Terms of Service · Privacy Policy
+- **Auth buttons (unauthenticated):** Login-Ads | Sales Login | Shop Login
+- **Auth state (authenticated):** Shows user avatar/initials + dropdown (Profile, Logout)
+
+### 3.2 Registration Page
+
+**Fields:**
+
+| Field | Type | Required | Validation | Error |
+|---|---|---|---|---|
+| Phone Number | tel | Yes | 10-digit Indian mobile | "Enter a valid 10-digit number" |
+| Email Address | email | Yes | RFC 5321 email format | "Enter a valid email address" |
+
+**Flow:**
+1. User lands on `/register?portal=ads` (or `sales`, `shop`)
+2. Left panel: Illustrative image + motivational tagline (different per portal — see Section 5)
+3. Right panel: "Register Your Account" form
+4. On "Continue" click → POST `/api/auth/register` with `{phone, email, role}`
+5. Backend: Check if email already exists → if yes, return 409 with "Account already exists, please login"
+6. If new → create user record (`isVerified: false, isApproved: false`) → generate 6-digit OTP → store hashed OTP with 10-min TTL → send OTP via SMS + email
+7. Redirect to OTP page
+8. Bottom link: "Already have an account? **login**" → links to `/login?portal=<portal>`
+
+**Backend Logic:**
+```
+POST /api/auth/register
+Body: { phone: str, email: EmailStr, role: Enum['advertiser','sales_agent','shop_owner'] }
+→ Check existing user by email
+→ bcrypt.hash(otp, 12) → store in otp_store collection with expiry
+→ Return 200: { message: "OTP sent to phone and email" }
+→ On duplicate: 409: { detail: "Email already registered" }
+```
+
+### 3.3 OTP Verification Page
+
+**UI:**
+- 6 individual input boxes (auto-advance on digit entry, backspace goes back)
+- "Didn't receive code? **Resend OTP**" link (available after 60s cooldown)
+- "Verify OTP" button
+
+**Flow:**
+1. User enters 6 digits
+2. POST `/api/auth/verify-otp` with `{email, otp}`
+3. Backend: fetch hashed OTP → bcrypt.compare → if match and not expired → update user `isVerified: true`
+4. If sales_agent or advertiser → skip to "Add Details" page or direct dashboard
+5. If shop_owner → redirect to shop registration wizard
+
+**Edge Cases:**
+- Expired OTP (>10 min): 400 `{ detail: "OTP expired. Please request a new one." }`
+- Wrong OTP: 400 `{ detail: "Invalid OTP." }` (max 5 attempts, then lock for 15 min)
+- Resend: max 3 resends/hour per email, enforce via rate-limit middleware
+
+### 3.4 Login Flow
+
+**Fields:** Phone Number or Email + (implicit — no password shown in designs; OTP-based login)
+- Each login attempt triggers a fresh OTP to the registered phone + email
+- On successful OTP verify → issue JWT access token (15 min) + refresh token (7 days, httpOnly cookie)
+- Role decoded from JWT → frontend redirects to appropriate dashboard
+
+```
+POST /api/auth/login
+Body: { email: str }
+→ Lookup user → if not found: 404
+→ if isVerified: false → 403 "Please verify your email first"
+→ if isApproved: false (shop_owner) → 403 "Account pending approval"
+→ Generate OTP → send → 200 "OTP sent"
+
+POST /api/auth/verify-login-otp
+Body: { email: str, otp: str }
+→ Verify OTP → issue accessToken + refreshToken
+→ Return: { accessToken, role, userId }
+```
+
+### 3.5 Token Strategy
+- Access Token: JWT, 15-min expiry, payload: `{ userId, role, email }`
+- Refresh Token: 7-day expiry, stored in httpOnly cookie
+- All protected routes validate Bearer token via `Depends(get_current_user)` in FastAPI
+- Token refresh endpoint: `POST /api/auth/refresh`
+
+---
+
+## 4. Onboarding Flow
+
+### Advertiser (Login-Ads)
+After OTP verify → lands directly on Advertiser Dashboard with "Get Started" empty state showing "Post Advertising" card → click "Get Started" → redirects to "Create Ad" flow (Step 1: Choose Ad Type).
+
+### Sales Agent (Sales Login)
+After OTP verify → prompted with "Add Your Details" form:
+- Your Name (text, required)
+- Address (text, required)
+- Pincode (6-digit, required)
+- Geo Location → "Use my current location" button (calls browser Geolocation API)
+- Continue → lands on Sales Dashboard
+
+### Shop Owner (Shop Login)
+After OTP verify → "Choose The Services" screen → one option card: "Add Shop or Business" → "Get Started" button → Shop Registration Wizard (multi-step).
+
+---
+
+## 5. Full Page-by-Page Breakdown
+
+---
+
+### PORTAL A: ADVERTISER (Login-Ads)
+
+---
+
+#### Page A1: Advertiser Registration
+
+**Purpose:** Register a new advertiser account. Entry via "Login-Ads" button in nav.
+
+**URL:** `/register?portal=ads`
+
+**Left Panel:**
+- Illustration: Woman running up green arrows (growth theme)
+- Tagline: "Maximize Your Revenue with Claimit"
+- Sub-text: "Join the affiliate network where every sale generates extra value for your business and a cashback bonus for you."
+
+**Right Panel — Form:**
+- Title: "Register Your Account"
+- Subtitle: "We'll send you a verification code to confirm your details"
+- Phone Number field (tel input)
+- Email Address field
+- Continue button (blue, full-width)
+- "Already have an account? login" link
+
+**API:**
+```
+POST /api/auth/register
+Body: { phone, email, role: "advertiser" }
+Response 200: { message: "OTP sent" }
+Response 409: { detail: "Email already registered" }
+```
+
+**Edge Cases:**
+- Empty fields → inline red error under each field
+- Invalid email format → "Enter a valid email"
+- Already registered → toast "Account exists. Please login."
+
+---
+
+#### Page A2: Advertiser OTP Verification
+
+**URL:** `/verify-otp?portal=ads`
+
+**Left Panel:**
+- Illustration: Bar chart with people + upward red arrow (growth)
+- Tagline: "Turn Every Bill Into a Reward for You"
+
+**Right Panel:**
+- Title: "Enter OTP"
+- Subtitle: "We've sent a 6-digit code to your phone and email"
+- 6 individual OTP boxes (auto-tab, styled with rounded borders)
+- "Didn't receive code? Resend OTP" link (blue text)
+- "Verify OTP" button (blue, full-width)
+
+**API:**
+```
+POST /api/auth/verify-otp
+Body: { email, otp, role: "advertiser" }
+Response 200: { accessToken, role: "advertiser" } → redirect /dashboard/ads
+Response 400: { detail: "Invalid OTP" }
+Response 410: { detail: "OTP expired" }
+```
+
+---
+
+#### Page A3: Advertiser Dashboard (Empty State)
+
+**URL:** `/dashboard/ads`
+
+**Sidebar (left panel, 280px):**
+- User avatar (pink circle, initials) + email + phone number
+- Nav items: Dashboard (active), Create Ad, Transaction History, Help & Support
+
+**Main Content:**
+- Heading (blue): "Get Started Join and Grow with us!"
+- Large center card with blue dashed border:
+  - AD icon (blue circle with "AD" text)
+  - Label: "Post Advertising"
+- "Get Started" button (blue, rounded, full-width on card) → navigates to `/dashboard/ads/create`
+
+**Backend:**
+```
+GET /api/advertiser/me
+→ Return user profile + empty ads array
+```
+
+---
+
+#### Page A4: Advertiser Dashboard (Active State — After First Ad)
+
+**URL:** `/dashboard/ads` (post first ad creation)
+
+**Sidebar:** Same as above but "Business Profile" added to nav after first ad created
+
+**Main Content:**
+- Title: "Dashboard" + subtitle: "Welcome to your advertising overview"
+- "Create New Ad" button (top-right, blue)
+- Stats Row (3 cards):
+  - Total Ads (AD icon, count: e.g. 5)
+  - Total Views (eye icon, count: 45.2k)
+  - Total Clicks (cursor icon, count: 32.1k)
+- "Your Advertisement" section with tab filter: All | Active | Scheduled
+- Table rows per ad: Ad Name | Publish Date | End Date | Views | Clicks | Status badge (Active/Scheduled)
+
+**Backend:**
+```
+GET /api/advertiser/ads
+→ Return: [{ adId, adType, publishDate, endDate, views, clicks, status }]
+
+GET /api/advertiser/stats
+→ Return: { totalAds, totalViews, totalClicks }
+```
+
+---
+
+#### Page A5: Create Ad — Step 1: Choose Ad Type
+
+**URL:** `/dashboard/ads/create/type`
+
+**Content:**
+- Title: "Choose Ad Type"
+- 4 cards in a 2×2 grid, each with:
+  - Preview thumbnail image (screenshot of where ad appears in consumer app)
+  - Ad Type name
+  - Description (Video / Static Thumbnail OR Thumbnail + Details)
+  - Price in ₹ (bold blue)
+  - "Price includes 18% GST" (grey sub-text)
+  - Radio button (unselected by default)
+
+**Ad Types:**
+
+| Ad Type | Format | Price |
+|---|---|---|
+| Home Page Banner Ad | Video / Static Thumbnail | ₹840 |
+| Promo Reelz Ad | Video / Static Thumbnail | ₹1400 |
+| Brand Deals Ad | Thumbnail + Details | ₹1400 |
+| Nearby Deals Ad | Thumbnail + Details | ₹1400 |
+
+- "Next" button (blue, bottom-right) — disabled until a selection is made
+- Clicking Next saves `selectedAdType` to React state and navigates to Step 2
+
+**Backend:**
+```
+GET /api/advertiser/ad-types
+→ Return: [{ id, name, description, price, gstIncluded, previewImageUrl }]
+```
+
+---
+
+#### Page A6: Create Ad — Step 2: Add Details
+
+**URL:** `/dashboard/ads/create/details`
+
+**Layout:** Two-panel — form on left, live preview on right
+
+**Left Panel — Form:**
+
+Section: Ad Information
+- Ad Title (text input, required, max 80 chars)
+- Ad Description (textarea, required, max 300 chars)
+
+Section: Creative Upload
+- Drag-and-drop zone: "Drop your files here or browse"
+- Supported: JPG, PNG, MP4 (Max 50MB)
+- On file select → show file name + remove option
+
+Section: Location Details
+- Pincode (6-digit numeric, required)
+
+Section: Price Summary (blue card at bottom)
+- Shows selected ad price (e.g., ₹1400)
+- "Price includes 18% GST"
+
+- "Continue" button → Step 3
+
+**Right Panel — Live Preview:**
+- Shows a phone frame (iPhone mockup) with the Claimit consumer app
+- Preview renders the ad in the appropriate slot based on selected ad type
+- As user types Ad Title and Description, preview updates in real-time (React controlled inputs)
+- Creative upload preview: shows thumbnail after upload
+
+**Validation:**
+- Ad Title: required, 3–80 chars
+- Ad Description: required, 10–300 chars
+- Creative: required for all types
+- Pincode: exactly 6 digits
+
+**Backend:**
+```
+POST /api/advertiser/ads/draft
+Body: { adType, title, description, pincode, creativeUrl }
+→ Store draft → return draftId
+```
+
+---
+
+#### Page A7: Create Ad — Step 3: Publish / Schedule
+
+**URL:** `/dashboard/ads/create/publish`
+
+**Left Panel — Form:**
+
+Duration of Ad (static card):
+- "7 Days" badge (blue box) + "All advertisements run for a fixed duration of 7 days and will be notified to customers"
+
+Schedule Publish section:
+- Two radio options:
+  1. **Publish Today** — "Your ad will go live immediately and run for 7 days."
+  2. **Schedule Ad** — "Pick a future date (up to 10 days from today)."
+     - When Schedule Ad selected: shows "Select Publish date" date picker (calendar icon, date formatted DD/MM/YYYY)
+     - Helper text: "You can schedule your ad up to 10 days from today."
+
+- "Publish now" button (blue, full-width)
+
+**Right Panel:**
+- Title: "All Ready to publish the Ad"
+- Phone frame preview of the consumer app with ad in correct position
+
+**Validation:**
+- If Schedule Ad selected but no date: "Please select a publish date"
+- Date cannot be more than 10 days from today
+- Date cannot be in the past
+
+**Backend:**
+```
+PATCH /api/advertiser/ads/:draftId/publish
+Body: { publishOption: "today" | "scheduled", publishDate?: "YYYY-MM-DD" }
+→ Calculate endDate = publishDate + 7 days
+→ Update ad status to "scheduled" or "active"
+→ Return { publishDate, endDate }
+```
+
+---
+
+#### Page A8: Finish Payment
+
+**URL:** `/dashboard/ads/create/payment`
+
+**Content (centered card):**
+- Title: "Finish Your Payment"
+- Subtitle: "Publish your shop instantly."
+- Blue price card: "Price Summary" | ₹1400 | "Price includes 18% GST"
+- "Select Payment Method" heading
+- Three expandable options:
+  - UPI (shows GPay, PhonePe, Paytm, BHIM logos)
+  - Cards (shows Visa, Mastercard, Amex, RuPay logos)
+  - Netbanking (shows bank logos)
+- "Pay now" button (blue, full-width)
+
+**Backend:**
+```
+POST /api/advertiser/ads/:adId/payment
+Body: { method: "upi" | "card" | "netbanking", transactionRef: str }
+→ Validate payment → update ad.isPaid: true → trigger ad activation
+→ Return: { success: true, paymentId }
+```
+
+---
+
+#### Page A9: Payment Success
+
+**URL:** `/dashboard/ads/create/success`
+
+**Content:**
+- Green checkmark icon in green circle (animated pulse)
+- Title: "Payment Successful!"
+- Subtitle: "Your advertisement has been scheduled successfully"
+- Ad Information card (grey border):
+  - Ad Type | Publish Date
+  - Amount paid | Ad End Date
+- Two buttons: "Create Another Ad" (blue) | "Go to Dashboard" (outline)
+
+**Backend:**
+```
+GET /api/advertiser/ads/:adId/receipt
+→ Return: { adType, publishDate, endDate, amountPaid }
+```
+
+---
+
+#### Page A10: Transaction History
+
+**URL:** `/dashboard/ads/transactions`
+
+**Sidebar:** Same nav
+**Content:**
+- Title: "Transaction History"
+- Table: Date | Ad Type | Amount | Status | Invoice Download
+
+---
+
+#### Page A11: Help & Support
+
+**URL:** `/dashboard/ads/support`
+- FAQ accordion
+- Contact form: Subject + Message + Submit
+
+---
+
+### PORTAL B: SALES AGENT (Sales Login)
+
+---
+
+#### Page B1: Sales Agent Registration
+
+**URL:** `/register?portal=sales`
+
+**Left Panel:**
+- Illustration: Same woman on arrows OR bar chart (alternates per page)
+- Tagline: "Create Lasting Bonds With Every Bill"
+- Sub-text: "Give your customers a reason to smile by providing points and cashback..."
+
+**Right Panel:** Same form as Advertiser Registration (phone + email + Continue)
+
+**API:** Same as A1 but `role: "sales_agent"`
+
+---
+
+#### Page B2: OTP Verification
+
+**URL:** `/verify-otp?portal=sales`
+
+**Left Panel:**
+- Illustration: Bar chart + people
+- Tagline: "Boost Your Profits with Every Transaction"
+- Sub-text: "Benefit from our 1% shop incentive..."
+
+**Right Panel:** Same 6-box OTP form
+
+---
+
+#### Page B3: Sales Agent Onboarding — Add Details
+
+**URL:** `/onboarding/sales`
+
+**Left Panel:**
+- Illustration: Group of people + globe with arrows
+- Tagline: "Earn More While Making Customers Happy"
+
+**Right Panel — Form:**
+- Title: "Add Your details"
+- Subtitle: "Add your details for creating your account"
+- Your Name (text, required)
+- Address (text, required)
+- Enter your Pincode (6-digit, required)
+- Geo Location → "Use my current location" button (grey outline, calls Geolocation API)
+- Continue button
+
+**API:**
+```
+PATCH /api/sales/onboarding
+Body: { name, address, pincode, geoLocation: { lat, lng } }
+→ Update user profile → mark onboardingComplete: true
+→ Redirect to /dashboard/sales
+```
+
+---
+
+#### Page B4: Sales Agent Dashboard
+
+**URL:** `/dashboard/sales`
+
+**Sidebar (left):**
+- Avatar + Name + User ID (e.g., "Dhanush | User Id: 528882")
+- Nav: Dashboard, Tutorial Zone, Your Team, Earning, Settings
+
+**Main Content:**
+- Title: "Dashboard"
+- Subtitle: "Welcome to Your overview"
+- "Add Shop" button (top-right, blue)
+- Stats Row (3 cards):
+  - Total Shop (store icon, count)
+  - Total Revenue (eye icon, count)
+  - Total Members (cursor icon, count: 11)
+- "Your Shops" section with tabs: All | Active | Pending
+- Empty state when no shops added
+
+**Backend:**
+```
+GET /api/sales/dashboard
+→ Return: { totalShops, totalRevenue, totalMembers, shops: [] }
+```
+
+---
+
+#### Page B5: Tutorial Zone
+
+**URL:** `/dashboard/sales/tutorials`
+
+**Content:**
+- Title: "Tutorials Zone"
+- 2×2 grid of video placeholders (grey cards with "Video" label)
+- Each card: thumbnail (grey) + play button overlay + video title
+
+**Backend:**
+```
+GET /api/sales/tutorials
+→ Return: [{ id, title, videoUrl, thumbnailUrl, duration }]
+```
+
+---
+
+#### Page B6: Your Team
+
+**URL:** `/dashboard/sales/team`
+- List of team members with their stats
+- "Invite Member" button → sends invitation link
+- Member rows: Name | User ID | Total Shops | Total Revenue | Join Date
+
+---
+
+#### Page B7: Earning
+
+**URL:** `/dashboard/sales/earning`
+- Total Earnings card
+- Withdrawal history table: Date | Shop Name | Amount | Status
+- "Withdraw" button (enabled when minimum balance met)
+
+---
+
+#### Page B8: Sales Agent Settings
+
+**URL:** `/dashboard/sales/settings`
+- Personal info: Name, Email, Phone (editable)
+- Change location (Pincode, Geo)
+- Account security section
+
+---
+
+### PORTAL C: SHOP OWNER (Shop Login)
+
+---
+
+#### Page C1: Shop Owner Registration
+
+**URL:** `/register?portal=shop`
+
+**Left Panel:**
+- Illustration: Bar chart with people + upward arrow
+- Tagline: "Scale Your Business Like Never Before"
+- Sub-text: "Join Claimit to turn every transaction into a growth opportunity..."
+
+**Right Panel:** Same phone + email form, role: `shop_owner`
+
+---
+
+#### Page C2: OTP Verification
+
+**URL:** `/verify-otp?portal=shop`
+
+**Left Panel:**
+- Illustration: Group of people + globe arrows
+- Tagline: "Take Your Business to the Next Level"
+
+**Right Panel:** 6-box OTP form
+
+---
+
+#### Page C3: Choose The Services (Post OTP)
+
+**URL:** `/onboarding/shop/services`
+
+**Sidebar:** Already visible (Add your Shop or business, Dashboard, Analytics, Offer management, Store Details Management, Ratings & reviews, Settings)
+
+**Main Content:**
+- Title: "Choose The Services"
+- Single card: shop emoji icon + "Add Shop Or Business"
+- "Get Started" button
+
+→ Clicking Get Started → navigates to Shop Registration Step 1
+
+---
+
+#### Page C4: Shop Registration — Step 1: Shop Details
+
+**URL:** `/onboarding/shop/register/details`
+
+**Left Panel:**
+- Illustration: Woman running on green arrows
+- Tagline: "Unlock New Horizons for Your Shop"
+
+**Right Panel — Form (card):**
+- Title: "Shop Registration"
+- Subtitle: "Tell us about your business"
+- Shop Name (text, required, max 100 chars)
+- Shop Address (text, required, max 300 chars)
+- Geo Location → "Use my current location" button (outline)
+- About Shop (textarea, optional, max 500 chars, placeholder: "Short description About shop....")
+- Continue button
+
+**Validation:**
+- Shop Name: required, 2–100 chars
+- Shop Address: required
+- About: optional, max 500 chars
+
+**Backend:**
+```
+POST /api/shop/register/step1
+Body: { shopName, shopAddress, geoLocation: { lat, lng }, aboutShop }
+→ Create shop record with status: "draft"
+→ Return: { shopId }
+```
+
+---
+
+#### Page C5: Shop Registration — Step 2: Upload Photos
+
+**URL:** `/onboarding/shop/register/photos`
+
+**Left Panel:**
+- Illustration: Bar chart / growth
+- Tagline: "Drive Your Business Towards Success"
+
+**Right Panel — Form:**
+- Title: "Upload Photos of Your Shop"
+- Subtitle: "Add multiple photos to showcase your business"
+- **Upload Cover Photo** (required): Dashed border box with upload icon + "Click to upload cover photo" — accepts JPG, PNG, max 5MB
+- **Upload Shop Photos (Optional)**: Same upload box, accepts multiple files (up to 5), JPG/PNG, max 5MB each
+- Continue button
+
+**Backend:**
+```
+POST /api/shop/register/step2
+Form-data: { shopId, coverPhoto: File, shopPhotos: File[] }
+→ Upload to Cloudinary → store URLs
+→ Return: { coverPhotoUrl, shopPhotoUrls[] }
+```
+
+---
+
+#### Page C6: Shop Registration — Step 3: Business Category
+
+**URL:** `/onboarding/shop/register/category`
+
+**Left Panel:**
+- Illustration: Woman on arrows
+- Tagline: "Elevate Your Brand Presence Today"
+
+**Right Panel — Form:**
+- Title: "Select Business Category"
+- Subtitle: "Select the category that best describes your shop"
+- Dropdown: "Select your business category" (scrollable, with icons)
+  - Groceries, Supermarket, Pharmacy, Bakery, Café, Salon, Gym, Electronics, Clothing, Restaurant, Jewellery, Hardware, Other
+- Continue button
+
+**Backend:**
+```
+PATCH /api/shop/register/step3
+Body: { shopId, category: str }
+→ Update shop.category
+```
+
+---
+
+#### Page C7: Shop Registration — Step 4: Shop Type
+
+**URL:** `/onboarding/shop/register/type`
+
+**Left Panel:** Alternate illustrations per page (SALE storefront / loyalty money exchange)
+**Tagline options:** "Turn One-Time Shoppers Into Lifelong Fans" / "Build a Legacy of Loyal Customers"
+
+**Right Panel — Form:**
+- Title: "Choose your Shop type"
+- Subtitle: "Select how customers will interact with your shop"
+- Two radio cards:
+  1. **Reward Shop** — icon (yellow target/reward badge) — "Customers earn rewards here."
+  2. **Redeem Shop** — icon (green shop with star) — "Customers can redeem & rewards here."
+- Continue button
+- "Know more?" link (blue) → opens explanation modal
+
+**Reward Shop:** Customers earn points/cashback when they pay bills at this shop
+**Redeem Shop:** Customers can use their accumulated points at this shop
+
+**Backend:**
+```
+PATCH /api/shop/register/step4
+Body: { shopId, shopType: "reward" | "redeem" }
+```
+
+---
+
+#### Page C8: Shop Registration — Step 5: Review & Submit
+
+**URL:** `/onboarding/shop/register/review`
+
+**Left Panel:**
+- Illustration: 3 people with gifts + coins
+- Tagline: "Keep Your Customers Coming Back for More"
+
+**Right Panel — Review Card:**
+- Title: "Review & Submit"
+- Subtitle: "Please review your information before submitting"
+- **Shop Details section** (blue header card) + "Edit" button:
+  - Shop Name
+  - Shop Address
+  - Geo Location
+  - Description
+- **Shop Photos section** + "Edit" button: 4-photo thumbnail grid
+- **Category section** (small card) + "Edit" button: category name + icon
+- **Shop Type section** (small card) + "Edit" button: type + icon + discount %
+
+Each Edit button navigates back to that step's form with pre-filled values.
+
+**Backend:**
+```
+POST /api/shop/register/submit
+Body: { shopId }
+→ Validate all steps complete → set shop.status: "pending_approval"
+→ Notify admin → Return: { message: "Submitted for review" }
+```
+
+---
+
+#### Page C9: Shop Registration Payment
+
+**URL:** `/onboarding/shop/register/payment`
+
+**Left Panel:**
+- Illustration: Sale storefront isometric
+- Tagline: "Master the Art of Customer Retention"
+
+**Right Panel — Card:**
+- Title: "Finish Your Payment"
+- Subtitle: "Publish your shop instantly."
+- Blue price card: ₹999 | "Annually payment"
+- Payment method selection: UPI | Cards | Netbanking (with payment logos)
+- "Pay now" button
+
+**Backend:**
+```
+POST /api/shop/payment
+Body: { shopId, method: "upi" | "card" | "netbanking", transactionRef }
+→ Validate payment → set shop.isPaid: true → set shop.subscriptionEnd: today + 365 days
+→ Trigger admin review notification
+→ Return: { success: true }
+```
+
+---
+
+#### Page C10: Payment Success
+
+**URL:** `/onboarding/shop/register/success`
+- Green checkmark icon
+- "Payment Successful!"
+- "Your advertisement has been scheduled successfully"
+- "Go to Dashboard" button → `/dashboard/shop`
+
+---
+
+#### Page C11: Shop Owner Dashboard
+
+**URL:** `/dashboard/shop`
+
+**Sidebar:**
+- Shop avatar + Shop Name (e.g., "Santhosh Super market")
+- Nav: Dashboard, Offer management, Store Details Management, Ratings & reviews, Settings
+
+**Main Content:**
+- Title: "Dashboard"
+- Subtitle: "Welcome to your advertising overview"
+- "Create New Ad" button (top-right)
+- Stats Row (2 cards):
+  - Total Reward Given (reward icon, count: 42)
+  - Total Redeem Used (shop icon, count: 35)
+- "Rewards / Redeem" toggle tabs
+- Transaction table:
+
+**Rewards tab columns:** Customer | Reward Points | Bill Amount | Date
+**Redeem tab columns:** Customer | Redeemed (points used) | Bill Amount | Date
+
+Sample row: Arun | 500 | 580 | 18/12/2025
+
+**Backend:**
+```
+GET /api/shop/dashboard
+→ Return: { totalRewardGiven, totalRedeemUsed }
+
+GET /api/shop/transactions?type=reward|redeem
+→ Return: [{ customer, points, billAmount, date }]
+```
+
+---
+
+#### Page C12: Offer Management
+
+**URL:** `/dashboard/shop/offers`
+
+**Content:**
+- Title: "Offer Management"
+- Subtitle: "Setup Your Offer For the customer you give"
+- Current offer display card: large text "15%" (or current setting)
+- Choose discount section: 6 radio buttons in a row:
+  - 10% | 15% | 20% | 25% | 30% | 35%
+- "Publish Offer" button (blue, right-aligned)
+
+**Logic:** When a customer scans their bill at this shop in the consumer app, this discount % is displayed and applied to reward calculation.
+
+**Backend:**
+```
+GET /api/shop/offer
+→ Return: { currentDiscount: 15 }
+
+PATCH /api/shop/offer
+Body: { discount: 10 | 15 | 20 | 25 | 30 | 35 }
+→ Update shop.discountOffer → Return: { message: "Offer updated" }
+```
+
+---
+
+#### Page C13: Store Details Management
+
+**URL:** `/dashboard/shop/store-details`
+
+**Content:**
+- Title: "Store Details Management"
+- Subtitle: "Edit Your Store Details"
+- Shop Information section — each field is a row with current value + "Edit [Field]" button:
+  - Shop Name → "Edit Shop Name" button
+  - Description → "Edit Shop Description" button
+  - Shop Address → "Edit Shop Address" button
+  - Shop Geo Location → "Edit Geo location" button
+  - Category → "Edit Shop Category" button (dropdown reappears)
+  - Shop Type → "Edit Shop Type" button (radio cards reappear)
+
+Each Edit button opens an inline edit mode (input replaces text) with Save / Cancel.
+
+**Backend:**
+```
+PATCH /api/shop/details
+Body: { field: "shopName" | "description" | ..., value: str }
+→ Validate → Update → Return updated shop
+```
+
+---
+
+#### Page C14: Ratings & Reviews
+
+**URL:** `/dashboard/shop/reviews`
+
+**Content:**
+- Title: "Ratings & Reviews"
+- Stats Row (3 cards):
+  - Average Rating (star icon, 4.5)
+  - Total Reviews (badge icon, 42)
+  - Positive Reviews (thumbs-up icon, 94%)
+- "Recent Reviews" section + tab filter: All | Oldest
+- Each review card:
+  - User avatar (blue circle with initial)
+  - Name + Date
+  - Star rating (1–5 gold stars)
+  - Review text
+  - "Reply" link (blue) → opens inline text input to post owner reply
+
+**Backend:**
+```
+GET /api/shop/reviews?sort=recent|oldest
+→ Return: [{ reviewId, customer, date, rating, text, ownerReply }]
+
+POST /api/shop/reviews/:reviewId/reply
+Body: { reply: str }
+→ Store reply → Return: { success: true }
+```
+
+---
+
+#### Page C15: Account Settings
+
+**URL:** `/dashboard/shop/settings`
+
+**Content:**
+- Title: "Account Settings"
+- Subtitle: "Make a update on setting Your Account"
+- Your Information section:
+  - Email Address (editable text input)
+  - Phone Number (editable text input)
+- Annual Subscription section (blue card):
+  - Price Summary: ₹999
+  - "Next renewal date - 08/12/2026"
+
+**Backend:**
+```
+PATCH /api/shop/account
+Body: { email?, phone? }
+→ If email changed → re-verify via OTP
+→ Return: { updated: true }
+
+GET /api/shop/subscription
+→ Return: { price: 999, renewalDate: "2026-12-08" }
+```
+
+---
+
+## 6. Dashboard Details
+
+### Advertiser Dashboard Widgets
+| Widget | Data Source | Update Frequency |
+|---|---|---|
+| Total Ads count | ads collection | Real-time |
+| Total Views | ad_impressions collection | Every 30 min batch |
+| Total Clicks | ad_clicks collection | Every 30 min batch |
+| Ad List Table | ads collection | On page load |
+| Status Badges | ad.status field | Real-time |
+
+### Sales Agent Dashboard Widgets
+| Widget | Data | Update Frequency |
+|---|---|---|
+| Total Shop | shops where agentId = me | Real-time |
+| Total Revenue | SUM(earnings) | Daily batch |
+| Total Members | team.members.count | Real-time |
+| Shop List | shops collection filtered by agent | Real-time |
+
+### Shop Owner Dashboard Widgets
+| Widget | Data | Update Frequency |
+|---|---|---|
+| Total Reward Given | transactions where type=reward | Real-time |
+| Total Redeem Used | transactions where type=redeem | Real-time |
+| Transaction Table | transactions collection | Real-time |
+
+---
+
+## 7. AI Features (Suggested)
+
+While the current designs don't show explicit AI features, the following AI layers are recommended:
+
+### 7.1 Smart Ad Targeting
+- **What:** AI ranks nearby shops/brands in consumer app feed based on user history + location
+- **Model:** Collaborative filtering on MongoDB transaction data
+- **Input:** User location, purchase history, category preferences
+- **Output:** Ranked list of deals shown in the consumer app
+
+### 7.2 Offer Optimization Suggestions
+- **What:** When Shop Owner is on Offer Management, AI suggests optimal discount %
+- **Model:** Historical data: shops with 20% discount saw 34% more transactions this week
+- **Input:** Shop category, local competitor discounts, historical redemption rate
+- **Output:** "Shops like yours perform best at 20% — try it!" recommendation card
+
+### 7.3 Ad Copy Assistant (Advertiser Portal)
+- **What:** On "Add Details" page, a "Generate with AI" button auto-fills Ad Title and Description
+- **Model:** Anthropic Claude API (claude-sonnet-4-6)
+- **Input:** Ad type + pincode + business category
+- **Output:** Suggested title + description, user can edit
+
+### 7.4 Review Sentiment Analysis
+- **What:** Shop owner dashboard shows sentiment score per review (Positive / Neutral / Negative badge)
+- **Model:** Lightweight NLP classifier (VADER or Hugging Face)
+- **Input:** Review text
+- **Output:** Sentiment label + score
+
+### 7.5 Fraud Detection
+- **What:** Flag suspicious bill scan patterns (same user scanning same bill multiple times)
+- **Model:** Rule-based anomaly detection + ML classifier
+- **Input:** transaction.userId, transaction.shopId, transaction.timestamp, transaction.billAmount
+- **Output:** Flag transaction for admin review
+
+---
+
+## 8. Admin Panel
+
+**URL:** `/admin` (separate login, role: `super_admin`)
+
+### Admin Sidebar Nav
+- Dashboard
+- Users (All / Advertisers / Sales Agents / Shop Owners)
+- Shops (All / Active / Pending / Suspended)
+- Ads (All / Active / Scheduled / Rejected)
+- Transactions
+- Reports & Analytics
+- Settings
+
+### Admin Capabilities
+
+| Feature | Description |
+|---|---|
+| User Management | View all users by role, search, filter by status, export CSV |
+| Account Approval | Approve / reject shop registrations (set shop.status: "active" \| "rejected") |
+| Account Lock/Unlock | Lock user accounts with reason (isActive: false) |
+| Ad Moderation | Review submitted ads, approve/reject creative content |
+| Shop Verification | Manual review of submitted shop details + photos |
+| Analytics Overview | Total users, total revenue, daily active shops, ad impressions |
+| Role Management | Promote sales agent to team lead |
+| Audit Log | All admin actions logged: adminId + action + targetId + timestamp |
+
+### Admin Auth
+```
+POST /api/admin/auth/login
+Body: { email, password }  ← Admin uses password login (not OTP)
+→ Validate credentials → issue JWT with role: "super_admin"
+→ All /api/admin/* routes require AdminGuard middleware
+```
+
+---
+
+## 9. Database Design (MongoDB Atlas)
+
+### Collection: users
+```
+{
+  _id: ObjectId,
+  email: String (unique, indexed),
+  phone: String (unique, indexed),
+  role: Enum['advertiser', 'sales_agent', 'shop_owner', 'super_admin'],
+  isVerified: Boolean (default: false),
+  isApproved: Boolean (default: false),
+  isActive: Boolean (default: true),
+  name: String,
+  address: String,
+  pincode: String,
+  geoLocation: { lat: Float, lng: Float },
+  avatarUrl: String,
+  onboardingComplete: Boolean (default: false),
+  createdAt: Date,
+  updatedAt: Date
+}
+Indexes: email, phone, role
+```
+
+### Collection: otp_store
+```
+{
+  _id: ObjectId,
+  email: String (indexed),
+  otpHash: String,
+  purpose: Enum['register', 'login', 'reset'],
+  expiresAt: Date (TTL index, auto-delete after 10 min),
+  attempts: Number (default: 0),
+  createdAt: Date
+}
+```
+
+### Collection: refresh_tokens
+```
+{
+  _id: ObjectId,
+  userId: ObjectId (ref: users),
+  token: String (hashed),
+  expiresAt: Date,
+  isRevoked: Boolean (default: false),
+  createdAt: Date
+}
+```
+
+### Collection: shops
+```
+{
+  _id: ObjectId,
+  ownerId: ObjectId (ref: users),
+  agentId: ObjectId (ref: users, nullable),
+  shopName: String (indexed),
+  shopAddress: String,
+  geoLocation: { lat: Float, lng: Float },
+  pincode: String,
+  aboutShop: String,
+  coverPhotoUrl: String,
+  shopPhotoUrls: [String],
+  category: String,
+  shopType: Enum['reward', 'redeem'],
+  discountOffer: Number (default: 10),
+  status: Enum['draft', 'pending_approval', 'active', 'rejected', 'suspended'],
+  isPaid: Boolean (default: false),
+  subscriptionStart: Date,
+  subscriptionEnd: Date,
+  averageRating: Float,
+  totalReviews: Number,
+  createdAt: Date,
+  updatedAt: Date
+}
+Indexes: ownerId, agentId, pincode, category, status, geoLocation (2dsphere)
+```
+
+### Collection: ads
+```
+{
+  _id: ObjectId,
+  advertiserId: ObjectId (ref: users),
+  adType: Enum['home_banner', 'promo_reelz', 'brand_deals', 'nearby_deals'],
+  title: String,
+  description: String,
+  creativeUrl: String,
+  pincode: String,
+  price: Number,
+  gstAmount: Number,
+  publishOption: Enum['today', 'scheduled'],
+  publishDate: Date,
+  endDate: Date,
+  status: Enum['draft', 'pending_payment', 'scheduled', 'active', 'expired', 'rejected'],
+  isPaid: Boolean (default: false),
+  paymentId: String,
+  views: Number (default: 0),
+  clicks: Number (default: 0),
+  createdAt: Date,
+  updatedAt: Date
+}
+Indexes: advertiserId, status, publishDate, pincode
+```
+
+### Collection: transactions
+```
+{
+  _id: ObjectId,
+  shopId: ObjectId (ref: shops),
+  customerId: String,
+  customerName: String,
+  type: Enum['reward', 'redeem'],
+  billAmount: Number,
+  rewardPoints: Number,
+  redeemedPoints: Number,
+  date: Date,
+  createdAt: Date
+}
+Indexes: shopId, date, type
+```
+
+### Collection: reviews
+```
+{
+  _id: ObjectId,
+  shopId: ObjectId (ref: shops),
+  customerId: String,
+  customerName: String,
+  rating: Number (1-5),
+  text: String,
+  ownerReply: String,
+  sentiment: Enum['positive', 'neutral', 'negative'],
+  createdAt: Date
+}
+Indexes: shopId, rating
+```
+
+### Collection: sales_earnings
+```
+{
+  _id: ObjectId,
+  agentId: ObjectId (ref: users),
+  shopId: ObjectId (ref: shops),
+  amount: Number,
+  status: Enum['pending', 'paid'],
+  paidAt: Date,
+  createdAt: Date
+}
+```
+
+### Collection: audit_logs
+```
+{
+  _id: ObjectId,
+  adminId: ObjectId (ref: users),
+  action: String,
+  targetType: Enum['user', 'shop', 'ad'],
+  targetId: ObjectId,
+  details: Object,
+  createdAt: Date
+}
+```
+
+### Collection: tutorials
+```
+{
+  _id: ObjectId,
+  title: String,
+  videoUrl: String,
+  thumbnailUrl: String,
+  duration: Number,
+  order: Number,
+  createdAt: Date
+}
+```
+
+---
+
+## 10. Data Flow Diagrams
+
+### Flow 1: User Registration & OTP Verification
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Frontend
+  participant FastAPI
+  participant MongoDB
+  participant EmailSMS
+
+  User->>Frontend: Fill phone + email, click Continue
+  Frontend->>FastAPI: POST /api/auth/register {phone, email, role}
+  FastAPI->>MongoDB: Check if email exists
+  MongoDB-->>FastAPI: Not found
+  FastAPI->>MongoDB: Insert user {isVerified:false}
+  FastAPI->>FastAPI: Generate 6-digit OTP, bcrypt hash
+  FastAPI->>MongoDB: Insert otp_store {otpHash, expiresAt: +10min}
+  FastAPI->>EmailSMS: Send OTP via email + SMS
+  FastAPI-->>Frontend: 200 "OTP sent"
+  Frontend->>Frontend: Redirect to /verify-otp
+  User->>Frontend: Enter 6-digit OTP
+  Frontend->>FastAPI: POST /api/auth/verify-otp {email, otp}
+  FastAPI->>MongoDB: Fetch otp_store by email
+  FastAPI->>FastAPI: bcrypt.compare(otp, otpHash)
+  FastAPI->>MongoDB: Update user isVerified:true
+  FastAPI-->>Frontend: 200 {accessToken, role}
+  Frontend->>Frontend: Redirect to portal dashboard
+```
+
+### Flow 2: Shop Registration & Admin Approval
+
+```mermaid
+sequenceDiagram
+  actor ShopOwner
+  participant Frontend
+  participant FastAPI
+  participant MongoDB
+  participant Cloudinary
+  actor Admin
+
+  ShopOwner->>Frontend: Complete 5-step shop wizard
+  Frontend->>FastAPI: POST /api/shop/register/step1 (details)
+  FastAPI->>MongoDB: Create shop {status: draft}
+  Frontend->>FastAPI: POST /api/shop/register/step2 (photos)
+  FastAPI->>Cloudinary: Upload images
+  Cloudinary-->>FastAPI: Photo URLs
+  FastAPI->>MongoDB: Update shop photos
+  Frontend->>FastAPI: PATCH step3 (category) + step4 (type)
+  Frontend->>FastAPI: POST /api/shop/register/submit
+  FastAPI->>MongoDB: Set shop.status: pending_approval
+  FastAPI->>Admin: Notify via email/dashboard
+  Admin->>FastAPI: PATCH /api/admin/shops/:id/approve
+  FastAPI->>MongoDB: Set shop.status: active
+  FastAPI->>ShopOwner: Email "Your shop is approved!"
+```
+
+### Flow 3: Ad Creation & Payment
+
+```mermaid
+sequenceDiagram
+  actor Advertiser
+  participant Frontend
+  participant FastAPI
+  participant MongoDB
+  participant PaymentGateway
+
+  Advertiser->>Frontend: Select Ad Type
+  Frontend->>FastAPI: GET /api/advertiser/ad-types
+  FastAPI-->>Frontend: Ad types + prices
+  Advertiser->>Frontend: Fill details + upload creative
+  Frontend->>FastAPI: POST /api/advertiser/ads/draft
+  FastAPI->>MongoDB: Store draft ad
+  Advertiser->>Frontend: Choose publish option
+  Frontend->>FastAPI: PATCH /api/advertiser/ads/:id/publish
+  FastAPI->>MongoDB: Set publishDate + endDate
+  Advertiser->>Frontend: Select payment method + Pay
+  Frontend->>FastAPI: POST /api/advertiser/ads/:id/payment
+  FastAPI->>PaymentGateway: Process payment
+  PaymentGateway-->>FastAPI: Payment confirmed
+  FastAPI->>MongoDB: Set ad.isPaid:true, status: scheduled/active
+  FastAPI-->>Frontend: Payment success
+```
+
+### Flow 4: Token Refresh
+
+```mermaid
+sequenceDiagram
+  participant Frontend
+  participant FastAPI
+  participant MongoDB
+
+  Frontend->>FastAPI: GET /api/protected-route (expired accessToken)
+  FastAPI-->>Frontend: 401 Unauthorized
+  Frontend->>FastAPI: POST /api/auth/refresh (refreshToken in httpOnly cookie)
+  FastAPI->>MongoDB: Validate refreshToken, check isRevoked
+  FastAPI->>FastAPI: Issue new accessToken
+  FastAPI-->>Frontend: 200 {newAccessToken}
+  Frontend->>FastAPI: Retry GET /api/protected-route (new token)
+  FastAPI-->>Frontend: 200 Protected data
+```
+
+---
+
+## 11. API Design
+
+### Auth Endpoints (All Portals)
+
+| Method | Endpoint | Auth | Request Body | Success Response | Description |
+|---|---|---|---|---|---|
+| POST | /api/auth/register | Public | {phone, email, role} | {message: "OTP sent"} | Register new user |
+| POST | /api/auth/verify-otp | Public | {email, otp, role} | {accessToken, role} | Verify OTP, get token |
+| POST | /api/auth/login | Public | {email} | {message: "OTP sent"} | Initiate login |
+| POST | /api/auth/verify-login-otp | Public | {email, otp} | {accessToken, role} | Complete login |
+| POST | /api/auth/refresh | Cookie | — | {accessToken} | Refresh access token |
+| POST | /api/auth/logout | JWT | — | {message} | Revoke refresh token |
+| POST | /api/auth/resend-otp | Public | {email} | {message} | Resend OTP |
+
+### Advertiser Endpoints
+
+| Method | Endpoint | Auth | Request Body | Success Response | Description |
+|---|---|---|---|---|---|
+| GET | /api/advertiser/me | JWT | — | {user profile} | Get advertiser profile |
+| GET | /api/advertiser/ad-types | JWT | — | [{id, name, price}] | List ad types + pricing |
+| GET | /api/advertiser/ads | JWT | — | [{ad list}] | Get all my ads |
+| GET | /api/advertiser/stats | JWT | — | {totalAds, views, clicks} | Dashboard stats |
+| POST | /api/advertiser/ads/draft | JWT | {adType, title, desc, pincode, creativeUrl} | {draftId} | Create ad draft |
+| PATCH | /api/advertiser/ads/:id/publish | JWT | {publishOption, publishDate?} | {publishDate, endDate} | Set publish schedule |
+| POST | /api/advertiser/ads/:id/payment | JWT | {method, transactionRef} | {success, paymentId} | Complete payment |
+| GET | /api/advertiser/ads/:id/receipt | JWT | — | {adType, dates, amount} | Get payment receipt |
+| GET | /api/advertiser/transactions | JWT | — | [{transactions}] | Transaction history |
+
+### Sales Agent Endpoints
+
+| Method | Endpoint | Auth | Request Body | Success Response | Description |
+|---|---|---|---|---|---|
+| GET | /api/sales/me | JWT | — | {agent profile} | Get agent profile |
+| PATCH | /api/sales/onboarding | JWT | {name, address, pincode, geoLocation} | {message} | Complete onboarding |
+| GET | /api/sales/dashboard | JWT | — | {totalShops, revenue, members} | Dashboard stats |
+| GET | /api/sales/shops | JWT | — | [{shops}] | My onboarded shops |
+| GET | /api/sales/team | JWT | — | [{members}] | Team members |
+| GET | /api/sales/earnings | JWT | — | [{earnings}] | Earnings history |
+| GET | /api/sales/tutorials | JWT | — | [{tutorials}] | Tutorial videos |
+
+### Shop Owner Endpoints
+
+| Method | Endpoint | Auth | Request Body | Success Response | Description |
+|---|---|---|---|---|---|
+| GET | /api/shop/me | JWT | — | {shop profile} | Get shop profile |
+| POST | /api/shop/register/step1 | JWT | {shopName, address, geo, about} | {shopId} | Register step 1 |
+| POST | /api/shop/register/step2 | JWT (multipart) | {shopId, coverPhoto, shopPhotos} | {photoUrls} | Upload photos |
+| PATCH | /api/shop/register/step3 | JWT | {shopId, category} | {message} | Set category |
+| PATCH | /api/shop/register/step4 | JWT | {shopId, shopType} | {message} | Set shop type |
+| POST | /api/shop/register/submit | JWT | {shopId} | {message} | Submit for review |
+| POST | /api/shop/payment | JWT | {shopId, method, transactionRef} | {success} | Pay subscription |
+| GET | /api/shop/dashboard | JWT | — | {totalReward, totalRedeem} | Dashboard stats |
+| GET | /api/shop/transactions | JWT | ?type=reward\|redeem | [{transactions}] | Transaction list |
+| GET | /api/shop/offer | JWT | — | {currentDiscount} | Current offer |
+| PATCH | /api/shop/offer | JWT | {discount} | {message} | Update offer |
+| GET | /api/shop/details | JWT | — | {shop details} | Store details |
+| PATCH | /api/shop/details | JWT | {field, value} | {updated shop} | Edit store detail |
+| GET | /api/shop/reviews | JWT | ?sort=recent\|oldest | [{reviews}] | Get reviews |
+| POST | /api/shop/reviews/:id/reply | JWT | {reply} | {message} | Reply to review |
+| GET | /api/shop/subscription | JWT | — | {price, renewalDate} | Subscription info |
+| PATCH | /api/shop/account | JWT | {email?, phone?} | {message} | Update account |
+
+### Admin Endpoints
+
+| Method | Endpoint | Auth | Request Body | Success Response | Description |
+|---|---|---|---|---|---|
+| POST | /api/admin/auth/login | Public | {email, password} | {accessToken} | Admin login |
+| GET | /api/admin/users | Admin JWT | — | [{users}] | List all users |
+| PATCH | /api/admin/users/:id/approve | Admin JWT | — | {message} | Approve user |
+| PATCH | /api/admin/users/:id/lock | Admin JWT | {reason} | {message} | Lock account |
+| GET | /api/admin/shops | Admin JWT | ?status=pending | [{shops}] | List shops |
+| PATCH | /api/admin/shops/:id/approve | Admin JWT | — | {message} | Approve shop |
+| PATCH | /api/admin/shops/:id/reject | Admin JWT | {reason} | {message} | Reject shop |
+| GET | /api/admin/ads | Admin JWT | — | [{ads}] | List all ads |
+| PATCH | /api/admin/ads/:id/approve | Admin JWT | — | {message} | Approve ad |
+| GET | /api/admin/analytics | Admin JWT | — | {platform stats} | Platform analytics |
+| GET | /api/admin/audit-logs | Admin JWT | — | [{logs}] | Audit log |
+
+---
+
+## 12. Security Considerations
+
+| Area | Implementation |
+|---|---|
+| OTP Storage | bcrypt hash (rounds=12), TTL index auto-delete after 10 min |
+| OTP Attempts | Max 5 wrong attempts → lock OTP for 15 min, return 429 |
+| JWT Access Token | 15-min expiry, HS256, payload: {userId, role, email} |
+| JWT Refresh Token | 7-day expiry, stored as httpOnly cookie, hashed in DB |
+| Password (Admin) | bcrypt hash (rounds=12), never plaintext |
+| RBAC | FastAPI Depends() guards: `get_current_user` + role check on every protected route |
+| Rate Limiting | slowapi (FastAPI): /register: 3/hour/IP; /login: 5/15min/IP; /resend-otp: 3/hour/email |
+| Input Sanitization | Pydantic v2 validators on all request bodies (EmailStr, constr, regex patterns) |
+| File Upload | Max 50MB ads creative, 5MB photos; validate MIME type server-side (not just extension) |
+| CORS | Allow only registered frontend origin (Vite dev + production domain) |
+| HTTPS | Enforce in production; 301 redirect HTTP → HTTPS |
+| Admin 2FA | TOTP via pyotp (Google Authenticator compatible) — recommended for all admin accounts |
+| Audit Logging | Every admin action → insert to audit_logs collection |
+| XSS | React auto-escapes; no dangerouslySetInnerHTML used |
+| MongoDB Injection | Motor/Beanie with Pydantic models prevents query injection |
+
+---
+
+## 13. Edge Cases & Validations
+
+| Scenario | Handling |
+|---|---|
+| Empty required fields | Inline red error under field; button remains disabled |
+| Invalid email format | "Enter a valid email address" — client-side + server-side |
+| Duplicate email registration | 409: "An account with this email already exists. Please login." |
+| OTP expired | 410: "OTP has expired. Click Resend OTP." — old OTP deleted from DB |
+| Wrong OTP (< 5 attempts) | 400: "Invalid OTP. X attempts remaining." |
+| Wrong OTP (5th attempt) | 429: "Too many attempts. Please request a new OTP in 15 minutes." |
+| Login before OTP verify | 403: "Please verify your OTP first." |
+| Shop login before admin approval | 403: "Your shop registration is under review. We'll notify you once approved." |
+| Resend OTP limit (>3/hour) | 429: "Too many resend attempts. Try again in 1 hour." |
+| Ad creative > 50MB | Client-side: "File exceeds 50MB limit" before upload |
+| Invalid pincode | "Enter a valid 6-digit pincode" — regex: /^\d{6}$/ |
+| Schedule date > 10 days | Date picker disables those dates; API validates: 400 if exceeded |
+| Schedule date in the past | Date picker disables past dates |
+| Accessing other user's resources | 403: "Forbidden" — all queries filter by userId from JWT |
+| Expired JWT on protected route | 401 → frontend catches → attempts refresh → if refresh expired → redirect to login |
+| File wrong format (not JPG/PNG/MP4) | "Only JPG, PNG, and MP4 files are supported" |
+| Network failure during payment | Show "Payment failed. Please try again." — do not create ad record until payment confirmed |
+| Admin approves already-active shop | 409: "Shop is already active" |
+| DB connection failure | 503: "Service temporarily unavailable. Please try again later." |
+| Concurrent OTP requests | Last OTP wins; previous OTP invalidated on new generation |
+
+---
+
+## 14. Future Enhancements
+
+### Phase 2 Features
+- **Consumer App** (React Native): The customer-facing app that shows Nearby Deals, Brand Deals, Promo Reelz, Home Page Banners — consumes all the data that advertisers and shops configure
+- **Bill Scan / QR Code**: Shop generates QR; customer scans to log transaction and earn/redeem points
+- **Push Notifications**: Notify customers of new deals from shops they've visited
+- **Referral System**: Sales agents get referral links; tracks shop onboarding to agent
+
+### Scaling
+- **Redis**: Cache hot queries (nearby deals by pincode, ad impressions counters)
+- **CDN**: Cloudflare for serving ad creatives and shop photos
+- **Horizontal Scaling**: FastAPI behind Gunicorn + Nginx; containerized via Docker
+- **MongoDB Atlas Search**: Full-text search for shop discovery
+
+### Mobile App
+- React Native for iOS + Android (consumer app)
+- React Native for shop owner: bill scan, offer management
+- Expo EAS Build for CI/CD
+
+### Third-Party Integrations
+- **Razorpay / PhonePe**: Production payment gateway (replace mock)
+- **MSG91 / Twilio**: Production SMS OTP delivery
+- **SendGrid**: Transactional email (OTP, receipts, approval notifications)
+- **Firebase**: Push notifications for consumer app
+- **Google Maps API**: Geolocation + nearby shop discovery map
+
+### Advanced AI
+- **Hyperlocal Deal Recommendation**: Vector embeddings of shop categories + user preferences
+- **Dynamic Pricing for Ads**: AI-suggested ad pricing based on demand in pincode
+- **Automated Ad Moderation**: Claude/GPT to review ad creatives for policy compliance
+
+### Enterprise
+- **Multi-language Support**: Tamil, Hindi, English (i18next)
+- **White-label**: Franchisee portals with custom branding
+- **Analytics Dashboard v2**: Export to CSV/Excel, date range filters, charts (Recharts)
+
+---
+
+## Bonus: Tech Stack Summary
+
+| Layer | Technology | Notes |
+|---|---|---|
+| Frontend | React 18 + Vite | React Router v6, code-split by portal |
+| UI Library | Material UI v5 | Custom theme: primary blue (#1565C0), Claimit brand |
+| State Management | Zustand | Lightweight, portal-scoped stores |
+| Backend | FastAPI (Python 3.11+) | Async, Pydantic v2 |
+| Database | MongoDB Atlas | Motor (async driver) + Beanie ODM |
+| Auth | JWT (python-jose) + bcrypt | httpOnly refresh token cookie |
+| OTP | 6-digit + bcrypt hash | TTL index in MongoDB |
+| File Storage | Cloudinary | Ad creatives + shop photos |
+| Email | SendGrid | OTP, approvals, receipts |
+| SMS | MSG91 | OTP delivery |
+| Rate Limiting | slowapi (FastAPI) | IP + email-based limits |
+| Payments | Razorpay | UPI, Cards, Netbanking |
+| Deployment FE | Vercel | Auto-deploy from main branch |
+| Deployment BE | Railway or Render | Docker container |
+| Admin Panel | Custom React (same codebase) | Role-gated routes |
+| AI Layer | Anthropic Claude API | Ad copy generation, sentiment analysis |
+
+---
+
+## Bonus: Development Milestones
+
+| Phase | Duration | Deliverables |
+|---|---|---|
+| Phase 1: Foundation | Week 1–2 | MongoDB models, FastAPI auth (register/OTP/login/JWT), shared header with 3 login buttons, React routing per portal |
+| Phase 2: Advertiser Portal | Week 3–4 | Create Ad wizard (4 steps), payment integration, dashboard with stats + ad list |
+| Phase 3: Sales Agent Portal | Week 4–5 | Onboarding form, dashboard, tutorial zone, team management, earnings |
+| Phase 4: Shop Owner Portal | Week 5–7 | Shop registration wizard (5 steps), dashboard, offer management, store details, reviews |
+| Phase 5: Admin Panel | Week 7–8 | User management, shop approval, ad moderation, analytics overview |
+| Phase 6: AI + Polish | Week 9–10 | Ad copy AI assistant, review sentiment, UI polish, responsive layout, testing |
+| Phase 7: Launch | Week 11 | Deployment, domain setup, monitoring (Sentry), smoke testing all portals |
