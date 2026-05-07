@@ -1,8 +1,0 @@
-# Copy this file to `local.properties` and update the paths to match your machine.
-# `local.properties` is git-ignored on purpose; it's per-developer.
-
-sdk.dir=C\:\\Users\\GOD\\AppData\\Local\\Android\\Sdk
-flutter.sdk=C\:\\src\\flutter
-flutter.buildMode=debug
-flutter.versionName=1.0.0
-flutter.versionCode=1
