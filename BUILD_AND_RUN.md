@@ -70,7 +70,7 @@ Edit `lib/core/constants/app_constants.dart`:
 
 ```dart
 // static const String baseUrl = 'http://10.0.2.2:8001'; // Android emulator
-   static const String baseUrl = 'http://192.168.X.Y:8001'; // your PC's LAN IP
+   static const String baseUrl = 'http://localhost:8001'; // your PC's LAN IP
 ```
 
 Find your IP with `ipconfig` (Windows) or `ifconfig` (Mac/Linux).

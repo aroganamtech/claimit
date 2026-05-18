@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import connect_db, disconnect_db
-from .routes import auth, users, claims, notifications, dashboard, policies
+from .routes import auth, users, claims, notifications, dashboard, policies, locations, deals
 
 
 @asynccontextmanager
@@ -28,10 +28,12 @@ app = FastAPI(
 )
 
 # CORS - wide open for dev. Lock down `allow_origins` for production.
+# NOTE: allow_credentials=True is incompatible with allow_origins=["*"].
+# Flutter web uses Bearer tokens (not cookies), so credentials=False is correct.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -50,6 +52,8 @@ app.include_router(claims.router)
 app.include_router(notifications.router)
 app.include_router(dashboard.router)
 app.include_router(policies.router)
+app.include_router(locations.router)
+app.include_router(deals.router)
 
 
 @app.get("/")
@@ -73,5 +77,5 @@ async def unhandled_exception_handler(request, exc):
     rather than an HTML traceback when something blows up."""
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc)},
+        content={"detail": "Internal server error"},
     )

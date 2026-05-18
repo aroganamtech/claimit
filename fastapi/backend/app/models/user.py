@@ -5,8 +5,8 @@ from pydantic import BaseModel
 
 
 class UserBase(BaseModel):
-    full_name: str
-    phone: str
+    full_name: Optional[str] = None   # set by user later in Profile
+    phone: Optional[str] = None
     email: Optional[str] = None
 
 
@@ -25,6 +25,11 @@ class UserUpdate(BaseModel):
     aadhar_number: Optional[str] = None
     pan_number: Optional[str] = None
     avatar_url: Optional[str] = None
+    location: Optional[str] = None  # Selected area / locality
+
+
+class LocationUpdate(BaseModel):
+    location: str
 
 
 class UserResponse(BaseModel):
@@ -32,8 +37,8 @@ class UserResponse(BaseModel):
     `id` is the Mongo `_id` rendered as a string by helpers.serialize_doc."""
 
     id: Optional[str] = None
-    full_name: str
-    phone: str
+    full_name: Optional[str] = None   # user fills this in via Profile
+    phone: Optional[str] = None
     email: Optional[str] = None
     date_of_birth: Optional[str] = None
     address: Optional[str] = None
@@ -43,6 +48,7 @@ class UserResponse(BaseModel):
     aadhar_number: Optional[str] = None
     pan_number: Optional[str] = None
     avatar_url: Optional[str] = None
+    location: Optional[str] = None
     is_verified: bool = False
     created_at: Optional[datetime] = None
 

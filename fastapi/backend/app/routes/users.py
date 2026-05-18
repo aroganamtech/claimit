@@ -6,7 +6,7 @@ import aiofiles
 from ..database import get_db
 from ..utils.auth import get_current_user
 from ..utils.helpers import serialize_doc
-from ..models.user import UserUpdate
+from ..models.user import UserUpdate, LocationUpdate
 from ..config import get_settings
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -15,7 +15,7 @@ settings = get_settings()
 
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Get current user profile."""
+    """Get current user profile including stored location."""
     return serialize_doc(current_user)
 
 
@@ -24,9 +24,9 @@ async def update_profile(
     update_data: UserUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    """Update user profile."""
+    """Update user profile fields."""
     db = get_db()
-    user_id = current_user["_id"] if "_id" in current_user else current_user["id"]
+    user_id = current_user.get("_id") or current_user.get("id")
 
     update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
     update_dict["updated_at"] = datetime.utcnow()
@@ -35,12 +35,30 @@ async def update_profile(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     await db.users.update_one(
-        {"_id": ObjectId(user_id)},
+        {"_id": ObjectId(str(user_id))},
         {"$set": update_dict},
     )
 
-    updated_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
     return serialize_doc(updated_user)
+
+
+@router.post("/location")
+async def update_location(
+    data: LocationUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Save the user's selected location (area / locality)."""
+    db = get_db()
+    user_id = current_user.get("_id") or current_user.get("id")
+
+    await db.users.update_one(
+        {"_id": ObjectId(str(user_id))},
+        {"$set": {"location": data.location, "updated_at": datetime.utcnow()}},
+    )
+
+    updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
+    return {"success": True, "location": data.location, "user": serialize_doc(updated_user)}
 
 
 @router.post("/avatar")
@@ -48,15 +66,13 @@ async def upload_avatar(
     avatar: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ):
-    """Upload user avatar."""
+    """Upload user avatar image."""
     user_id = current_user.get("_id") or current_user.get("id")
 
-    # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/jpg"]
     if avatar.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Only JPEG/PNG images allowed")
 
-    # Validate file size
     content = await avatar.read()
     if len(content) > settings.max_file_size_mb * 1024 * 1024:
         raise HTTPException(
@@ -64,7 +80,6 @@ async def upload_avatar(
             detail=f"File size exceeds {settings.max_file_size_mb}MB limit",
         )
 
-    # Save file
     upload_dir = os.path.join(settings.upload_dir, "avatars")
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -79,8 +94,8 @@ async def upload_avatar(
 
     db = get_db()
     await db.users.update_one(
-        {"_id": ObjectId(user_id)},
+        {"_id": ObjectId(str(user_id))},
         {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}},
     )
 
-    return {"avatar_url": avatar_url}
+    return {"avatar_url": avatar_url, "success": True}

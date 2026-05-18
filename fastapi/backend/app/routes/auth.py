@@ -18,121 +18,129 @@ from ..utils.otp import generate_otp, send_otp_sms, store_otp, verify_otp
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+# ── Request / Response models ────────────────────────────────────────────────
+
 class SendOtpRequest(BaseModel):
+    # Field kept as "phone" for backward-compat with Flutter client.
+    # Accepts mobile number OR email address.
     phone: str
 
 
 class VerifyOtpRequest(BaseModel):
-    phone: str
+    phone: str   # mobile number OR email – same as above
     otp: str
-
-
-class RegisterRequest(BaseModel):
-    full_name: str
-    phone: str
-    email: Optional[str] = None
 
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _is_email(identifier: str) -> bool:
+    return "@" in identifier
+
+
+async def _find_user(db, identifier: str):
+    """Look up a user by phone number or email."""
+    if _is_email(identifier):
+        return await db.users.find_one({"email": identifier})
+    return await db.users.find_one({"phone": identifier})
+
+
+async def _auto_create_user(db, identifier: str) -> dict:
+    """
+    Create a new user with a generated display name.
+    The user can update their name later from the Profile screen.
+    """
+    count = await db.users.count_documents({})
+    default_name = f"User{count + 1}"
+
+    user_doc = {
+        "full_name": default_name,
+        "phone": identifier if not _is_email(identifier) else "",
+        "email": identifier if _is_email(identifier) else None,
+        "is_verified": True,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+    }
+    result = await db.users.insert_one(user_doc)
+    user_doc["_id"] = result.inserted_id
+    return user_doc
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
 @router.post("/send-otp")
 async def send_otp(request: SendOtpRequest):
-    """Send OTP to phone number."""
-    phone = request.phone.strip()
-    if not phone:
-        raise HTTPException(status_code=400, detail="Phone number is required")
+    """
+    Send OTP to a mobile number or email address.
+    Works for both new (signup) and existing (login) users –
+    no separate registration step required.
+    """
+    identifier = request.phone.strip()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mobile number or email is required",
+        )
 
     otp = generate_otp()
-    await store_otp(phone, otp)
-    await send_otp_sms(phone, otp)
+    await store_otp(identifier, otp)
+    await send_otp_sms(identifier, otp)   # logs to console; plug in SMS/email provider here
 
     return {
         "success": True,
-        "message": f"OTP sent to {phone}",
-        "phone": phone,
+        "message": f"OTP sent to {identifier}",
+        "phone": identifier,
     }
 
 
 @router.post("/verify-otp")
 async def verify_otp_endpoint(request: VerifyOtpRequest):
-    """Verify OTP and return tokens."""
-    phone = request.phone.strip()
+    """
+    Verify OTP and return auth tokens.
+
+    - If OTP is valid and user already exists  → login.
+    - If OTP is valid and user does NOT exist  → auto-create account,
+      then login.  The user can fill in their name / details later
+      from the Profile screen.
+    """
+    identifier = request.phone.strip()
     otp = request.otp.strip()
 
-    is_valid = await verify_otp(phone, otp)
+    # ── 1. Validate OTP ──────────────────────────────────────────────────────
+    is_valid = await verify_otp(identifier, otp)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OTP",
         )
 
+    # ── 2. Find or create user ───────────────────────────────────────────────
     db = get_db()
-    user = await db.users.find_one({"phone": phone})
+    user = await _find_user(db, identifier)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found. Please register first.",
+        # New user — create account automatically
+        user = await _auto_create_user(db, identifier)
+    else:
+        # Existing user — update last-login timestamp
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"last_login": datetime.utcnow(), "is_verified": True}},
         )
 
+    # ── 3. Issue tokens ──────────────────────────────────────────────────────
     user_id = str(user["_id"])
     access_token = create_access_token({"sub": user_id})
     refresh_token = create_refresh_token({"sub": user_id})
-
-    # Update last login
-    await db.users.update_one(
-        {"_id": user["_id"]},
-        {"$set": {"last_login": datetime.utcnow(), "is_verified": True}},
-    )
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": serialize_doc(user),
-    }
-
-
-@router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest):
-    """Register a new user."""
-    db = get_db()
-
-    # Check if phone already exists
-    existing = await db.users.find_one({"phone": request.phone})
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Phone number already registered",
-        )
-
-    # Check email uniqueness
-    if request.email:
-        existing_email = await db.users.find_one({"email": request.email})
-        if existing_email:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered",
-            )
-
-    user_doc = {
-        "full_name": request.full_name,
-        "phone": request.phone,
-        "email": request.email,
-        "is_verified": False,
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
-    }
-
-    result = await db.users.insert_one(user_doc)
-    user_doc["_id"] = str(result.inserted_id)
-
-    return {
-        "success": True,
-        "message": "Registration successful. Please verify your phone.",
-        "user": serialize_doc(user_doc),
     }
 
 

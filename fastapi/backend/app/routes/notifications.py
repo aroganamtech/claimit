@@ -27,20 +27,20 @@ async def get_notifications(
     return [serialize_doc(n) for n in notifications]
 
 
-@router.patch("/{notification_id}/read")
-async def mark_as_read(
-    notification_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Mark a notification as read."""
+# NOTE: Fixed route ordering — static routes (/read-all, /unread-count) MUST come
+# before the dynamic route (/{notification_id}/read) otherwise FastAPI matches
+# "read-all" as a notification_id parameter.
+
+@router.get("/unread-count")
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
+    """Get unread notification count."""
     db = get_db()
     user_id = current_user.get("_id") or current_user.get("id")
 
-    await db.notifications.update_one(
-        {"_id": ObjectId(notification_id), "user_id": user_id},
-        {"$set": {"is_read": True}},
+    count = await db.notifications.count_documents(
+        {"user_id": user_id, "is_read": False}
     )
-    return {"success": True}
+    return {"count": count}
 
 
 @router.patch("/read-all")
@@ -56,13 +56,17 @@ async def mark_all_read(current_user: dict = Depends(get_current_user)):
     return {"success": True}
 
 
-@router.get("/unread-count")
-async def get_unread_count(current_user: dict = Depends(get_current_user)):
-    """Get unread notification count."""
+@router.patch("/{notification_id}/read")
+async def mark_as_read(
+    notification_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark a single notification as read."""
     db = get_db()
     user_id = current_user.get("_id") or current_user.get("id")
 
-    count = await db.notifications.count_documents(
-        {"user_id": user_id, "is_read": False}
+    await db.notifications.update_one(
+        {"_id": ObjectId(notification_id), "user_id": user_id},
+        {"$set": {"is_read": True}},
     )
-    return {"count": count}
+    return {"success": True}

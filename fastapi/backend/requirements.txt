@@ -1,14 +1,16 @@
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-motor==3.4.0
-pymongo==4.7.2
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
-pydantic==2.7.1
-pydantic-settings==2.2.1
-email-validator==2.1.1
-python-dotenv==1.0.1
-aiofiles==23.2.1
-Pillow==10.3.0
-httpx==0.27.0
+# All packages are unpinned so pip always installs the latest compatible versions.
+# This avoids cross-machine version conflicts.
+fastapi
+uvicorn[standard]
+motor
+pymongo
+# PyJWT replaces python-jose (actively maintained, no cryptography compat issues)
+PyJWT
+python-multipart
+pydantic
+pydantic-settings
+email-validator
+python-dotenv
+aiofiles
+Pillow
+httpx
