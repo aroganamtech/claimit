@@ -1110,6 +1110,7 @@ import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../deals/models/deal_model.dart';
+import '../../shops/models/shop_category.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock data  (replace with live API calls once backend is wired up)
@@ -1425,21 +1426,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   Container(
                     width: 36,
-                    height: 36,
+                    height: 40,
                     decoration: const BoxDecoration(
-                      color: Color(0xFFF4B400),
+                     
                       shape: BoxShape.circle,
                     ),
-                    child: const Center(
-                      child: Text(
-                        'C',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                  child: Center(
+  child: Image.asset(
+    'assets/icons/main_icon.png',
+    width: 50,
+    height: 35,
+    // fit: BoxFit.contain,
+  ),
+),
                   ),
 
                   const SizedBox(width: 6),
@@ -1498,7 +1497,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     size: 20,
                     color: Color(0xFF1565C0),
                   ),
-                  onPressed: () {},
+                  onPressed: () => context.push('/search'),
                   padding: EdgeInsets.zero,
                 ),
               ),
@@ -1506,10 +1505,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
 
               // ── Notification ───────────────────
-              const Icon(
-                Icons.notifications_none_rounded,
-                size: 26,
-                color: Color(0xFF1565C0),
+              GestureDetector(
+                onTap: () => context.push('/notifications'),
+                child: const Icon(
+                  Icons.notifications_none_rounded,
+                  size: 26,
+                  color: Color(0xFF1565C0),
+                ),
               ),
             ],
           ),
@@ -1807,7 +1809,18 @@ class _CategoryRow extends StatelessWidget {
                     cat: cat,
                     globalIndex: globalIndex,
                     active: selected == globalIndex,
-                    onTap: () => onSelect(globalIndex),
+                    onTap: () {
+                      onSelect(globalIndex);
+                      context.push(
+                        '/shops',
+                        extra: ShopCategory(
+                          id: globalIndex + 1,
+                          name: cat.label.replaceAll('\n', ' '),
+                          icon: cat.icon,
+                          color: cat.color,
+                        ),
+                      );
+                    },
                   );
                 }
                 return const Expanded(child: SizedBox.shrink());

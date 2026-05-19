@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../shops/models/shop_category.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Full categories screen — matches the mobile app screenshot
@@ -97,7 +98,15 @@ class CategoriesScreen extends StatelessWidget {
         itemBuilder: (context, index) {
           final cat = _allCategories[index];
           return GestureDetector(
-            onTap: () {},
+            onTap: () => context.push(
+              '/shops',
+              extra: ShopCategory(
+                id: index + 1,
+                name: cat.label.replaceAll('\n', ' '),
+                icon: cat.icon,
+                color: cat.color,
+              ),
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

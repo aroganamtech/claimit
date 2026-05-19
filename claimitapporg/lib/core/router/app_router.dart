@@ -23,6 +23,10 @@ import '../../features/ads/screens/national_ads_screen.dart';
 import '../../features/categories/screens/categories_screen.dart';
 import '../../features/deals/screens/deal_detail_screen.dart';
 import '../../features/deals/models/deal_model.dart';
+import '../../features/shops/models/shop_category.dart';
+import '../../features/shops/screens/shop_list_screen.dart';
+import '../../features/shops/screens/shop_detail_screen.dart';
+import '../../features/search/screens/search_screen.dart';
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -98,6 +102,20 @@ class AppRouter {
           builder: (context, state) => const CategoriesScreen(),
         ),
         GoRoute(
+          path: '/shops',
+          builder: (context, state) {
+            final cat = state.extra as ShopCategory;
+            return ShopListScreen(category: cat);
+          },
+        ),
+        GoRoute(
+          path: '/shop-detail',
+          builder: (context, state) {
+            final shop = state.extra as ShopItem;
+            return ShopDetailScreen(shop: shop);
+          },
+        ),
+        GoRoute(
           path: '/deal-detail',
           builder: (context, state) {
             final deal = state.extra as DealData;
@@ -162,6 +180,10 @@ class AppRouter {
         GoRoute(
           path: '/national-ads',
           builder: (context, state) => const NationalAdsScreen(),
+        ),
+        GoRoute(
+          path: '/search',
+          builder: (context, state) => const SearchScreen(),
         ),
       ],
     );

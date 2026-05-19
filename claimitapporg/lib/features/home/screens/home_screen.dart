@@ -419,11 +419,12 @@ class HomeScreen extends StatelessWidget {
         elevation: 6,
         shape: const CircleBorder(),
         onPressed: () => _showFeaturedZones(context),
-        child: const Icon(
-          Icons.local_offer_rounded,
-          color: Colors.white,
-          size: 26,
-        ),
+        child: Image.asset("assets/icons/main_icon.png")
+        //  const Icon(
+        //   Icons.local_offer_rounded,
+        //   color: Colors.white,
+        //   size: 26,
+        // ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
@@ -431,7 +432,7 @@ class HomeScreen extends StatelessWidget {
       bottomNavigationBar: BottomAppBar(
         notchMargin: 8.0,
         shape: const CircularNotchedRectangle(),
-        color: Colors.white,
+        color: const Color.fromARGB(255, 20, 143, 208),
         elevation: 8,
         padding: EdgeInsets.zero,
         height: 64,
@@ -536,21 +537,7 @@ const _zones = [
     icon: "assets/icons/popup6.png",
     route: '/home',
   ),
-  _ZoneItem(
-    label: 'Local\nClassifieds',
-    icon: "assets/icons/popup7.png",
-    route: '/home',
-  ),
-  _ZoneItem(
-    label: 'Local\nClassifieds',
-    icon: "assets/icons/popup8.png",
-    route: '/home',
-  ),
-  _ZoneItem(
-    label: 'Local\nClassifieds',
-    icon: "assets/icons/popup9.png",
-    route: '/home',
-  ),
+  
 ];
 
 class _FeaturedZonesSheet extends StatelessWidget {
@@ -720,7 +707,7 @@ class _ZoneTile extends StatelessWidget {
 // Single nav item
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final IconData icon;
   final IconData activeIcon;
   final String label;
@@ -736,31 +723,58 @@ class _NavItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final color = isSelected
-        ? AppTheme.secondaryColor
-        : const Color(0xFF9CA3AF);
+  State<_NavItem> createState() => _NavItemState();
+}
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 64,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(isSelected ? activeIcon : icon, color: color, size: 24),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight:
-                    isSelected ? FontWeight.w600 : FontWeight.normal,
+class _NavItemState extends State<_NavItem> {
+  bool isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+
+    if (widget.isSelected) {
+      color = const Color.fromARGB(255, 238, 255, 0); // selected color
+    } else if (isHovered) {
+      color = Colors.yellow; // hover color
+    } else {
+      color = const Color.fromARGB(255, 255, 255, 255); // default color
+    }
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 64,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                widget.isSelected
+                    ? widget.activeIcon
+                    : widget.icon,
                 color: color,
+                size: 24,
               ),
-            ),
-          ],
+
+              const SizedBox(height: 3),
+
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: widget.isSelected
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

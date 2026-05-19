@@ -4,7 +4,7 @@ class AppConstants {
   // static const String baseUrl = 'http://localhost:8001';   // iOS simulator
   // ↓ Physical Android/iOS device — replace with your PC's local IP address
   //   (run `ipconfig` on Windows to find it, e.g. 192.168.1.5)
-  static const String baseUrl = 'http://172.20.48.215:8001';// ← update your IP
+  static const String baseUrl = 'http://10.95.217.40:8001';// ← update your IP
 
   // API Endpoints
   static const String sendOtp = '/auth/send-otp';
