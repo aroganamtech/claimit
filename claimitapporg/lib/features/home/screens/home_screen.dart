@@ -380,6 +380,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../shops/models/shop_category.dart';
 
 /// The persistent shell that wraps every main tab.
 class HomeScreen extends StatelessWidget {
@@ -509,33 +510,33 @@ class _ZoneItem {
 const _zones = [
   _ZoneItem(
     label: 'Reward\nZone',
-    icon: "assets/icons/popup1.png", 
+    icon: "assets/images/f1.png", 
     route: '/home',
   ),
   _ZoneItem(
     label: 'Redeem\nZone',
-    icon: "assets/icons/popup2.png",
+    icon: "assets/images/f2.png",
     route: '/home',
   ),
   _ZoneItem(
     label: 'Brand\nDeals',
-    icon: "assets/icons/popup3.png",
+    icon: "assets/images/f3.png",
     route: '/claims',
   ),
   _ZoneItem(
     label: 'Nearby\nDeals',
-    icon: "assets/icons/popup4.png",
+    icon: "assets/images/f4.png",
     route: '/claims',
   ),
   _ZoneItem(
     label: 'Promo\nReelz',
-    icon: "assets/icons/popup5.png",
-    route: '/national-ads',
+    icon: "assets/images/f5.png",
+    route: '/reelz',
   ),
   _ZoneItem(
     label: 'Local\nClassifieds',
-    icon: "assets/icons/popup6.png",
-    route: '/home',
+    icon: "assets/images/f6.png",
+    route: '/classified',
   ),
   
 ];
@@ -595,16 +596,39 @@ class _FeaturedZonesSheet extends StatelessWidget {
             crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 2,       // Reduced from 16 to bring rows closer together
+            mainAxisSpacing: 2,
             crossAxisSpacing: 8,
-            childAspectRatio: 1.15,   // Increased from 0.85 to squeeze out empty spaces underneath
+            childAspectRatio: 1.15,
             children: _zones
                 .map((z) => _ZoneTile(
                       zone: z,
                       onTap: () {
                         Navigator.of(context).pop();
-                        if (z.route == '/national-ads') {
-                          context.push(z.route);
+                        final label = z.label.replaceAll('\n', ' ');
+                        if (label == 'Reward Zone') {
+                          // id=0 → all shops, opens on Rewards tab
+                          context.push('/shops', extra: const ShopCategory(
+                            id: 0,
+                            name: 'Reward Zone',
+                            icon: Icons.card_membership_rounded,
+                            color: Color(0xFF2563EB),
+                          ));
+                        } else if (label == 'Redeem Zone') {
+                          // id=-1 → all shops, opens on Redeem tab
+                          context.push('/shops', extra: const ShopCategory(
+                            id: -1,
+                            name: 'Redeem Zone',
+                            icon: Icons.redeem_rounded,
+                            color: Color(0xFF059669),
+                          ));
+                        } else if (label == 'Brand Deals') {
+                          context.push('/brands');
+                        } else if (label == 'Nearby Deals') {
+                          context.push('/nearby-deals');
+                        } else if (label == 'Promo Reelz') {
+                          context.push('/reelz');
+                        } else if (label == 'Local Classifieds') {
+                          context.push('/classified');
                         } else {
                           context.go(z.route);
                         }

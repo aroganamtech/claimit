@@ -27,6 +27,13 @@ import '../../features/shops/models/shop_category.dart';
 import '../../features/shops/screens/shop_list_screen.dart';
 import '../../features/shops/screens/shop_detail_screen.dart';
 import '../../features/search/screens/search_screen.dart';
+import '../../features/deals/screens/deal_list_screen.dart';
+import '../../features/reels/screens/reelz_screen.dart';
+import '../../features/classifieds/screens/classified_home_screen.dart';
+import '../../features/classifieds/screens/classified_list_screen.dart';
+import '../../features/classifieds/screens/add_post_flow.dart';
+import '../../features/classifieds/screens/classified_detail_screen.dart';
+import '../../features/classifieds/models/classified_post.dart';
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -120,6 +127,50 @@ class AppRouter {
           builder: (context, state) {
             final deal = state.extra as DealData;
             return DealDetailScreen(deal: deal);
+          },
+        ),
+        GoRoute(
+          path: '/brands',
+          builder: (context, state) => const DealListScreen(
+            title: 'Brand Deals',
+            dealGroup: 'brand',
+          ),
+        ),
+        GoRoute(
+          path: '/nearby-deals',
+          builder: (context, state) => const DealListScreen(
+            title: 'Nearby Deals',
+            dealGroup: 'nearby',
+          ),
+        ),
+        GoRoute(
+          path: '/reelz',
+          builder: (context, state) => const ReelzScreen(),
+        ),
+        GoRoute(
+          path: '/classified',
+          builder: (context, state) => const ClassifiedHomeScreen(),
+        ),
+        GoRoute(
+          path: '/classified/list',
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>? ?? {};
+            return ClassifiedListScreen(
+              category: extra['category'] as String? ?? '',
+              subcategory: extra['subcategory'] as String? ?? '',
+              title: extra['title'] as String? ?? '',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/classified/add',
+          builder: (context, state) => const AddPostFlowScreen(),
+        ),
+        GoRoute(
+          path: '/classified/detail',
+          builder: (context, state) {
+            final post = state.extra as ClassifiedPost;
+            return ClassifiedDetailScreen(post: post);
           },
         ),
         ShellRoute(

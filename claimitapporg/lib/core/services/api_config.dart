@@ -32,9 +32,9 @@
 class ApiConfig {
   ApiConfig._();
 
-  /// Toggle: true = serve dummy in-memory data (current)
-  ///         false = call real HTTP endpoints (set when backend is ready)
-  static const bool kUseDummyData = true;
+  /// Toggle: true = serve dummy in-memory data
+  ///         false = call real HTTP endpoints (backend is now ready with seed data)
+  static const bool kUseDummyData = false;
 
   /// Base URL — set this to your real server when ready
   static const String kBaseUrl = 'https://api.claimit.in/v1';

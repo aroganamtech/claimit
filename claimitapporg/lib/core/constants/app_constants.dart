@@ -4,7 +4,7 @@ class AppConstants {
   // static const String baseUrl = 'http://localhost:8001';   // iOS simulator
   // ↓ Physical Android/iOS device — replace with your PC's local IP address
   //   (run `ipconfig` on Windows to find it, e.g. 192.168.1.5)
-  static const String baseUrl = 'http://10.95.217.40:8001';// ← update your IP
+  static const String baseUrl = 'http://10.103.197.67:8001';// ← update your IP
 
   // API Endpoints
   static const String sendOtp = '/auth/send-otp';
@@ -35,6 +35,29 @@ class AppConstants {
 
   static const String dashboard = '/dashboard';
   static const String policies = '/policies';
+
+  // Shops
+  static const String shops = '/shops';
+  static const String shopDetail = '/shops/{id}';
+  static const String shopImage = '/shops/{id}/image';
+  static const String shopSearch = '/shops/search';
+
+  // Rewards
+  static const String rewards = '/rewards';
+  static const String rewardsByShop = '/rewards/shop/{shop_id}';
+  static const String rewardDetail = '/rewards/{id}';
+
+  // Redeem
+  static const String redeemReward = '/redeem';
+  static const String myRedeems = '/redeem/my';
+  static const String markRedeemUsed = '/redeem/{id}/use';
+
+  // Reels
+  static const String reels = '/reels';
+
+  // Classifieds
+  static const String classifieds = '/classifieds';
+  static const String classifiedDetail = '/classifieds/{id}';
 
   // Storage Keys
   static const String tokenKey = 'access_token';

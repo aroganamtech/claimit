@@ -19,6 +19,20 @@ async def connect_db():
     await db.notifications.create_index("user_id")
     await db.otp_store.create_index("phone")
     await db.otp_store.create_index("expires_at", expireAfterSeconds=0)
+    # Shops
+    await db.shops.create_index("category_ids")
+    await db.shops.create_index("name")
+    # Deals
+    await db.deals.create_index("deal_group")
+    await db.deals.create_index("category")
+    # Rewards
+    await db.rewards.create_index("shop_id")
+    await db.rewards.create_index("is_active")
+    await db.rewards.create_index("expires_at")
+    # Redeem
+    await db.redeem.create_index("user_id")
+    await db.redeem.create_index("reward_id")
+    await db.redeem.create_index([("user_id", 1), ("reward_id", 1)])
     print("✅ Connected to MongoDB")
 
 

@@ -1,0 +1,101 @@
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from datetime import datetime
+from bson import ObjectId
+import os
+import aiofiles
+from ..database import get_db
+from ..utils.auth import get_current_user
+from ..utils.helpers import serialize_doc
+from ..models.user import UserUpdate, LocationUpdate
+from ..config import get_settings
+
+router = APIRouter(prefix="/users", tags=["Users"])
+settings = get_settings()
+
+
+@router.get("/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    """Get current user profile including stored location."""
+    return serialize_doc(current_user)
+
+
+@router.put("/profile/update")
+async def update_profile(
+    update_data: UserUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update user profile fields."""
+    db = get_db()
+    user_id = current_user.get("_id") or current_user.get("id")
+
+    update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+    update_dict["updated_at"] = datetime.utcnow()
+
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    await db.users.update_one(
+        {"_id": ObjectId(str(user_id))},
+        {"$set": update_dict},
+    )
+
+    updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
+    return serialize_doc(updated_user)
+
+
+@router.post("/location")
+async def update_location(
+    data: LocationUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Save the user's selected location (area / locality)."""
+    db = get_db()
+    user_id = current_user.get("_id") or current_user.get("id")
+
+    await db.users.update_one(
+        {"_id": ObjectId(str(user_id))},
+        {"$set": {"location": data.location, "updated_at": datetime.utcnow()}},
+    )
+
+    updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
+    return {"success": True, "location": data.location, "user": serialize_doc(updated_user)}
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    avatar: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload user avatar image."""
+    user_id = current_user.get("_id") or current_user.get("id")
+
+    allowed_types = ["image/jpeg", "image/png", "image/jpg"]
+    if avatar.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only JPEG/PNG images allowed")
+
+    content = await avatar.read()
+    if len(content) > settings.max_file_size_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File size exceeds {settings.max_file_size_mb}MB limit",
+        )
+
+    upload_dir = os.path.join(settings.upload_dir, "avatars")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = avatar.filename.split(".")[-1]
+    filename = f"{user_id}.{ext}"
+    filepath = os.path.join(upload_dir, filename)
+
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(content)
+
+    avatar_url = f"/uploads/avatars/{filename}"
+
+    db = get_db()
+    await db.users.update_one(
+        {"_id": ObjectId(str(user_id))},
+        {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}},
+    )
+
+    return {"avatar_url": avatar_url, "success": True}

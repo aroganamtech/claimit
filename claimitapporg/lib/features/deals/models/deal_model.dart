@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 class DealData {
+  final String id;          // MongoDB ObjectId string
   final String name;
   final String location;
   final String offer;
   final String distance;
-  final String type;
+  final String type;        // display category badge (e.g. "Electronics", "Gym")
   final String imageUrl;
   final Color fallbackColor;
   final IconData fallbackIcon;
@@ -17,6 +18,7 @@ class DealData {
   final int reviews;
 
   const DealData({
+    this.id = '',
     required this.name,
     required this.location,
     required this.offer,

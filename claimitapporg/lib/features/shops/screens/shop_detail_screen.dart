@@ -1,5 +1,5 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'shop_list_screen.dart'; // ShopItem lives here
 
@@ -65,22 +65,13 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
-              background: CachedNetworkImage(
-                imageUrl: s.imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: s.fallbackColor,
-                  alignment: Alignment.center,
-                  child: Icon(s.fallbackIcon,
-                      color: const Color(0xFF9CA3AF), size: 72),
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  color: s.fallbackColor,
-                  alignment: Alignment.center,
-                  child: Icon(s.fallbackIcon,
-                      color: const Color(0xFF9CA3AF), size: 72),
-                ),
-              ),
+              background: s.imageData != null && s.imageData!.isNotEmpty
+                  ? Image.memory(
+                      base64Decode(s.imageData!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _heroFallback(s),
+                    )
+                  : _heroFallback(s),
             ),
           ),
 
@@ -492,3 +483,12 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hero image fallback
+// ─────────────────────────────────────────────────────────────────────────────
+Widget _heroFallback(shop) => Container(
+  color: shop.fallbackColor,
+  alignment: Alignment.center,
+  child: Icon(shop.fallbackIcon, color: const Color(0xFF9CA3AF), size: 72),
+);

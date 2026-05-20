@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import connect_db, disconnect_db
-from .routes import auth, users, claims, notifications, dashboard, policies, locations, deals
+from .routes import auth, users, claims, notifications, dashboard, policies, locations, deals, shops, rewards, redeem, reels, classifieds
 
 
 @asynccontextmanager
@@ -38,10 +38,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for uploads (avatars, claim documents).
+# Static files for uploads (avatars, claim documents, shop images).
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("uploads/avatars", exist_ok=True)
 os.makedirs("uploads/claims", exist_ok=True)
+os.makedirs("uploads/shop_images", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
@@ -54,6 +55,11 @@ app.include_router(dashboard.router)
 app.include_router(policies.router)
 app.include_router(locations.router)
 app.include_router(deals.router)
+app.include_router(shops.router)
+app.include_router(rewards.router)
+app.include_router(redeem.router)
+app.include_router(reels.router)
+app.include_router(classifieds.router)
 
 
 @app.get("/")
