@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 import '../models/deal_model.dart';
 import '../services/deal_service.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart'; // filterCats
+import '../../profile/providers/profile_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DealListScreen
@@ -487,6 +489,27 @@ class _DealCard extends StatefulWidget {
 
 class _DealCardState extends State<_DealCard> {
   bool _isFav = false;
+  bool _toggling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isFav = context.read<ProfileProvider>().isLikedDeal(widget.deal.id);
+  }
+
+  Future<void> _toggleFav() async {
+    if (_toggling) return;
+    setState(() => _toggling = true);
+    final d = widget.deal;
+    final nowLiked = await context.read<ProfileProvider>().toggleDealFavourite(
+          d.id,
+          name: d.name,
+          location: d.location,
+          imageUrl: d.imageUrl,
+          offer: d.offer,
+        );
+    if (mounted) setState(() { _isFav = nowLiked; _toggling = false; });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -553,8 +576,7 @@ class _DealCardState extends State<_DealCard> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () =>
-                              setState(() => _isFav = !_isFav),
+                          onTap: _toggleFav,
                           child: Icon(
                             _isFav
                                 ? Icons.favorite_rounded

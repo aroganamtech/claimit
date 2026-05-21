@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../models/shop_category.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart';
 import '../services/shop_service.dart';
+import '../../profile/providers/profile_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ShopItem data model — now driven by real API data from MongoDB.
@@ -21,6 +23,7 @@ class ShopItem {
 
   final int discount; // percentage
   final double rating;
+  final int reviewCount;
   final int addedDaysAgo;
 
   /// Base64-encoded image bytes from MongoDB.
@@ -40,9 +43,14 @@ class ShopItem {
   final String address;
   final String timing;
   final String phone;
+  final String email;
 
   /// Distance from user — provided by backend, e.g. "6 km"
   final String distance;
+
+  /// GPS coordinates (optional — used for Get Direction)
+  final double? lat;
+  final double? lng;
 
   const ShopItem({
     required this.id,
@@ -54,6 +62,7 @@ class ShopItem {
     required this.addedDaysAgo,
     required this.fallbackColor,
     required this.fallbackIcon,
+    this.reviewCount = 0,
     this.imageData,
     this.imageName = '',
     this.hasRewards = true,
@@ -61,7 +70,10 @@ class ShopItem {
     this.address = '',
     this.timing = '',
     this.phone = '',
+    this.email = '',
     this.distance = '',
+    this.lat,
+    this.lng,
   });
 }
 
@@ -110,7 +122,10 @@ List<ShopItem> getShopDatabase() => const [];
 
 class ShopListScreen extends StatefulWidget {
   final ShopCategory category;
-  const ShopListScreen({super.key, required this.category});
+  /// When true: rendered as a persistent bottom-nav tab.
+  /// Hides the back button, locks to Redeem mode, no Rewards/Redeem toggle.
+  final bool isTab;
+  const ShopListScreen({super.key, required this.category, this.isTab = false});
 
   @override
   State<ShopListScreen> createState() => _ShopListScreenState();
@@ -134,19 +149,21 @@ class _ShopListScreenState extends State<ShopListScreen> {
   bool _isLoading = true;
   String? _loadError;
 
-  final Set<String> _favorites = {};
-
   @override
   void initState() {
     super.initState();
-    // id=-1 → opened as "Redeem Zone" → default to Redeem tab
-    _isRewards = widget.category.id != -1;
+    // isTab always shows Redeem zone; id=-1 also locks to Redeem
+    _isRewards = !widget.isTab && widget.category.id != -1;
     _loadShops();
   }
 
   Future<void> _loadShops() async {
     setState(() { _isLoading = true; _loadError = null; });
     try {
+      // Refresh liked IDs so heart buttons always show correct state
+      final profileProvider = context.read<ProfileProvider>();
+      await profileProvider.fetchLikedIds();
+
       final shops = await ShopService.instance.fetchAllShops();
       if (mounted) setState(() { _shops = shops; _isLoading = false; });
     } catch (e) {
@@ -220,6 +237,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
   /// Label shown in the AppBar — switches to the filter category's name
   /// when the user has selected a different category in the filter sheet.
   String get _activeTitle {
+    if (widget.isTab) return 'Redeem+ Zone';
     if (_filterCatId != null && _filterCatId! > 0) {
       try {
         return filterCats
@@ -271,7 +289,8 @@ class _ShopListScreenState extends State<ShopListScreen> {
         elevation: 0.5,
         shadowColor: Colors.black12,
         surfaceTintColor: Colors.transparent,
-        leading: GestureDetector(
+        automaticallyImplyLeading: false,
+        leading: widget.isTab ? null : GestureDetector(
           onTap: () => context.pop(),
           child: const Icon(Icons.arrow_back_ios_new_rounded,
               color: Color(0xFF2563EB), size: 20),
@@ -401,10 +420,9 @@ class _ShopListScreenState extends State<ShopListScreen> {
       appBar: _buildAppBar(),
       body: Column(
         children: [
-          // Hide tab toggle in Reward Zone (id=0) and Redeem Zone (id=-1)
-          // — those zones already lock to one type via _isRewards.
-          if (widget.category.id > 0) _buildTabToggle(),
-          if (widget.category.id > 0)
+          // Hide tab toggle when isTab (Redeem+ nav tab) or special zone ids
+          if (!widget.isTab && widget.category.id > 0) _buildTabToggle(),
+          if (!widget.isTab && widget.category.id > 0)
             const Divider(height: 1, color: Color(0xFFF3F4F6)),
           Expanded(
             child: _isLoading
@@ -431,20 +449,24 @@ class _ShopListScreenState extends State<ShopListScreen> {
                         : RefreshIndicator(
                             onRefresh: _loadShops,
                             color: const Color(0xFF2563EB),
-                            child: ListView.builder(
-                              itemCount: shops.length,
-                              padding: const EdgeInsets.only(top: 4, bottom: 16),
-                              itemBuilder: (_, i) => _ShopCard(
-                                shop: shops[i],
-                                isFav: _favorites.contains(shops[i].id),
-                                onToggleFav: () {
-                                  setState(() {
-                                    if (_favorites.contains(shops[i].id)) {
-                                      _favorites.remove(shops[i].id);
-                                    } else {
-                                      _favorites.add(shops[i].id);
-                                    }
-                                  });
+                            child: Consumer<ProfileProvider>(
+                              builder: (ctx, profile, _) => ListView.builder(
+                                itemCount: shops.length,
+                                padding: const EdgeInsets.only(top: 4, bottom: 16),
+                                itemBuilder: (_, i) {
+                                  final s = shops[i];
+                                  return _ShopCard(
+                                    shop: s,
+                                    isFav: profile.isLiked(s.id),
+                                    onToggleFav: () => profile.toggleFavourite(
+                                      s.id,
+                                      name: s.name,
+                                      location: s.location,
+                                      imageData: s.imageData,
+                                      discount: s.discount,
+                                      rating: s.rating,
+                                    ),
+                                  );
                                 },
                               ),
                             ),
@@ -626,7 +648,18 @@ class _ShopCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
+
+                    // Offer text
+                    Text(
+                      '${shop.discount}% Offer on All grocery',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF2563EB),
+                          fontWeight: FontWeight.w600),
+                    ),
+
+                    const SizedBox(height: 6),
 
                     // Badges: distance + category
                     Row(

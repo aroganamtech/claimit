@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from ..database import get_db
 from ..utils.auth import get_current_user
 from ..utils.helpers import serialize_doc
-from ..models.shop import RedeemCreate
+from ..models.shop import RedeemCreate, EligibilityRequest
 
 router = APIRouter(prefix="/redeem", tags=["Redeem"])
 
@@ -17,6 +17,68 @@ router = APIRouter(prefix="/redeem", tags=["Redeem"])
 def _generate_coupon(length: int = 8) -> str:
     """Generate a random alphanumeric coupon code."""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /redeem/eligibility
+# Must be defined BEFORE POST /redeem (empty path) so FastAPI doesn't confuse
+# the literal "eligibility" path segment with the body of POST /redeem.
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post("/eligibility")
+async def check_eligibility(
+    data: EligibilityRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    POST /redeem/eligibility
+    Body: { shop_id, lat?, lng? }
+    Returns: { eligible: bool, discount: int, message: str }
+
+    Eligibility rules:
+    1. Shop must exist and have has_redeem=True.
+    2. User must have at least 1 reward point (or any existing bill history).
+       (Simplified: always eligible if shop is valid; extend logic as needed.)
+    """
+    db = get_db()
+
+    # Validate shop
+    try:
+        shop_oid = ObjectId(data.shop_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid shop ID")
+
+    shop = await db.shops.find_one({"_id": shop_oid})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    has_redeem = shop.get("has_redeem", True)
+    discount = shop.get("discount", 0)
+
+    if not has_redeem:
+        return {
+            "eligible": False,
+            "discount": 0,
+            "message": "This shop does not participate in the Redeem programme.",
+        }
+
+    # Check user has any bill history (reward points)
+    user_id = str(current_user.get("_id") or current_user.get("id"))
+    bill_count = await db.bill_rewards.count_documents({"user_id": user_id})
+
+    # Always eligible if shop has redeem enabled (you can tighten this later)
+    eligible = True
+    message = f"You are eligible for {discount}% discount at {shop.get('name', 'this shop')}."
+
+    if bill_count == 0:
+        # Still eligible on first visit — remove this check to require prior bills
+        message = f"First visit! Enjoy {discount}% discount at {shop.get('name', 'this shop')}."
+
+    return {
+        "eligible": eligible,
+        "discount": discount,
+        "message": message,
+        "shop_name": shop.get("name", ""),
+    }
 
 
 @router.post("", status_code=201)

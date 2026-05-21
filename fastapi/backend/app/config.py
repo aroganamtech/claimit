@@ -13,6 +13,20 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_file_size_mb: int = 10
 
+    # Twilio SMS credentials
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+    # Default country code prepended to 10-digit numbers (E.164 prefix, e.g. +91 for India)
+    twilio_default_country_code: str = "+91"
+
+    # SMTP email credentials (used to send OTP to email identifiers)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "Claimit"
+
     class Config:
         env_file = ".env"
 

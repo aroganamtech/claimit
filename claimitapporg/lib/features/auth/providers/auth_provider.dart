@@ -13,11 +13,45 @@ class AuthProvider extends ChangeNotifier {
   bool _isInitializing = true;
   String? _error;
 
+  /// The identifier (phone/email) the user typed at login — set by verifyOtp()
+  String? _loginIdentifier;
+  /// Becomes true right after a successful login; reset once popup is shown
+  bool _accountLinkPopupPending = false;
+
   UserModel? get user => _user;
   bool get isAuthenticated => _isAuthenticated;
   bool get isLoading => _isLoading;
   bool get isInitializing => _isInitializing;
   String? get error => _error;
+
+  /// True if the most recent login was via email address
+  bool get loggedInViaEmail =>
+      _loginIdentifier != null && _loginIdentifier!.contains('@');
+
+  /// True if the most recent login was via phone number
+  bool get loggedInViaPhone =>
+      _loginIdentifier != null && !_loginIdentifier!.contains('@');
+
+  /// Whether the account-linking nudge popup should be shown.
+  /// Phone login but no email → nudge to add email.
+  /// Email login but no phone → nudge to add phone.
+  bool get shouldShowAccountLinkPopup {
+    if (!_accountLinkPopupPending || _user == null) return false;
+    if (loggedInViaPhone && (_user!.email == null || _user!.email!.isEmpty)) {
+      return true;
+    }
+    if (loggedInViaEmail && _user!.phone.isEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Call this once the popup has been displayed so it isn't shown again
+  /// in the same session.
+  void markAccountLinkPopupShown() {
+    _accountLinkPopupPending = false;
+    // no notifyListeners() needed — the popup reads this synchronously
+  }
 
   /// Used as GoRouter's refreshListenable.
   /// ONLY fires when _isAuthenticated actually changes — never on loading/error
@@ -118,6 +152,8 @@ class AuthProvider extends ChangeNotifier {
           userId: (userJson['id'] ?? userJson['_id'] ?? '').toString(),
         );
         _user = UserModel.fromJson(userJson);
+        _loginIdentifier = phone;          // remember how they logged in
+        _accountLinkPopupPending = true;   // show nudge popup once on next screen
         _setAuth(true);   // ← notifies router notifier
         _isLoading = false;
         notifyListeners();

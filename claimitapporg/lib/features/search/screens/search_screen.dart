@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../auth/providers/auth_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../../shops/screens/shop_list_screen.dart';
 import '../../shops/services/shop_service.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart';
@@ -1008,11 +1009,11 @@ class _SearchResultCard extends StatefulWidget {
 }
 
 class _SearchResultCardState extends State<_SearchResultCard> {
-  bool _isFav = false;
-
   @override
   Widget build(BuildContext context) {
     final s = widget.shop;
+    final profile = context.watch<ProfileProvider>();
+    final isFav = profile.isLiked(s.id);
     return GestureDetector(
       onTap: () => context.push('/shop-detail', extra: s),
       child: Container(
@@ -1077,14 +1078,20 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () =>
-                              setState(() => _isFav = !_isFav),
+                          onTap: () => profile.toggleFavourite(
+                            s.id,
+                            name: s.name,
+                            location: s.location,
+                            imageData: s.imageData,
+                            discount: s.discount,
+                            rating: s.rating,
+                          ),
                           child: Icon(
-                            _isFav
+                            isFav
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
                             size: 18,
-                            color: _isFav
+                            color: isFav
                                 ? Colors.redAccent
                                 : const Color(0xFF9CA3AF),
                           ),

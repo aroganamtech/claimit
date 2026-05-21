@@ -16,6 +16,7 @@ import '../../features/claims/screens/upload_documents_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/edit_profile_screen.dart';
+import '../../features/profile/screens/settings_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/policies/screens/policies_screen.dart';
 import '../../features/policies/screens/policy_detail_screen.dart';
@@ -34,20 +35,24 @@ import '../../features/classifieds/screens/classified_list_screen.dart';
 import '../../features/classifieds/screens/add_post_flow.dart';
 import '../../features/classifieds/screens/classified_detail_screen.dart';
 import '../../features/classifieds/models/classified_post.dart';
+// Bill Reader flow
+import '../../features/bill_reader/screens/bill_reader_intro_screen.dart';
+// Redeem flow
+import '../../features/shops/screens/shop_list_screen.dart' show ShopItem;
+import '../../features/shops/screens/redeem_loading_screen.dart';
+import '../../features/shops/screens/redeem_eligibility_screen.dart';
+import '../../features/bill_reader/screens/bill_scanner_screen.dart';
+import '../../features/bill_reader/screens/bill_scanning_progress_screen.dart';
+import '../../features/bill_reader/screens/bill_reward_success_screen.dart';
+import '../../features/bill_reader/screens/bill_reward_wallet_screen.dart';
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
     return GoRouter(
       initialLocation: '/splash',
-      // Use the isolated ValueNotifier — only fires when _isAuthenticated
-      // actually changes (login / logout).  The old approach used the whole
-      // AuthProvider as refreshListenable, so the router re-ran its redirect
-      // on every notifyListeners() call, including _isLoading toggles, which
-      // on Flutter web caused the router to reset to /splash mid-request.
       refreshListenable: authProvider.authStateNotifier,
       redirect: (context, state) {
         final isLoggedIn = authProvider.isAuthenticated;
-        // Pages that are part of the pre-login / onboarding flow
         final isPreLoginPage =
             state.matchedLocation == '/splash' ||
             state.matchedLocation == '/onboarding' ||
@@ -55,7 +60,6 @@ class AppRouter {
             state.matchedLocation == '/auth/register' ||
             state.matchedLocation == '/auth/otp';
 
-        // Pages allowed for authenticated users that are still "outside" main app
         final isPostLoginFlow =
             state.matchedLocation == '/auth/success' ||
             state.matchedLocation == '/location';
@@ -63,13 +67,13 @@ class AppRouter {
         if (!isLoggedIn && !isPreLoginPage && !isPostLoginFlow) {
           return '/auth/login';
         }
-        // Redirect logged-in user away from pre-login pages only
         if (isLoggedIn && isPreLoginPage) {
           return '/home';
         }
         return null;
       },
       routes: [
+        // ── Auth / onboarding ──────────────────────────────────────────────
         GoRoute(
           path: '/splash',
           builder: (context, state) => const SplashScreen(),
@@ -104,6 +108,8 @@ class AppRouter {
           path: '/location',
           builder: (context, state) => const LocationScreen(),
         ),
+
+        // ── Categories / shops / deals ─────────────────────────────────────
         GoRoute(
           path: '/categories',
           builder: (context, state) => const CategoriesScreen(),
@@ -143,10 +149,14 @@ class AppRouter {
             dealGroup: 'nearby',
           ),
         ),
+
+        // ── Reelz ─────────────────────────────────────────────────────────
         GoRoute(
           path: '/reelz',
           builder: (context, state) => const ReelzScreen(),
         ),
+
+        // ── Classifieds ────────────────────────────────────────────────────
         GoRoute(
           path: '/classified',
           builder: (context, state) => const ClassifiedHomeScreen(),
@@ -173,12 +183,79 @@ class AppRouter {
             return ClassifiedDetailScreen(post: post);
           },
         ),
+
+        // ── Bill Reader flow ───────────────────────────────────────────────
+        GoRoute(
+          path: '/bill-reader',
+          builder: (context, state) => const BillReaderIntroScreen(),
+        ),
+        GoRoute(
+          path: '/bill-reader/scanner',
+          builder: (context, state) => const BillScannerScreen(),
+        ),
+        GoRoute(
+          path: '/bill-reader/scanning',
+          builder: (context, state) => const BillScanningProgressScreen(),
+        ),
+        GoRoute(
+          path: '/bill-reader/success',
+          builder: (context, state) => const BillRewardSuccessScreen(),
+        ),
+        GoRoute(
+          path: '/bill-reader/wallet',
+          builder: (context, state) => const BillRewardWalletScreen(),
+        ),
+
+        // ── Other standalone pages ─────────────────────────────────────────
+        GoRoute(
+          path: '/national-ads',
+          builder: (context, state) => const NationalAdsScreen(),
+        ),
+        GoRoute(
+          path: '/search',
+          builder: (context, state) => const SearchScreen(),
+        ),
+
+        // ── Redeem flow ────────────────────────────────────────────────────
+        GoRoute(
+          path: '/redeem-loading',
+          builder: (context, state) {
+            final shop = state.extra as ShopItem;
+            return RedeemLoadingScreen(shop: shop);
+          },
+        ),
+        GoRoute(
+          path: '/redeem-eligibility',
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>;
+            return RedeemEligibilityScreen(
+              shop: extra['shop'],
+              eligible: extra['eligible'] as bool? ?? false,
+              discount: extra['discount'] as int? ?? 0,
+              message: extra['message'] as String? ?? '',
+            );
+          },
+        ),
+
+        // ── Shell (bottom nav) ─────────────────────────────────────────────
         ShellRoute(
           builder: (context, state, child) => HomeScreen(child: child),
           routes: [
             GoRoute(
               path: '/home',
               builder: (context, state) => const DashboardScreen(),
+            ),
+            GoRoute(
+              path: '/redeem-zone',
+              builder: (context, state) => const ShopListScreen(
+                isTab: true,
+                category: ShopCategory(
+                  id: -1,
+                  name: 'Redeem+ Zone',
+                  icon: Icons.redeem_rounded,
+                  color: Color(0xFF059669),
+                ),
+              ),
             ),
             GoRoute(
               path: '/claims',
@@ -192,13 +269,14 @@ class AppRouter {
               path: '/profile',
               builder: (context, state) => const ProfileScreen(),
             ),
-            // Keep /policies accessible but not in main nav
             GoRoute(
               path: '/policies',
               builder: (context, state) => const PoliciesScreen(),
             ),
           ],
         ),
+
+        // ── Deep routes (outside shell) ────────────────────────────────────
         GoRoute(
           path: '/claims/new',
           builder: (context, state) => const NewClaimScreen(),
@@ -222,19 +300,15 @@ class AppRouter {
           builder: (context, state) => const EditProfileScreen(),
         ),
         GoRoute(
+          path: '/settings',
+          builder: (context, state) => const SettingsScreen(),
+        ),
+        GoRoute(
           path: '/policies/:id',
           builder: (context, state) {
             final policyId = state.pathParameters['id']!;
             return PolicyDetailScreen(policyId: policyId);
           },
-        ),
-        GoRoute(
-          path: '/national-ads',
-          builder: (context, state) => const NationalAdsScreen(),
-        ),
-        GoRoute(
-          path: '/search',
-          builder: (context, state) => const SearchScreen(),
         ),
       ],
     );

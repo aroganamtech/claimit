@@ -1,35 +1,55 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ShopService
-//
-// Fetches shop data from the real FastAPI backend.
-// Images are returned as base64 strings from the DB and decoded on the client.
-//
-// API endpoints used:
-//   GET /shops                        → all shops
-//   GET /shops?category_id=X          → filtered by category
-//   GET /shops/{id}                   → single shop
-//   GET /shops/search?q=term          → search
-//
-// In widgets, render the image with:
-//   shop.imageData != null
-//     ? Image.memory(base64Decode(shop.imageData!))
-//     : Icon(shop.fallbackIcon)
+// ShopService — all shop-related API calls
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
-import '../screens/shop_list_screen.dart'; // ShopItem lives here
+import '../screens/shop_list_screen.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Review model
+// ─────────────────────────────────────────────────────────────────────────────
+class ShopReview {
+  final String id;
+  final String userName;
+  final String? userAvatar; // URL or null
+  final double rating;
+  final String comment;
+  final DateTime date;
+
+  const ShopReview({
+    required this.id,
+    required this.userName,
+    this.userAvatar,
+    required this.rating,
+    required this.comment,
+    required this.date,
+  });
+
+  factory ShopReview.fromJson(Map<String, dynamic> j) => ShopReview(
+        id: j['id'] ?? j['_id'] ?? '',
+        userName: j['user_name'] ?? j['username'] ?? 'User',
+        userAvatar: j['user_avatar'],
+        rating: ((j['rating'] ?? 0) as num).toDouble(),
+        comment: j['comment'] ?? j['review'] ?? '',
+        date: j['created_at'] != null
+            ? DateTime.tryParse(j['created_at'].toString()) ?? DateTime.now()
+            : DateTime.now(),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ShopService (singleton)
+// ─────────────────────────────────────────────────────────────────────────────
 class ShopService {
-  // Singleton
   ShopService._();
   static final ShopService instance = ShopService._();
 
   final _api = ApiClient();
 
-  // ── Category fallback map (resolved client-side from category_ids) ─────────
+  // ── Category fallback metadata ─────────────────────────────────────────────
   static const Map<int, _CatMeta> _catMeta = {
     1:  _CatMeta(Color(0xFFE8F5E9), Icons.local_offer_rounded),
     2:  _CatMeta(Color(0xFFE8F5E9), Icons.shopping_basket_rounded),
@@ -68,9 +88,7 @@ class ShopService {
     return _catMeta[ids.first] ?? const _CatMeta(Color(0xFFEEEEEE), Icons.store_rounded);
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
-
-  /// Returns all shops from the backend (GET /shops).
+  // ── Fetch all shops ────────────────────────────────────────────────────────
   Future<List<ShopItem>> fetchAllShops() async {
     try {
       final resp = await _api.get(AppConstants.shops);
@@ -84,7 +102,7 @@ class ShopService {
     return [];
   }
 
-  /// Returns shops filtered by category ID (GET /shops?category_id=X).
+  // ── Fetch by category ──────────────────────────────────────────────────────
   Future<List<ShopItem>> fetchShopsByCategory(int categoryId) async {
     try {
       final resp = await _api.get(
@@ -101,7 +119,62 @@ class ShopService {
     return [];
   }
 
-  /// Returns a single shop by ID (GET /shops/{id}).
+  // ── Fetch nearby shops by GPS ──────────────────────────────────────────────
+  /// [lat], [lng] — user's current coordinates
+  /// [radiusKm]   — search radius in km (default 4)
+  /// Backend: GET /shops/nearby?lat=X&lng=Y&radius_km=4
+  Future<List<ShopItem>> fetchNearbyShops({
+    required double lat,
+    required double lng,
+    double radiusKm = 4.0,
+  }) async {
+    try {
+      final resp = await _api.get(
+        AppConstants.shopsNearby,
+        queryParams: {
+          'lat': lat,
+          'lng': lng,
+          'radius_km': radiusKm,
+        },
+      );
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final list = resp.data['shops'] as List? ?? [];
+        return list.map((j) => _fromJson(j as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      debugPrint('ShopService.fetchNearbyShops error: $e');
+    }
+    return [];
+  }
+
+  // ── Fetch shops near a given location string (area-based) ─────────────────
+  /// Used in shop detail to fetch "Stores Nearby" in the same area.
+  /// Backend: GET /shops?area=Padi&exclude_id=xxx
+  Future<List<ShopItem>> fetchShopsNearArea({
+    required String area,
+    String? excludeId,
+    int limit = 5,
+  }) async {
+    try {
+      final resp = await _api.get(
+        AppConstants.shops,
+        queryParams: {
+          'area': area,
+          if (excludeId != null) 'exclude_id': excludeId,
+          'limit': limit,
+        },
+      );
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final list = resp.data['shops'] as List? ?? [];
+        return list.map((j) => _fromJson(j as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      debugPrint('ShopService.fetchShopsNearArea error: $e');
+    }
+    return [];
+  }
+
+  // ── Single shop by ID ──────────────────────────────────────────────────────
   Future<ShopItem?> fetchShopById(String id) async {
     try {
       final path = AppConstants.shopDetail.replaceFirst('{id}', id);
@@ -116,7 +189,7 @@ class ShopService {
     return null;
   }
 
-  /// Search shops by name or location (GET /shops/search?q=term).
+  // ── Search shops ───────────────────────────────────────────────────────────
   Future<List<ShopItem>> searchShops(String query) async {
     try {
       final resp = await _api.get(
@@ -133,19 +206,85 @@ class ShopService {
     return [];
   }
 
-  // ── JSON → ShopItem ────────────────────────────────────────────────────────
+  // ── Fetch reviews for a shop ───────────────────────────────────────────────
+  /// GET /shops/{id}/reviews
+  /// Response: { reviews: [...], avg_rating: 4.5, total: 120 }
+  Future<({List<ShopReview> reviews, double avgRating, int total})>
+      fetchShopReviews(String shopId) async {
+    try {
+      final path = AppConstants.shopReviews.replaceFirst('{id}', shopId);
+      final resp = await _api.get(path);
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final list = (resp.data['reviews'] as List? ?? [])
+            .map((j) => ShopReview.fromJson(Map<String, dynamic>.from(j as Map)))
+            .toList();
+        final avg = ((resp.data['avg_rating'] ?? 0) as num).toDouble();
+        final total = (resp.data['total'] ?? list.length) as int;
+        return (reviews: list, avgRating: avg, total: total);
+      }
+    } catch (e) {
+      debugPrint('ShopService.fetchShopReviews error: $e');
+    }
+    return (reviews: <ShopReview>[], avgRating: 0.0, total: 0);
+  }
 
+  // ── Submit a review ────────────────────────────────────────────────────────
+  /// POST /shops/{id}/reviews   body: { rating, comment }
+  Future<bool> submitReview({
+    required String shopId,
+    required double rating,
+    required String comment,
+  }) async {
+    try {
+      final path = AppConstants.shopReviews.replaceFirst('{id}', shopId);
+      final resp = await _api.post(
+        path,
+        data: {'rating': rating, 'comment': comment},
+      );
+      return resp.statusCode == 200 || resp.statusCode == 201;
+    } catch (e) {
+      debugPrint('ShopService.submitReview error: $e');
+      return false;
+    }
+  }
+
+  // ── Check redeem eligibility ───────────────────────────────────────────────
+  /// POST /redeem/eligibility   body: { shop_id, lat, lng }
+  /// Response: { eligible: bool, discount: int, message: str }
+  Future<({bool eligible, int discount, String message})>
+      checkRedeemEligibility({
+    required String shopId,
+    double? lat,
+    double? lng,
+  }) async {
+    try {
+      final resp = await _api.post(
+        AppConstants.redeemEligibility,
+        data: {
+          'shop_id': shopId,
+          if (lat != null) 'lat': lat,
+          if (lng != null) 'lng': lng,
+        },
+      );
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final eligible = resp.data['eligible'] as bool? ?? false;
+        final discount = (resp.data['discount'] ?? 0) as int;
+        final message  = resp.data['message'] as String? ?? '';
+        return (eligible: eligible, discount: discount, message: message);
+      }
+    } catch (e) {
+      debugPrint('ShopService.checkRedeemEligibility error: $e');
+    }
+    return (eligible: false, discount: 0, message: 'Could not check eligibility');
+  }
+
+  // ── JSON → ShopItem ────────────────────────────────────────────────────────
   ShopItem _fromJson(Map<String, dynamic> j) {
     final categoryIds = (j['category_ids'] as List? ?? [])
         .map((e) => (e as num).toInt())
         .toList();
     final meta = _metaFor(categoryIds);
 
-    // Support both explicit booleans (has_rewards / has_redeem) and the
-    // shop_type string that the website registration uses:
-    //   "reward"  → hasRewards=true,  hasRedeem=false
-    //   "redeem"  → hasRewards=false, hasRedeem=true
-    //   "both"    → hasRewards=true,  hasRedeem=true
     final shopType = j['shop_type'] as String?;
     final bool hasRewards;
     final bool hasRedeem;
@@ -157,33 +296,35 @@ class ShopService {
       hasRedeem  = j['has_redeem']  as bool? ?? true;
     }
 
-    // Distance string from backend, e.g. "6 km" — empty if not provided
     final rawDist = j['distance'];
     final distance = rawDist != null ? rawDist.toString() : '';
 
     return ShopItem(
-      id: j['id'] as String? ?? '',
-      name: j['name'] as String? ?? '',
-      location: j['location'] as String? ?? '',
-      categoryIds: categoryIds,
-      discount: (j['discount'] as num?)?.toInt() ?? 0,
-      rating: (j['rating'] as num?)?.toDouble() ?? 0.0,
-      addedDaysAgo: (j['added_days_ago'] as num?)?.toInt() ?? 0,
-      imageData: j['image_data'] as String?,   // base64 bytes from MongoDB
-      imageName: j['image_name'] as String? ?? '',
+      id:           j['id']            as String? ?? '',
+      name:         j['name']          as String? ?? '',
+      location:     j['location']      as String? ?? '',
+      categoryIds:  categoryIds,
+      discount:     (j['discount']     as num?)?.toInt()    ?? 0,
+      rating:       (j['rating']       as num?)?.toDouble() ?? 0.0,
+      reviewCount:  (j['review_count'] as num?)?.toInt()    ?? 0,
+      addedDaysAgo: (j['added_days_ago'] as num?)?.toInt()  ?? 0,
+      imageData:    j['image_data']    as String?,
+      imageName:    j['image_name']    as String? ?? '',
       fallbackColor: meta.color,
-      fallbackIcon: meta.icon,
-      hasRewards: hasRewards,
-      hasRedeem: hasRedeem,
-      address: j['address'] as String? ?? '',
-      timing: j['timing'] as String? ?? '',
-      phone: j['phone'] as String? ?? '',
-      distance: distance,
+      fallbackIcon:  meta.icon,
+      hasRewards:    hasRewards,
+      hasRedeem:     hasRedeem,
+      address:       j['address'] as String? ?? '',
+      timing:        j['timing']  as String? ?? '',
+      phone:         j['phone']   as String? ?? '',
+      email:         j['email']   as String? ?? '',
+      distance:      distance,
+      lat:           (j['lat']  as num?)?.toDouble(),
+      lng:           (j['lng']  as num?)?.toDouble(),
     );
   }
 }
 
-// Helper: category UI metadata (color + icon) resolved client-side
 class _CatMeta {
   final Color color;
   final IconData icon;

@@ -3,13 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart';
+
 import 'features/auth/providers/auth_provider.dart';
 import 'features/claims/providers/claims_provider.dart';
 import 'features/dashboard/providers/dashboard_provider.dart';
 import 'features/notifications/providers/notification_provider.dart';
 import 'features/policies/providers/policy_provider.dart';
 import 'features/profile/providers/profile_provider.dart';
+import 'features/bill_reader/providers/bill_reward_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,17 +58,23 @@ class _ClaimitAppState extends State<ClaimitApp> {
       providers: [
         // Use .value so the already-created instance is shared with the tree.
         ChangeNotifierProvider.value(value: _authProvider),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ClaimsProvider()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => PolicyProvider()),
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
+        ChangeNotifierProvider(create: (_) => BillRewardProvider()),
       ],
-      child: MaterialApp.router(
-        title: 'Claimit',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        routerConfig: _router,
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp.router(
+          title: 'Claimit',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeProvider.themeMode,
+          routerConfig: _router,
+        ),
       ),
     );
   }

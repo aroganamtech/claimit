@@ -101,6 +101,8 @@ SHOPS_SEED = [
         "address": "89, Industrial Estate, Padi, Chennai - 600050",
         "timing": "Daily: 8am – 9pm",
         "phone": "+91 44 2651 1234",
+        "lat": 13.1197,
+        "lng": 80.2183,
     },
     {
         "name": "Annachi Supermarket",
@@ -115,6 +117,8 @@ SHOPS_SEED = [
         "address": "12, 3rd Street, Padi, Chennai - 600050",
         "timing": "Daily: 7am – 10pm",
         "phone": "+91 98400 22222",
+        "lat": 13.1197,
+        "lng": 80.2183,
     },
     {
         "name": "Fresh Basket",
@@ -129,6 +133,8 @@ SHOPS_SEED = [
         "address": "45, 6th Avenue, Anna Nagar, Chennai - 600040",
         "timing": "Daily: 6am – 10pm",
         "phone": "+91 98765 33333",
+        "lat": 13.0839,
+        "lng": 80.2101,
     },
     {
         "name": "Nilgiris",
@@ -143,6 +149,8 @@ SHOPS_SEED = [
         "address": "140, Usman Road, T. Nagar, Chennai - 600017",
         "timing": "Daily: 9am – 9pm",
         "phone": "+91 44 2434 9999",
+        "lat": 13.035,
+        "lng": 80.2337,
     },
     {
         "name": "MedPlus Pharmacy",
@@ -157,6 +165,8 @@ SHOPS_SEED = [
         "address": "7, Arcot Road, Porur, Chennai - 600116",
         "timing": "Daily: 8am – 10pm",
         "phone": "+91 1800 102 6454",
+        "lat": 13.0359,
+        "lng": 80.1577,
     },
     {
         "name": "Apollo Pharmacy",
@@ -171,6 +181,8 @@ SHOPS_SEED = [
         "address": "100 Feet Road, Velachery, Chennai - 600042",
         "timing": "Daily: 8am – 11pm",
         "phone": "+91 1800 180 0104",
+        "lat": 12.979,
+        "lng": 80.2181,
     },
     {
         "name": "Naturals Salon",
@@ -185,6 +197,8 @@ SHOPS_SEED = [
         "address": "22, Khader Nawaz Khan Rd, Nungambakkam, Chennai - 600006",
         "timing": "Daily: 9am – 8pm",
         "phone": "+91 44 4390 1234",
+        "lat": 13.0569,
+        "lng": 80.2425,
     },
     {
         "name": "Green Trends Salon",
@@ -199,6 +213,8 @@ SHOPS_SEED = [
         "address": "16, 4th Main Road, Adyar, Chennai - 600020",
         "timing": "Daily: 10am – 8pm",
         "phone": "+91 98400 88888",
+        "lat": 13.0012,
+        "lng": 80.2565,
     },
     {
         "name": "Fitness First",
@@ -213,6 +229,8 @@ SHOPS_SEED = [
         "address": "100 Feet Road, Velachery, Chennai - 600042",
         "timing": "Mon–Sat: 5am – 11pm | Sun: 6am – 9pm",
         "phone": "+91 98400 55555",
+        "lat": 12.979,
+        "lng": 80.2181,
     },
     {
         "name": "Cult.fit",
@@ -227,6 +245,8 @@ SHOPS_SEED = [
         "address": "12, 3rd Cross, Koramangala, Chennai",
         "timing": "Mon–Sun: 5am – 11pm",
         "phone": "+91 98400 77777",
+        "lat": 12.9352,
+        "lng": 77.6245,
     },
     {
         "name": "KFC",
@@ -241,6 +261,8 @@ SHOPS_SEED = [
         "address": "3rd Avenue, Anna Nagar, Chennai - 600040",
         "timing": "Daily: 11am – 11pm",
         "phone": "+91 98765 11111",
+        "lat": 13.0839,
+        "lng": 80.2101,
     },
     {
         "name": "Domino's Pizza",
@@ -255,6 +277,8 @@ SHOPS_SEED = [
         "address": "45, Industrial Estate, Padi, Chennai - 600050",
         "timing": "Daily: 11am – 11:30pm",
         "phone": "+91 1800 208 1234",
+        "lat": 13.1197,
+        "lng": 80.2183,
     },
     {
         "name": "Indian Coffee House",
@@ -269,6 +293,8 @@ SHOPS_SEED = [
         "address": "Cathedral Road, Egmore, Chennai - 600008",
         "timing": "Daily: 7am – 9pm",
         "phone": "+91 44 2811 5678",
+        "lat": 13.0782,
+        "lng": 80.2603,
     },
     {
         "name": "Brew & Bite Café",
@@ -283,6 +309,8 @@ SHOPS_SEED = [
         "address": "2nd Avenue, Besant Nagar, Chennai - 600090",
         "timing": "Daily: 8am – 10pm",
         "phone": "+91 98400 14141",
+        "lat": 12.9997,
+        "lng": 80.2705,
     },
     {
         "name": "Shoppers Stop",
@@ -297,6 +325,8 @@ SHOPS_SEED = [
         "address": "Khader Nawaz Khan Rd, Nungambakkam, Chennai - 600006",
         "timing": "Daily: 10am – 10pm",
         "phone": "+91 44 4215 6789",
+        "lat": 13.0569,
+        "lng": 80.2425,
     },
     {
         "name": "Lifestyle",
@@ -311,6 +341,8 @@ SHOPS_SEED = [
         "address": "5th Avenue, Anna Nagar, Chennai - 600040",
         "timing": "Daily: 10am – 9pm",
         "phone": "+91 44 4215 4567",
+        "lat": 13.0839,
+        "lng": 80.2101,
     },
     {
         "name": "Poorvika Mobiles",
@@ -325,6 +357,8 @@ SHOPS_SEED = [
         "address": "110, Usman Road, T. Nagar, Chennai - 600017",
         "timing": "Daily: 10am – 9pm",
         "phone": "+91 44 4218 1111",
+        "lat": 13.035,
+        "lng": 80.2337,
     },
     {
         "name": "Croma",
@@ -339,6 +373,8 @@ SHOPS_SEED = [
         "address": "Plot 5, 5th Avenue, Anna Nagar, Chennai - 600040",
         "timing": "Mon–Sat: 9am – 9pm",
         "phone": "+91 98400 18181",
+        "lat": 13.0839,
+        "lng": 80.2101,
     },
     {
         "name": "Landmark Books",
@@ -353,6 +389,8 @@ SHOPS_SEED = [
         "address": "Spencer Plaza, Anna Salai, Chennai - 600002",
         "timing": "Daily: 10am – 9pm",
         "phone": "+91 44 4205 9595",
+        "lat": 13.0569,
+        "lng": 80.2425,
     },
     {
         "name": "Smile Dentist",
@@ -367,6 +405,8 @@ SHOPS_SEED = [
         "address": "12, 3rd Street, Padi, Chennai - 600050",
         "timing": "Mon–Sat: 9am – 8pm",
         "phone": "+91 98765 43210",
+        "lat": 13.1197,
+        "lng": 80.2183,
     },
 ]
 

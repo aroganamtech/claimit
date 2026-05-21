@@ -1,3 +1,4 @@
+import 'dart:convert';
 // import 'dart:async';
 // import 'package:flutter/material.dart';
 // import 'package:cached_network_image/cached_network_image.dart';
@@ -1108,9 +1109,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../deals/models/deal_model.dart';
+import '../../deals/services/deal_service.dart';
 import '../../shops/models/shop_category.dart';
+import '../../shops/screens/shop_list_screen.dart';
+import '../../shops/services/shop_service.dart';
+import '../../profile/providers/profile_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock data  (replace with live API calls once backend is wired up)
@@ -1384,6 +1390,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isNearby = true;
   int _selectedCategory = 0;
 
+  // API-loaded deals
+  List<DealData> _nearbyDealsList = [];
+  List<DealData> _brandDealsList = [];
+  bool _loadingDeals = true;
+
+  // GPS-based nearby shops (within 4 km)
+  List<ShopItem> _nearbyShops = [];
+  bool _loadingNearbyShops = false;
+
   @override
   void initState() {
     super.initState();
@@ -1397,7 +1412,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
         curve: Curves.easeInOut,
       );
     });
+    _loadDeals();
+    _loadNearbyShopsFromGPS();
   }
+
+  /// Fetch nearby + brand deals from the backend
+  Future<void> _loadDeals() async {
+    setState(() => _loadingDeals = true);
+    final nearby = await DealService.instance.fetchNearbyDeals();
+    final brand  = await DealService.instance.fetchBrandDeals();
+    if (!mounted) return;
+    setState(() {
+      _nearbyDealsList = nearby.map(_dtoToDealData).toList();
+      _brandDealsList  = brand.map(_dtoToDealData).toList();
+      _loadingDeals    = false;
+    });
+  }
+
+  /// Fetch shops within 4 km of the user's GPS location
+  Future<void> _loadNearbyShopsFromGPS() async {
+    setState(() => _loadingNearbyShops = true);
+    try {
+      // Uses LocationService: handles service-off, deniedForever, timeout,
+      // and getLastKnownPosition fallback automatically.
+      final pos = await LocationService.getPosition(
+        context: mounted ? context : null,
+      );
+      if (pos != null) {
+        final shops = await ShopService.instance.fetchNearbyShops(
+          lat: pos.latitude,
+          lng: pos.longitude,
+          radiusKm: 4.0,
+        );
+        if (mounted) setState(() => _nearbyShops = shops);
+      }
+    } catch (e) {
+      debugPrint('Dashboard GPS error: $e');
+    }
+    if (mounted) setState(() => _loadingNearbyShops = false);
+  }
+
+  /// Convert DealDto → DealData for display
+  static DealData _dtoToDealData(DealDto d) => DealData(
+        id: d.id,
+        name: d.name,
+        location: d.location,
+        offer: d.offer,
+        distance: d.distance,
+        type: d.type,
+        imageUrl: d.imageUrl,
+        fallbackColor: const Color(0xFFEEEEEE),
+        fallbackIcon: Icons.store_rounded,
+        description: d.description,
+        address: d.address,
+        phone: d.phone,
+        timing: d.timing,
+        rating: d.rating,
+        reviews: d.reviews,
+      );
 
   @override
   void dispose() {
@@ -1411,7 +1483,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   return PreferredSize(
     preferredSize: const Size.fromHeight(70),
     child: Container(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -1467,10 +1539,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ? a.user!.location!
                             : 'Select Area',
                       ),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(width: 2),
@@ -1492,10 +1564,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 child: IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.search,
                     size: 20,
-                    color: Color(0xFF1565C0),
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   onPressed: () => context.push('/search'),
                   padding: EdgeInsets.zero,
@@ -1507,10 +1579,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // ── Notification ───────────────────
               GestureDetector(
                 onTap: () => context.push('/notifications'),
-                child: const Icon(
+                child: Icon(
                   Icons.notifications_none_rounded,
                   size: 26,
-                  color: Color(0xFF1565C0),
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ],
@@ -1523,10 +1595,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final deals = _isNearby ? _nearbyDeals : _brandDeals;
+    // Use API deals (fallback to static mock if API not yet loaded)
+    final nearbySource = _nearbyDealsList.isNotEmpty ? _nearbyDealsList : _nearbyDeals;
+    final brandSource  = _brandDealsList.isNotEmpty  ? _brandDealsList  : _brandDeals;
+    final deals = _isNearby ? nearbySource : brandSource;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
       appBar: _buildAppBar(),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -1591,13 +1665,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Deal cards ────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: deals.map((d) => _DealCard(deal: d)).toList(),
+            // ── Deal cards (from API) ─────────────────────────────────────
+            if (_loadingDeals)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                    child: CircularProgressIndicator(
+                        color: Color(0xFF2563EB))),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: deals.map((d) => _DealCard(deal: d)).toList(),
+                ),
               ),
-            ),
+
+            // ── GPS Nearby Shops (within 4 km) ────────────────────────────
+            if (_isNearby) ...[
+              const SizedBox(height: 8),
+              if (_loadingNearbyShops)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF2563EB), strokeWidth: 2)),
+                )
+              else if (_nearbyShops.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  child: Row(
+                    children: [
+                      const Text('Shops Near You',
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A1A))),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => context.push('/shops',
+                            extra: const ShopCategory(
+                              id: -1,
+                              name: 'Nearby Shops',
+                              icon: Icons.store_rounded,
+                              color: Color(0xFF2563EB),
+                            )),
+                        child: const Text('See All',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF2563EB),
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 130,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _nearbyShops.length,
+                    itemBuilder: (_, i) =>
+                        _NearbyShopChip(shop: _nearbyShops[i]),
+                  ),
+                ),
+              ],
+            ],
 
             const SizedBox(height: 90),
           ],
@@ -1672,6 +1805,7 @@ class _CategoryRow extends StatelessWidget {
   static const int _perPage = 5;
 
   Widget _buildIcon({
+    required BuildContext context,
     required _CatData cat,
     required int globalIndex,
     required bool active,
@@ -1688,7 +1822,7 @@ class _CategoryRow extends StatelessWidget {
               height: 56,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 border: Border.all(
                   color: active ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB),
                   width: active ? 2 : 1,
@@ -1734,7 +1868,7 @@ class _CategoryRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 height: 1.2,
-                color: active ? const Color(0xFF2563EB) : Colors.black87,
+                color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
@@ -1756,7 +1890,9 @@ class _CategoryRow extends StatelessWidget {
               height: 56,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFFEFF6FF),
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF1E3A6E)
+                    : const Color(0xFFEFF6FF),
                 border: Border.all(color: const Color(0xFF2563EB)),
               ),
               child: const Icon(
@@ -1806,6 +1942,7 @@ class _CategoryRow extends StatelessWidget {
                   final globalIndex = start + i;
                   final cat = pageItems[i];
                   return _buildIcon(
+                    context: context,
                     cat: cat,
                     globalIndex: globalIndex,
                     active: selected == globalIndex,
@@ -1851,7 +1988,7 @@ class _DealsToggle extends StatelessWidget {
       height: 52,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -1902,7 +2039,7 @@ class _ToggleBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: active ? Colors.white : const Color(0xFF6B7280),
+              color: active ? Colors.white : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             ),
           ),
         ),
@@ -1924,17 +2061,18 @@ class _DealCard extends StatefulWidget {
 }
 
 class _DealCardState extends State<_DealCard> {
-  bool _fav = false;
-
   @override
   Widget build(BuildContext context) {
     final d = widget.deal;
+    final profile = context.watch<ProfileProvider>();
+    final dealId = d.id.isNotEmpty ? d.id : d.name;
+    final isFav = profile.isLikedDeal(dealId);
     return GestureDetector(
       onTap: () => context.push('/deal-detail', extra: d),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -1987,21 +2125,27 @@ class _DealCardState extends State<_DealCard> {
                           Expanded(
                             child: Text(
                               d.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF111827),
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           GestureDetector(
-                            onTap: () => setState(() => _fav = !_fav),
+                            onTap: () => context.read<ProfileProvider>().toggleDealFavourite(
+                              dealId,
+                              name: d.name,
+                              location: d.location,
+                              imageUrl: d.imageUrl,
+                              offer: d.offer,
+                            ),
                             child: Icon(
-                              _fav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                              isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                               size: 20,
-                              color: _fav ? Colors.red : const Color(0xFF9CA3AF),
+                              color: isFav ? Colors.red : const Color(0xFF9CA3AF),
                             ),
                           ),
                         ],
@@ -2034,7 +2178,9 @@ class _DealCardState extends State<_DealCard> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF1E3A6E)
+                              : const Color(0xFFEFF6FF),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -2087,20 +2233,110 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 10,
-          color: Color(0xFF6B7280),
-          fontWeight: FontWeight.w500,
+    return Builder(
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF2A2A3A)
+              : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Horizontal nearby-shop chip card (used in home screen GPS row)
+// ─────────────────────────────────────────────────────────────────────────────
+class _NearbyShopChip extends StatelessWidget {
+  final ShopItem shop;
+  const _NearbyShopChip({required this.shop});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/shop-detail', extra: shop),
+      child: Container(
+        width: 140,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.07),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
+              ),
+              child: SizedBox(
+                height: 72,
+                width: double.infinity,
+                child: shop.imageData != null && shop.imageData!.isNotEmpty
+                    ? Image.memory(
+                        base64Decode(shop.imageData!),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _fallback(shop),
+                      )
+                    : _fallback(shop),
+              ),
+            ),
+            // Info
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(shop.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Color(0xFF111827))),
+                  const SizedBox(height: 2),
+                  Text(
+                    shop.distance.isNotEmpty
+                        ? shop.distance
+                        : shop.location.split(',').first,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 10, color: Color(0xFF2563EB),
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback(ShopItem s) => Container(
+        color: s.fallbackColor,
+        alignment: Alignment.center,
+        child: Icon(s.fallbackIcon, color: Colors.grey.shade400, size: 22),
+      );
 }

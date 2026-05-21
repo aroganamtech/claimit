@@ -18,8 +18,11 @@ class ShopCreate(BaseModel):
     address: str = ''
     timing: str = ''
     phone: str = ''
-    image_name: str = ''   # filename in uploads/shop_images/ e.g. "img1.jpg"
+    email: str = ''
+    image_name: str = ''
     added_days_ago: int = 0
+    lat: Optional[float] = None   # GPS latitude
+    lng: Optional[float] = None   # GPS longitude
 
 
 class ShopResponse(BaseModel):
@@ -29,14 +32,41 @@ class ShopResponse(BaseModel):
     category_ids: List[int]
     discount: int
     rating: float
+    review_count: int = 0
     has_rewards: bool
     has_redeem: bool
     address: str = ''
     timing: str = ''
     phone: str = ''
+    email: str = ''
     image_name: str = ''
-    image_data: Optional[str] = None   # base64-encoded bytes of the image
+    image_data: Optional[str] = None
     added_days_ago: int = 0
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    distance: Optional[str] = None  # computed at query time e.g. "3.2 km"
+    created_at: Optional[datetime] = None
+
+    model_config = {"populate_by_name": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Review models
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ReviewCreate(BaseModel):
+    rating: float = Field(..., ge=1, le=5)
+    comment: str = Field(..., min_length=1, max_length=1000)
+
+
+class ReviewResponse(BaseModel):
+    id: Optional[str] = None
+    shop_id: str
+    user_id: str
+    user_name: str = ''
+    user_avatar: Optional[str] = None
+    rating: float
+    comment: str
     created_at: Optional[datetime] = None
 
     model_config = {"populate_by_name": True}
@@ -52,7 +82,7 @@ class RewardCreate(BaseModel):
     description: str
     points_required: int
     discount_percent: int
-    valid_days: int = 30    # days from now until expiry
+    valid_days: int = 30
 
 
 class RewardResponse(BaseModel):
@@ -85,9 +115,19 @@ class RedeemResponse(BaseModel):
     shop_name: Optional[str] = None
     reward_id: str
     reward_title: Optional[str] = None
-    status: str = 'pending'   # pending | approved | used | expired
+    status: str = 'pending'
     coupon_code: str = ''
     redeemed_at: Optional[datetime] = None
     used_at: Optional[datetime] = None
 
     model_config = {"populate_by_name": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Eligibility models
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EligibilityRequest(BaseModel):
+    shop_id: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None

@@ -379,17 +379,119 @@
 // }
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../../shops/models/shop_category.dart';
 
 /// The persistent shell that wraps every main tab.
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   final Widget child;
   const HomeScreen({super.key, required this.child});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Pre-load liked shop IDs and show account-linking nudge on first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProfileProvider>().fetchLikedIds();
+      context.read<ProfileProvider>().fetchLikedDealIds();
+      _maybeShowAccountLinkPopup();
+    });
+  }
+
+  void _maybeShowAccountLinkPopup() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.shouldShowAccountLinkPopup) return;
+    auth.markAccountLinkPopupShown(); // mark immediately so it won't repeat
+
+    final viaPhone = auth.loggedInViaPhone;
+    final title = viaPhone ? 'Add Email for Email Login' : 'Add Mobile for Phone Login';
+    final message = viaPhone
+        ? 'You logged in with your mobile number. Add your email address in your profile so you can also log in with email next time.'
+        : 'You logged in with your email. Add your mobile number in your profile so you can also log in with your phone number next time.';
+    final icon = viaPhone ? Icons.email_outlined : Icons.phone_outlined;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 32, color: AppTheme.primaryColor),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.person_outline, size: 18),
+                label: const Text('Go to Profile'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  context.push('/profile/edit');
+                },
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text(
+                'Maybe Later',
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   int _selectedIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
     if (loc.startsWith('/home')) return 0;
+    if (loc.startsWith('/redeem-zone')) return 1;
     if (loc.startsWith('/claims') && !loc.contains('new')) return 1;
     if (loc.startsWith('/notifications')) return 2;
     if (loc.startsWith('/profile')) return 3;
@@ -411,8 +513,7 @@ class HomeScreen extends StatelessWidget {
     final sel = _selectedIndex(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: child,
+      body: widget.child,
 
       // ── Yellow centred FAB ─────────────────────────────────────────────
       floatingActionButton: FloatingActionButton(
@@ -433,7 +534,7 @@ class HomeScreen extends StatelessWidget {
       bottomNavigationBar: BottomAppBar(
         notchMargin: 8.0,
         shape: const CircularNotchedRectangle(),
-        color: const Color.fromARGB(255, 20, 143, 208),
+        color: const Color.fromARGB(255, 20, 143, 208), // kept blue as brand color
         elevation: 8,
         padding: EdgeInsets.zero,
         height: 64,
@@ -452,11 +553,11 @@ class HomeScreen extends StatelessWidget {
                     onTap: () => context.go('/home'),
                   ),
                   _NavItem(
-                    icon: Icons.grid_view_outlined,
-                    activeIcon: Icons.grid_view_rounded,
-                    label: 'Browse',
+                    icon: Icons.storefront_outlined,
+                    activeIcon: Icons.storefront_rounded,
+                    label: 'Redeem+',
                     isSelected: sel == 1,
-                    onTap: () => context.go('/claims'),
+                    onTap: () => context.go('/redeem-zone'),
                   ),
                 ],
               ),
@@ -469,11 +570,11 @@ class HomeScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _NavItem(
-                    icon: Icons.notifications_outlined,
-                    activeIcon: Icons.notifications_rounded,
-                    label: 'Alerts',
-                    isSelected: sel == 2,
-                    onTap: () => context.go('/notifications'),
+                    icon: Icons.qr_code_scanner_rounded,
+                    activeIcon: Icons.qr_code_scanner_rounded,
+                    label: 'Scan Bill',
+                    isSelected: false,
+                    onTap: () => context.push('/bill-reader'),
                   ),
                   _NavItem(
                     icon: Icons.person_outline_rounded,
@@ -547,9 +648,9 @@ class _FeaturedZonesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
@@ -569,12 +670,12 @@ class _FeaturedZonesSheet extends StatelessWidget {
           // ── Title row ─────────────────────────────────────────────────
           Row(
             children: [
-              const Text(
+              Text(
                 'Featured Zones',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E40AF),
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 6),
@@ -714,10 +815,10 @@ class _ZoneTile extends StatelessWidget {
           Text(
             zone.label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
+              color: Theme.of(context).colorScheme.onSurface,
               height: 1.2,
             ),
           ),
