@@ -85,6 +85,9 @@ class AppConstants {
   static const String classifieds    = '/classifieds';
   static const String classifiedDetail = '/classifieds/{id}';
 
+  // Bill scan
+  static const String billScan = '/bill/scan';
+
   // ── Storage Keys ──────────────────────────────────────────────────────────
   static const String tokenKey        = 'access_token';
   static const String refreshTokenKey = 'refresh_token';

@@ -81,26 +81,20 @@ class BillRewardWalletScreen extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       height: 44,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Redeem feature coming soon!'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push('/redeem-zone'),
+                        icon: const Icon(Icons.storefront_rounded, size: 18),
+                        label: const Text(
+                          'Redeem Now',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: const BorderSide(
                               color: Colors.white70, width: 1.5),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(24)),
-                        ),
-                        child: const Text(
-                          'Redeem Now',
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),

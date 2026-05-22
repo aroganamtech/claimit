@@ -37,6 +37,7 @@ import '../../features/classifieds/screens/classified_detail_screen.dart';
 import '../../features/classifieds/models/classified_post.dart';
 // Bill Reader flow
 import '../../features/bill_reader/screens/bill_reader_intro_screen.dart';
+import '../../features/bill_reader/screens/bill_confirm_screen.dart';
 // Redeem flow
 import '../../features/shops/screens/shop_list_screen.dart' show ShopItem;
 import '../../features/shops/screens/redeem_loading_screen.dart';
@@ -195,7 +196,15 @@ class AppRouter {
         ),
         GoRoute(
           path: '/bill-reader/scanning',
-          builder: (context, state) => const BillScanningProgressScreen(),
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>? ?? {};
+            final imagePath = extra['imagePath'] as String? ?? '';
+            return BillScanningProgressScreen(imagePath: imagePath);
+          },
+        ),
+        GoRoute(
+          path: '/bill-reader/confirm',
+          builder: (context, state) => const BillConfirmScreen(),
         ),
         GoRoute(
           path: '/bill-reader/success',

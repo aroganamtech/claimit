@@ -1,11 +1,20 @@
+import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:provider/provider.dart';
 import '../providers/bill_reward_provider.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BillScanningProgressScreen
+// Runs real OCR on the captured bill image, shows animated progress,
+// then pushes to BillConfirmScreen with the extracted total.
+// ─────────────────────────────────────────────────────────────────────────────
+
 class BillScanningProgressScreen extends StatefulWidget {
-  const BillScanningProgressScreen({super.key});
+  final String imagePath;
+  const BillScanningProgressScreen({super.key, required this.imagePath});
 
   @override
   State<BillScanningProgressScreen> createState() =>
@@ -20,14 +29,17 @@ class _BillScanningProgressScreenState
   late AnimationController _progressCtrl;
   late Animation<double> _progressAnim;
 
-  final List<String> _steps = [
-    'Upload or scan the shop bill',
-    'The app will auto-read Shop Name and Bill Amount',
-    'If the bill is long (up to 50cm), the app reads full bill',
-  ];
-
   int _visibleSteps = 0;
   late Timer _stepTimer;
+
+  final List<String> _steps = [
+    'Reading bill image…',
+    'Detecting text with OCR…',
+    'Extracting total amount…',
+  ];
+
+  double? _extractedTotal;
+  bool _ocrDone = false;
 
   @override
   void initState() {
@@ -35,21 +47,16 @@ class _BillScanningProgressScreenState
 
     _progressCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3200),
+      duration: const Duration(milliseconds: 3000),
     );
     _progressAnim = CurvedAnimation(
-      parent: _progressCtrl,
-      curve: Curves.easeInOut,
-    );
+        parent: _progressCtrl, curve: Curves.easeInOut);
     _progressCtrl.forward();
 
-    // Reveal checklist steps one by one
+    // Show checklist steps
     int step = 0;
-    _stepTimer = Timer.periodic(const Duration(milliseconds: 900), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
+    _stepTimer = Timer.periodic(const Duration(milliseconds: 800), (t) {
+      if (!mounted) { t.cancel(); return; }
       setState(() {
         if (step < _steps.length) {
           _visibleSteps = step + 1;
@@ -60,13 +67,8 @@ class _BillScanningProgressScreenState
       });
     });
 
-    // Navigate to success after scanning completes
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      if (mounted) {
-        context.read<BillRewardProvider>().claimReward();
-        context.pushReplacement('/bill-reader/success');
-      }
-    });
+    // Run OCR
+    _runOcr();
   }
 
   @override
@@ -75,6 +77,67 @@ class _BillScanningProgressScreenState
     _stepTimer.cancel();
     super.dispose();
   }
+
+  // ── OCR ────────────────────────────────────────────────────────────────────
+
+  Future<void> _runOcr() async {
+    double? total;
+    try {
+      final inputImage = InputImage.fromFilePath(widget.imagePath);
+      final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final result = await recognizer.processImage(inputImage);
+      await recognizer.close();
+      total = _extractTotal(result.text);
+    } catch (e) {
+      debugPrint('OCR error: $e');
+    }
+
+    // Wait at least enough for the animation to look complete
+    await Future.delayed(const Duration(milliseconds: 3200));
+    if (!mounted) return;
+
+    setState(() {
+      _extractedTotal = total;
+      _ocrDone = true;
+    });
+
+    // Populate provider with real (or fallback) data
+    context.read<BillRewardProvider>().setScanResult(
+      totalAmount: total,
+      imagePath: widget.imagePath,
+    );
+
+    // Push to confirm screen
+    context.pushReplacement('/bill-reader/confirm');
+  }
+
+  /// Parse the highest-confidence total amount from OCR text.
+  double? _extractTotal(String text) {
+    // Ordered by specificity — first match wins
+    final patterns = [
+      r'(?:grand\s*total|net\s*total|net\s*amount|total\s*amount|total\s*bill|bill\s*total|amount\s*due|amount\s*payable)\s*[:\s]*[₹rs\.]*\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+      r'(?:total)\s*[:\s]*[₹rs\.]*\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+      r'[₹]\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+    ];
+
+    double? best;
+    for (final pattern in patterns) {
+      final matches = RegExp(pattern, caseSensitive: false)
+          .allMatches(text);
+      for (final m in matches) {
+        final raw = m.group(1)!.replaceAll(',', '');
+        final val = double.tryParse(raw);
+        // Ignore implausibly small or large amounts
+        if (val != null && val >= 10 && val <= 500000) {
+          if (best == null || val > best) best = val;
+        }
+      }
+      if (best != null) break; // use most-specific pattern's result
+    }
+    return best;
+  }
+
+  // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -89,20 +152,18 @@ class _BillScanningProgressScreenState
           onPressed: () => context.pop(),
         ),
         title: const Text(
-          'Bill Reader',
+          'Reading Bill',
           style: TextStyle(
               color: _blue, fontWeight: FontWeight.bold, fontSize: 18),
         ),
-        centerTitle: false,
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Title
             const Text(
-              'Scanning',
+              'Scanning…',
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
@@ -117,42 +178,43 @@ class _BillScanningProgressScreenState
               builder: (_, __) => ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: _progressAnim.value,
+                  value: _ocrDone ? 1.0 : _progressAnim.value,
                   minHeight: 7,
                   backgroundColor: const Color(0xFFE0E0E0),
-                  valueColor: const AlwaysStoppedAnimation<Color>(_blue),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(_blue),
                 ),
               ),
             ),
 
             const SizedBox(height: 28),
 
-            // Checklist items
+            // Checklist
             ..._steps.asMap().entries.map((e) {
               final visible = e.key < _visibleSteps;
+              final isDone = _ocrDone || e.key < _visibleSteps;
               return AnimatedOpacity(
                 opacity: visible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 400),
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: visible
+                          color: isDone
                               ? const Color(0xFFE8F5E9)
                               : const Color(0xFFF5F5F5),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: visible
+                            color: isDone
                                 ? const Color(0xFF4CAF50)
                                 : const Color(0xFFE0E0E0),
                           ),
                         ),
-                        child: visible
+                        child: isDone
                             ? const Icon(Icons.check_rounded,
                                 color: Color(0xFF4CAF50), size: 18)
                             : null,
@@ -173,27 +235,19 @@ class _BillScanningProgressScreenState
 
             const SizedBox(height: 16),
 
-            // Bill image placeholder
+            // Bill image preview
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=500&q=80',
+                child: Image.file(
+                  File(widget.imagePath),
                   fit: BoxFit.cover,
                   width: double.infinity,
                   errorBuilder: (_, __, ___) => Container(
                     color: const Color(0xFFF5F5F5),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.receipt_long_rounded,
-                              size: 60, color: Color(0xFFBDBDBD)),
-                          SizedBox(height: 8),
-                          Text('Bill preview',
-                              style: TextStyle(color: Color(0xFFBDBDBD))),
-                        ],
-                      ),
+                    child: const Center(
+                      child: Icon(Icons.receipt_long_rounded,
+                          size: 60, color: Color(0xFFBDBDBD)),
                     ),
                   ),
                 ),

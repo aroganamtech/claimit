@@ -48,6 +48,8 @@ dependencies:
   shimmer: ^3.0.0
   fluttertoast: ^9.0.0
   image_picker: ^1.2.2
+  camera: ^0.11.0+2
+  google_mlkit_text_recognition: ^0.13.1
   file_picker: ^8.0.3  # Updated to the latest version to fix Android namespace issue
   permission_handler: ^12.0.1
   smooth_page_indicator: ^2.0.1

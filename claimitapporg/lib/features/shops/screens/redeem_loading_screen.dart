@@ -34,7 +34,8 @@ class _RedeemLoadingScreenState extends State<RedeemLoadingScreen>
     'Checking Discount Offers',
   ];
 
-  Position? _position;
+  double? _posLat;
+  double? _posLng;
   bool _eligible = false;
   int _discount = 0;
   String _message = '';
@@ -53,9 +54,11 @@ class _RedeemLoadingScreenState extends State<RedeemLoadingScreen>
     // Step 1 — locate
     // LocationService handles: service-off dialog, deniedForever settings
     // dialog, 10 s timeout, and getLastKnownPosition fallback automatically.
-    _position = await LocationService.getPosition(
+    final pos = await LocationService.getPosition(
       context: mounted ? context : null,
     );
+    _posLat = pos?.latitude;
+    _posLng = pos?.longitude;
     await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
     setState(() => _doneSteps = 1);
@@ -68,8 +71,8 @@ class _RedeemLoadingScreenState extends State<RedeemLoadingScreen>
     // Step 3 — check discount eligibility via backend
     final result = await ShopService.instance.checkRedeemEligibility(
       shopId: widget.shop.id,
-      lat: _position?.latitude,
-      lng: _position?.longitude,
+      lat: _posLat,
+      lng: _posLng,
     );
     _eligible = result.eligible;
     _discount = result.discount > 0 ? result.discount : widget.shop.discount;
