@@ -77,7 +77,7 @@ class CategoriesScreen extends StatelessWidget {
             ),
             child: Row(
               children: const [
-                Icon(Icons.tune_rounded, size: 14, color: Color(0xFF374151)),
+                Icon(Icons.tune_rounded, size: 26, color: Color(0xFF374151)),
                 SizedBox(width: 4),
                 Text('Filter',
                     style: TextStyle(fontSize: 13, color: Color(0xFF374151))),
@@ -89,10 +89,10 @@ class CategoriesScreen extends StatelessWidget {
       body: GridView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 5,
+          crossAxisCount: 4,
           mainAxisSpacing: 20,
-          crossAxisSpacing: 4,
-          childAspectRatio: 0.72,
+          crossAxisSpacing: 8,
+          childAspectRatio: 0.75,
         ),
         itemCount: _allCategories.length,
         itemBuilder: (context, index) {
@@ -109,10 +109,12 @@ class CategoriesScreen extends StatelessWidget {
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 68,
+                  height: 68,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white,
@@ -128,7 +130,7 @@ class CategoriesScreen extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Icon(cat.icon, size: 26, color: cat.color),
+                      Icon(cat.icon, size: 32, color: cat.color),
                       if (cat.isNew)
                         Positioned(
                           top: 4,
@@ -154,14 +156,17 @@ class CategoriesScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  cat.label,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    height: 1.2,
-                    color: Colors.black87,
+                SizedBox(
+                  height: 32,
+                  child: Text(
+                    cat.label,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
               ],

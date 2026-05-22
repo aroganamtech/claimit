@@ -105,7 +105,7 @@ class DealDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       const Icon(Icons.directions_walk_rounded,
-                          size: 14, color: Color(0xFF2563EB)),
+                          size: 26, color: Color(0xFF2563EB)),
                       const SizedBox(width: 3),
                       Text(
                         d.distance,
@@ -238,7 +238,7 @@ class DealDetailScreen extends StatelessWidget {
                     child: ElevatedButton.icon(
                       onPressed: () {},
                       icon: const Icon(Icons.document_scanner_outlined,
-                          size: 20),
+                          size: 28),
                       label: const Text(
                         'Scan Bill & Earn Rewards',
                         style: TextStyle(

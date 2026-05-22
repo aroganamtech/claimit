@@ -82,12 +82,14 @@ class _BillScanningProgressScreenState
 
   Future<void> _runOcr() async {
     double? total;
+    String rawText = '';
     try {
       final inputImage = InputImage.fromFilePath(widget.imagePath);
       final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
       final result = await recognizer.processImage(inputImage);
       await recognizer.close();
-      total = _extractTotal(result.text);
+      rawText = result.text;
+      total = _extractTotal(rawText);
     } catch (e) {
       debugPrint('OCR error: $e');
     }
@@ -105,36 +107,121 @@ class _BillScanningProgressScreenState
     context.read<BillRewardProvider>().setScanResult(
       totalAmount: total,
       imagePath: widget.imagePath,
+      ocrText: rawText,
     );
 
     // Push to confirm screen
     context.pushReplacement('/bill-reader/confirm');
   }
 
-  /// Parse the highest-confidence total amount from OCR text.
-  double? _extractTotal(String text) {
-    // Ordered by specificity — first match wins
-    final patterns = [
-      r'(?:grand\s*total|net\s*total|net\s*amount|total\s*amount|total\s*bill|bill\s*total|amount\s*due|amount\s*payable)\s*[:\s]*[₹rs\.]*\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-      r'(?:total)\s*[:\s]*[₹rs\.]*\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-      r'[₹]\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+  /// Parse the total amount from OCR text.
+  /// Handles: printed receipts, handwritten text, = signs, spaced numbers, etc.
+  double? _extractTotal(String rawText) {
+    // ── Step 1: Log raw OCR for debugging ─────────────────────────────────────
+    debugPrint('═══ OCR RAW TEXT ═══\n$rawText\n════════════════════');
+
+    // ── Step 2: Normalize OCR noise ───────────────────────────────────────────
+    String text = rawText
+        // Common OCR letter→digit confusions
+        .replaceAll(RegExp(r'(?<=[0-9])[oO](?=[0-9])'), '0')
+        .replaceAll(RegExp(r'(?<=[0-9])[lIi|](?=[0-9])'), '1')
+        // Collapse multiple spaces / newlines into single space
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n+'), '\n');
+
+    debugPrint('═══ OCR NORMALIZED ═══\n$text\n══════════════════════');
+
+    // ── Helper: clean a raw matched number string → double? ───────────────────
+    double? parseNum(String? raw) {
+      if (raw == null) return null;
+      // Remove commas, spaces, ₹, Rs, rs inside the number
+      final cleaned = raw.replaceAll(RegExp(r'[,\s₹]'), '');
+      final val = double.tryParse(cleaned);
+      return (val != null && val >= 10 && val <= 500000) ? val : null;
+    }
+
+    // ── Step 3: Keyword-based patterns (ordered: most → least specific) ───────
+    // Delimiter group handles :  =  -  (space)  ₹  Rs  rs  .
+    const delim = r'[\s:=\-₹]*(?:rs\.?|Rs\.?)?\s*';
+
+    final keywordPatterns = [
+      // "grand total", "net total", "total amount", "amount payable" etc.
+      '(?:grand\\s*total|net\\s*total|net\\s*amount|total\\s*amount|'
+          'total\\s*bill|bill\\s*total|amount\\s*due|amount\\s*payable|'
+          'payable\\s*amount|sub\\s*total|subtotal)'
+          '$delim'
+          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
+
+      // Plain "total" (not preceded by word chars to avoid "subtotal" double-match)
+      '(?:^|\\s)total$delim'
+          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
+
+      // "amount" standalone
+      '(?:^|\\s)amount$delim'
+          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
+
+      // "amt" shorthand
+      '(?:^|\\s)amt$delim'
+          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
+
+      // ₹ symbol anywhere
+      r'₹\s*([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
     ];
 
-    double? best;
-    for (final pattern in patterns) {
-      final matches = RegExp(pattern, caseSensitive: false)
-          .allMatches(text);
+    for (final pattern in keywordPatterns) {
+      final matches =
+          RegExp(pattern, caseSensitive: false, multiLine: true).allMatches(text);
+      double? best;
       for (final m in matches) {
-        final raw = m.group(1)!.replaceAll(',', '');
-        final val = double.tryParse(raw);
-        // Ignore implausibly small or large amounts
-        if (val != null && val >= 10 && val <= 500000) {
-          if (best == null || val > best) best = val;
+        final val = parseNum(m.group(1));
+        if (val != null && (best == null || val > best)) best = val;
+      }
+      if (best != null) {
+        debugPrint('OCR total found via keyword pattern: $best');
+        return best;
+      }
+    }
+
+    // ── Step 4: Line-by-line scan for "word = number" or "word : number" ──────
+    // Catches handwritten "total amount = 1000" even with unusual spacing
+    for (final line in text.split('\n')) {
+      final lineMatch = RegExp(
+        r'(?:total|amount|amt|bill|payable|due)',
+        caseSensitive: false,
+      ).hasMatch(line);
+      if (lineMatch) {
+        // Extract the last number on this line
+        final numMatches =
+            RegExp(r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)').allMatches(line);
+        double? last;
+        for (final nm in numMatches) {
+          final val = parseNum(nm.group(1));
+          if (val != null) last = val;
+        }
+        if (last != null) {
+          debugPrint('OCR total found via line scan: $last');
+          return last;
         }
       }
-      if (best != null) break; // use most-specific pattern's result
     }
-    return best;
+
+    // ── Step 5: Fallback — largest plausible number on the entire bill ─────────
+    // Most bills end with the total as the largest amount
+    final allNums = RegExp(r'(?<!\d)([0-9]{2,}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)(?!\d)')
+        .allMatches(text)
+        .map((m) => parseNum(m.group(1)))
+        .whereType<double>()
+        .toList();
+
+    if (allNums.isNotEmpty) {
+      allNums.sort();
+      final largest = allNums.last;
+      debugPrint('OCR total fallback (largest number): $largest');
+      return largest;
+    }
+
+    debugPrint('OCR: no total found');
+    return null;
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────

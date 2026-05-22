@@ -222,7 +222,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               child: Row(
                 children: [
                   const Icon(Icons.mark_email_read_outlined,
-                      size: 16, color: Color(0xFF2563EB)),
+                      size: 28, color: Color(0xFF2563EB)),
                   const SizedBox(width: 6),
                   Text(
                     '$_unreadCount unread notification${_unreadCount > 1 ? 's' : ''}',
@@ -295,20 +295,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   children: [
                     // Logo icon + text
                     Image.asset(
-                      'assets/icons/main_icon.png',
-                      width: 34,
-                      height: 34,
-                      fit: BoxFit.contain,
+                    'assets/images/home_main_logo.png',
+                    height: 38,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Row(
+                      children: [
+                        Image.asset('assets/icons/main_icon.png',
+                            width: 38, height: 38, fit: BoxFit.contain),
+                        const SizedBox(width: 6),
+                        const Text('claimit',
+                            style: TextStyle(fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1565C0))),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'claimit',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1565C0),
-                      ),
-                    ),
+                  ),
                     const Spacer(),
                     // Location
                     GestureDetector(
@@ -324,7 +325,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             ),
                           ),
                           const SizedBox(width: 2),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                          const Icon(Icons.keyboard_arrow_down_rounded, size: 26),
                         ],
                       ),
                     ),
@@ -341,7 +342,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                         child: const Icon(
                           Icons.search,
-                          size: 20,
+                          size: 28,
                           color: Color(0xFF1565C0),
                         ),
                       ),

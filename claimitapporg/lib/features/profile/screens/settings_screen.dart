@@ -18,7 +18,7 @@ class SettingsScreen extends StatelessWidget {
         leading: GestureDetector(
           onTap: () => context.pop(),
           child: const Icon(Icons.arrow_back_ios_new_rounded,
-              size: 18, color: Color(0xFF1A1A2E)),
+              size: 26, color: Color(0xFF1A1A2E)),
         ),
         title: const Text(
           'Settings',

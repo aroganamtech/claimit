@@ -34,52 +34,52 @@ class AppTheme {
       scaffoldBackgroundColor: backgroundColor,
       textTheme: GoogleFonts.poppinsTextTheme().copyWith(
         displayLarge: GoogleFonts.poppins(
-          fontSize: 32,
+          fontSize: 34,
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
         displayMedium: GoogleFonts.poppins(
-          fontSize: 28,
+          fontSize: 30,
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
         headlineLarge: GoogleFonts.poppins(
-          fontSize: 24,
+          fontSize: 26,
           fontWeight: FontWeight.w700,
           color: textPrimary,
         ),
         headlineMedium: GoogleFonts.poppins(
-          fontSize: 20,
+          fontSize: 22,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         headlineSmall: GoogleFonts.poppins(
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         titleLarge: GoogleFonts.poppins(
-          fontSize: 16,
+          fontSize: 18,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         titleMedium: GoogleFonts.poppins(
-          fontSize: 14,
+          fontSize: 16,
           fontWeight: FontWeight.w500,
           color: textPrimary,
         ),
         bodyLarge: GoogleFonts.poppins(
-          fontSize: 16,
+          fontSize: 17,
           fontWeight: FontWeight.normal,
           color: textPrimary,
         ),
         bodyMedium: GoogleFonts.poppins(
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: FontWeight.normal,
           color: textSecondary,
         ),
         bodySmall: GoogleFonts.poppins(
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.normal,
           color: textSecondary,
         ),
@@ -90,7 +90,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: true,
         titleTextStyle: GoogleFonts.poppins(
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
@@ -99,12 +99,12 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: secondaryColor,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 52),
+          minimumSize: const Size(double.infinity, 56),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           textStyle: GoogleFonts.poppins(
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: FontWeight.w600,
           ),
           elevation: 0,
@@ -114,12 +114,12 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: secondaryColor,
           side: const BorderSide(color: secondaryColor, width: 1.5),
-          minimumSize: const Size(double.infinity, 52),
+          minimumSize: const Size(double.infinity, 56),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           textStyle: GoogleFonts.poppins(
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -127,32 +127,33 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: dividerColor),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: dividerColor),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: secondaryColor, width: 2),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: errorColor),
         ),
         hintStyle: GoogleFonts.poppins(
-          fontSize: 14,
+          fontSize: 15,
           color: textSecondary,
         ),
         labelStyle: GoogleFonts.poppins(
-          fontSize: 14,
+          fontSize: 15,
           color: textSecondary,
         ),
       ),
+      iconTheme: const IconThemeData(size: 26),
       cardTheme:  CardThemeData(
         color: cardColor,
         elevation: 2,
@@ -167,6 +168,10 @@ class AppTheme {
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
+        selectedLabelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: TextStyle(fontSize: 12),
+        selectedIconTheme: IconThemeData(size: 28),
+        unselectedIconTheme: IconThemeData(size: 26),
       ),
     );
   }
@@ -192,7 +197,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: true,
         titleTextStyle: GoogleFonts.poppins(
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
@@ -209,12 +214,12 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: secondaryColor,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 52),
+          minimumSize: const Size(double.infinity, 56),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           textStyle: GoogleFonts.poppins(
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: FontWeight.w600,
           ),
           elevation: 0,
@@ -223,20 +228,20 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFF2A2A3A),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFF3A3A4A)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFF3A3A4A)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: secondaryColor, width: 2),
         ),
-        hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+        hintStyle: GoogleFonts.poppins(fontSize: 15, color: Colors.grey),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: Color(0xFF1A1A2A),
@@ -244,9 +249,13 @@ class AppTheme {
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
+        selectedLabelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: TextStyle(fontSize: 12),
+        selectedIconTheme: IconThemeData(size: 28),
+        unselectedIconTheme: IconThemeData(size: 26),
       ),
       dividerColor: const Color(0xFF2A2A3A),
-      iconTheme: const IconThemeData(color: Colors.white70),
+      iconTheme: const IconThemeData(color: Colors.white70, size: 26),
     );
   }
 }

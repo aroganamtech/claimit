@@ -231,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         onTap: () {},
                         child: const Icon(
                           Icons.facebook,
-                          size: 24,
+                          size: 28,
                           color: Color(0xFF1877F2),
                         ),
                       ),

@@ -310,7 +310,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
 
     return PreferredSize(
-      preferredSize: const Size.fromHeight(112),
+      preferredSize: const Size.fromHeight(116),
       child: Container(
         color: Colors.white,
         child: SafeArea(
@@ -324,20 +324,21 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Row(
                   children: [
                     Image.asset(
-                      'assets/icons/main_icon.png',
-                      width: 34,
-                      height: 34,
-                      fit: BoxFit.contain,
+                    'assets/images/home_main_logo.png',
+                    height: 38,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Row(
+                      children: [
+                        Image.asset('assets/icons/main_icon.png',
+                            width: 38, height: 38, fit: BoxFit.contain),
+                        const SizedBox(width: 6),
+                        const Text('claimit',
+                            style: TextStyle(fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1565C0))),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'claimit',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1565C0),
-                      ),
-                    ),
+                  ),
                     const Spacer(),
                     GestureDetector(
                       onTap: () => context.push('/location'),
@@ -352,7 +353,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             ),
                           ),
                           const SizedBox(width: 2),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                          const Icon(Icons.keyboard_arrow_down_rounded, size: 26),
                         ],
                       ),
                     ),
@@ -660,7 +661,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.trending_up_rounded,
-                        size: 14, color: Color(0xFF1565C0)),
+                        size: 26, color: Color(0xFF1565C0)),
                     const SizedBox(width: 6),
                     Text(
                       item,
@@ -743,7 +744,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Row(
                     children: [
                       Icon(Icons.tune_rounded,
-                          size: 14,
+                          size: 26,
                           color: _filterCount > 0
                               ? const Color(0xFF1565C0)
                               : const Color(0xFF374151)),
@@ -972,7 +973,7 @@ class _RecentRow extends StatelessWidget {
         child: Row(
           children: [
             const Icon(Icons.access_time_rounded,
-                size: 18, color: Color(0xFF9CA3AF)),
+                size: 26, color: Color(0xFF9CA3AF)),
             const SizedBox(width: 12),
             Expanded(
               child: Text(text,
@@ -985,7 +986,7 @@ class _RecentRow extends StatelessWidget {
                 child: const Padding(
                   padding: EdgeInsets.only(left: 8),
                   child: Icon(Icons.close_rounded,
-                      size: 16, color: Color(0xFF9CA3AF)),
+                      size: 28, color: Color(0xFF9CA3AF)),
                 ),
               ),
           ],
@@ -1090,7 +1091,7 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                             isFav
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
-                            size: 18,
+                            size: 26,
                             color: isFav
                                 ? Colors.redAccent
                                 : const Color(0xFF9CA3AF),
@@ -1102,7 +1103,7 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                     Row(
                       children: [
                         const Icon(Icons.location_on_rounded,
-                            size: 12, color: Color(0xFF9CA3AF)),
+                            size: 28, color: Color(0xFF9CA3AF)),
                         const SizedBox(width: 3),
                         Expanded(
                           child: Text(s.location,

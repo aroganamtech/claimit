@@ -293,7 +293,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
         leading: widget.isTab ? null : GestureDetector(
           onTap: () => context.pop(),
           child: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Color(0xFF2563EB), size: 20),
+              color: Color(0xFF2563EB), size: 24),
         ),
         title: _showSearch
             ? TextField(
@@ -333,11 +333,11 @@ class _ShopListScreenState extends State<ShopListScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.tune_rounded,
-                      size: 14, color: Color(0xFF374151)),
+                      size: 26, color: Color(0xFF374151)),
                   const SizedBox(width: 4),
                   const Text('Filter',
                       style: TextStyle(
-                          fontSize: 13, color: Color(0xFF374151))),
+                          fontSize: 14, color: Color(0xFF374151))),
                   if (_filterCount > 0) ...[
                     const SizedBox(width: 4),
                     Container(
@@ -367,7 +367,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
             icon: Icon(
               _showSearch ? Icons.close_rounded : Icons.search_rounded,
               color: const Color(0xFF1E3A8A),
-              size: 24,
+              size: 26,
             ),
             onPressed: () {
               setState(() {
@@ -482,7 +482,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.store_outlined, size: 72, color: Colors.grey.shade200),
+          Icon(Icons.store_outlined, size: 80, color: Colors.grey.shade200),
           const SizedBox(height: 16),
           Text(
             'No shops found',
@@ -580,8 +580,8 @@ class _ShopCard extends StatelessWidget {
                 bottomLeft: Radius.circular(16),
               ),
               child: SizedBox(
-                width: 110,
-                height: 110,
+                width: 130,
+                height: 130,
                 child: shop.imageData != null && shop.imageData!.isNotEmpty
                     ? Image.memory(
                         base64Decode(shop.imageData!),
@@ -595,7 +595,7 @@ class _ShopCard extends StatelessWidget {
             // ── Info ────────────────────────────────────────────────────
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -622,7 +622,7 @@ class _ShopCard extends StatelessWidget {
                             isFav
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
-                            size: 20,
+                            size: 28,
                             color: isFav
                                 ? Colors.redAccent
                                 : const Color(0xFF9CA3AF),
@@ -630,19 +630,19 @@ class _ShopCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5),
 
                     // Location
                     Row(
                       children: [
                         const Icon(Icons.location_on_rounded,
-                            size: 12, color: Color(0xFF9CA3AF)),
-                        const SizedBox(width: 3),
+                            size: 28, color: Color(0xFF9CA3AF)),
+                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             shop.location,
                             style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF6B7280)),
+                                fontSize: 13, color: Color(0xFF6B7280)),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -654,7 +654,7 @@ class _ShopCard extends StatelessWidget {
                     Text(
                       '${shop.discount}% Offer on All grocery',
                       style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: Color(0xFF2563EB),
                           fontWeight: FontWeight.w600),
                     ),
@@ -715,7 +715,7 @@ class _Badge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: textColor),
       ),
@@ -731,6 +731,6 @@ Widget _fallbackAvatar(ShopItem shop) {
   return Container(
     color: shop.fallbackColor,
     alignment: Alignment.center,
-    child: Icon(shop.fallbackIcon, size: 28, color: Colors.grey.shade400),
+    child: Icon(shop.fallbackIcon, size: 36, color: Colors.grey.shade400),
   );
 }

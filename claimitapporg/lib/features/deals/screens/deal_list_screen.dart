@@ -197,7 +197,7 @@ class _DealListScreenState extends State<DealListScreen> {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.tune_rounded, size: 14, color: Color(0xFF374151)),
+                  Icon(Icons.tune_rounded, size: 26, color: Color(0xFF374151)),
                   SizedBox(width: 4),
                   Text('Filter',
                       style: TextStyle(
@@ -581,7 +581,7 @@ class _DealCardState extends State<_DealCard> {
                             _isFav
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
-                            size: 20,
+                            size: 28,
                             color: _isFav
                                 ? Colors.redAccent
                                 : const Color(0xFF9CA3AF),
@@ -595,7 +595,7 @@ class _DealCardState extends State<_DealCard> {
                     Row(
                       children: [
                         const Icon(Icons.location_on_rounded,
-                            size: 12, color: Color(0xFF9CA3AF)),
+                            size: 28, color: Color(0xFF9CA3AF)),
                         const SizedBox(width: 3),
                         Expanded(
                           child: Text(

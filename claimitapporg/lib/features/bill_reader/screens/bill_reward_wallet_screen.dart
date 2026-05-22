@@ -83,7 +83,7 @@ class BillRewardWalletScreen extends StatelessWidget {
                       height: 44,
                       child: OutlinedButton.icon(
                         onPressed: () => context.push('/redeem-zone'),
-                        icon: const Icon(Icons.storefront_rounded, size: 18),
+                        icon: const Icon(Icons.storefront_rounded, size: 26),
                         label: const Text(
                           'Redeem Now',
                           style: TextStyle(

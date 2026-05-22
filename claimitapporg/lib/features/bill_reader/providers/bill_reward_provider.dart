@@ -20,9 +20,11 @@ class BillRewardProvider extends ChangeNotifier {
   // ── Pending scan data (set by OCR screen, consumed by confirm screen) ──────
   double? _pendingTotal;
   String? _pendingImagePath;
+  String? _pendingOcrText;   // raw OCR text for debugging / display
 
   double? get pendingTotal     => _pendingTotal;
   String? get pendingImagePath => _pendingImagePath;
+  String? get pendingOcrText   => _pendingOcrText;
 
   // ── History ────────────────────────────────────────────────────────────────
   final List<BillRewardEntry> _history = [
@@ -70,9 +72,10 @@ class BillRewardProvider extends ChangeNotifier {
   // Called by BillScanningProgressScreen after OCR finishes.
   // Stores the result so BillConfirmScreen can display it.
   // ─────────────────────────────────────────────────────────────────────────
-  void setScanResult({double? totalAmount, String? imagePath}) {
+  void setScanResult({double? totalAmount, String? imagePath, String? ocrText}) {
     _pendingTotal     = totalAmount;
     _pendingImagePath = imagePath;
+    _pendingOcrText   = ocrText;
     notifyListeners();
   }
 

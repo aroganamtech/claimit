@@ -472,7 +472,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           onTap: _onBack,
                           child: const Icon(
                             Icons.arrow_back_ios_new_rounded,
-                            size: 22,
+                            size: 26,
                             color: Color(0xFF1E3A8A),
                           ),
                         )

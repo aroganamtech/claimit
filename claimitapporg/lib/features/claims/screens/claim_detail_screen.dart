@@ -405,7 +405,7 @@ class _ClaimDetailScreenState extends State<ClaimDetailScreen>
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.download_outlined, size: 20),
+                          icon: const Icon(Icons.download_outlined, size: 28),
                           onPressed: () {},
                         ),
                       ],

@@ -133,6 +133,7 @@ async def get_nearby_shops(
     lat: float = Query(..., description="User latitude"),
     lng: float = Query(..., description="User longitude"),
     radius_km: float = Query(4.0, ge=0.1, le=50.0, description="Search radius in km"),
+    exclude_id: Optional[str] = Query(None, description="Shop ID to exclude from results"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -155,6 +156,10 @@ async def get_nearby_shops(
                 doc = _doc_to_response(shop, distance_km=dist)
                 nearby.append((dist, doc))
         # Shops without GPS: skip from nearby (they have no coordinates to measure)
+
+    # Exclude specific shop (e.g. the current shop when showing "stores nearby")
+    if exclude_id:
+        nearby = [(d, doc) for d, doc in nearby if doc.get("id") != exclude_id]
 
     # Sort by distance ascending
     nearby.sort(key=lambda x: x[0])

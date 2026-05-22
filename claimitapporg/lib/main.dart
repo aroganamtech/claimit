@@ -74,6 +74,20 @@ class _ClaimitAppState extends State<ClaimitApp> {
           darkTheme: AppTheme.darkTheme,
           themeMode: themeProvider.themeMode,
           routerConfig: _router,
+          // ── Global text size boost ─────────────────────────────────────
+          // Increases every text in the app by 20% so nothing is hard to read.
+          // Change 1.2 here to adjust globally (1.0 = original, 1.3 = 30% larger).
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: TextScaler.linear(
+                  (mq.textScaler.scale(1.0)).clamp(1.0, 1.0) * 1.2,
+                ),
+              ),
+              child: child!,
+            );
+          },
         ),
       ),
     );

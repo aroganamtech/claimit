@@ -459,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.person_outline, size: 18),
+                icon: const Icon(Icons.person_outline, size: 26),
                 label: const Text('Go to Profile'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
@@ -516,28 +516,32 @@ class _HomeScreenState extends State<HomeScreen> {
       body: widget.child,
 
       // ── Yellow centred FAB ─────────────────────────────────────────────
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFFEAB308),
-        elevation: 6,
-        shape: const CircleBorder(),
-        onPressed: () => _showFeaturedZones(context),
-        child: Image.asset("assets/icons/main_icon.png")
-        //  const Icon(
-        //   Icons.local_offer_rounded,
-        //   color: Colors.white,
-        //   size: 26,
-        // ),
+      floatingActionButton: SizedBox(
+        width: 68,
+        height: 68,
+        child: FloatingActionButton(
+          backgroundColor: const Color(0xFFEAB308),
+          elevation: 6,
+          shape: const CircleBorder(),
+          onPressed: () => _showFeaturedZones(context),
+          child: Image.asset(
+            "assets/icons/main_icon.png",
+            width: 54,
+            height: 54,
+            fit: BoxFit.contain,
+          ),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
       // ── Bottom App Bar (notched for FAB) ───────────────────────────────
       bottomNavigationBar: BottomAppBar(
-        notchMargin: 8.0,
+        notchMargin: 10.0,
         shape: const CircularNotchedRectangle(),
         color: const Color.fromARGB(255, 20, 143, 208), // kept blue as brand color
         elevation: 8,
         padding: EdgeInsets.zero,
-        height: 64,
+        height: 76,
         child: Row(
           children: [
             // Left half
@@ -874,7 +878,7 @@ class _NavItemState extends State<_NavItem> {
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
         child: SizedBox(
-          width: 64,
+          width: 76,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -883,18 +887,18 @@ class _NavItemState extends State<_NavItem> {
                     ? widget.activeIcon
                     : widget.icon,
                 color: color,
-                size: 24,
+                size: 30,
               ),
 
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
 
               Text(
                 widget.label,
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: widget.isSelected
-                      ? FontWeight.w600
-                      : FontWeight.normal,
+                      ? FontWeight.w700
+                      : FontWeight.w500,
                   color: color,
                 ),
               ),

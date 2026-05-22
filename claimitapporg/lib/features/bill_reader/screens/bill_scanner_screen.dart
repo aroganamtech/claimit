@@ -71,12 +71,18 @@ class _BillScannerScreenState extends State<BillScannerScreen>
 
       final ctrl = CameraController(
         backCam,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh,   // sharper text for OCR
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
       await ctrl.initialize();
+
+      // Enable auto-focus for close-up bill scanning
+      try { await ctrl.setFocusMode(FocusMode.auto); } catch (_) {}
+      // Ensure flash starts off
+      try { await ctrl.setFlashMode(FlashMode.off); } catch (_) {}
+
 
       if (!mounted) {
         ctrl.dispose();
@@ -131,10 +137,10 @@ class _BillScannerScreenState extends State<BillScannerScreen>
     setState(() => _capturing = true);
 
     try {
-      // Turn off torch before capture so it doesn't blow out the image
+      // Keep torch ON during capture — it illuminates handwritten/printed text.
+      // Only switch to FlashMode.torch explicitly so the API knows.
       if (_torchOn) {
-        await _camCtrl?.setFlashMode(FlashMode.off);
-        setState(() => _torchOn = false);
+        await _camCtrl?.setFlashMode(FlashMode.torch);
       }
 
       final file = await _camCtrl!.takePicture();
@@ -245,13 +251,31 @@ class _BillScannerScreenState extends State<BillScannerScreen>
             ),
           ),
 
+          // ── Tap-to-focus on the scan area ─────────────────────────────
+          Positioned.fill(
+            child: GestureDetector(
+              onTapUp: (details) async {
+                if (_camCtrl == null || !_cameraReady) return;
+                final size = MediaQuery.of(context).size;
+                final x = details.localPosition.dx / size.width;
+                final y = details.localPosition.dy / size.height;
+                try {
+                  await _camCtrl!.setFocusPoint(Offset(x, y));
+                  await _camCtrl!.setExposurePoint(Offset(x, y));
+                } catch (_) {}
+              },
+              behavior: HitTestBehavior.translucent,
+              child: const SizedBox.expand(),
+            ),
+          ),
+
           // ── Hint text ──────────────────────────────────────────────────
           const Positioned(
             top: 16,
             left: 0,
             right: 0,
             child: Text(
-              'Point camera at the bill\nAlign total amount inside frame',
+              'Tap on the paper to focus · Align total inside frame',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white70,

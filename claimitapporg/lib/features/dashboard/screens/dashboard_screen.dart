@@ -250,7 +250,8 @@ import 'dart:convert';
 //   State<DashboardScreen> createState() => _DashboardScreenState();
 // }
 
-// class _DashboardScreenState extends State<DashboardScreen> {
+// class _DashboardScreenState extends State<DashboardScreen>
+//     with WidgetsBindingObserver {
 //   final PageController _bannerCtrl = PageController();
 //   Timer? _bannerTimer;
 //   int _currentBanner = 0;
@@ -282,7 +283,7 @@ import 'dart:convert';
 //   // ── Custom white AppBar ──────────────────────────────────────────────────
 //   PreferredSizeWidget _buildAppBar() {
 //   return PreferredSize(
-//     preferredSize: const Size.fromHeight(70),
+//     preferredSize: const Size.fromHeight(76),
 //     child: Container(
 //       color: Colors.white,
 //       child: SafeArea(
@@ -1109,6 +1110,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../deals/models/deal_model.dart';
@@ -1383,7 +1385,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   final PageController _bannerCtrl = PageController();
   Timer? _bannerTimer;
   int _currentBanner = 0;
@@ -1398,10 +1401,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // GPS-based nearby shops (within 4 km)
   List<ShopItem> _nearbyShops = [];
   bool _loadingNearbyShops = false;
+  String _detectedArea = '';   // reverse-geocoded area name, e.g. "Anna Nagar"
+  double? _userLat;
+  double? _userLng;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Auto-scroll banner every 4 seconds
     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!_bannerCtrl.hasClients) return;
@@ -1429,25 +1436,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  /// Fetch shops within 4 km of the user's GPS location
+  /// Fetch shops within 4 km of the user's GPS location.
+  /// Also reverse-geocodes the position to a human-readable area name.
   Future<void> _loadNearbyShopsFromGPS() async {
-    setState(() => _loadingNearbyShops = true);
+    if (mounted) setState(() => _loadingNearbyShops = true);
     try {
-      // Uses LocationService: handles service-off, deniedForever, timeout,
-      // and getLastKnownPosition fallback automatically.
       final pos = await LocationService.getPosition(
         context: mounted ? context : null,
       );
       if (pos != null) {
+        final lat = pos.latitude;
+        final lng = pos.longitude;
+
+        // ── Reverse geocode to get area name ──────────────────────────
+        String areaName = '';
+        try {
+          final placemarks = await placemarkFromCoordinates(lat, lng);
+          if (placemarks.isNotEmpty) {
+            final p = placemarks.first;
+            // subLocality = neighbourhood / area (e.g. "Anna Nagar")
+            // locality    = city (e.g. "Chennai")
+            areaName = p.subLocality?.isNotEmpty == true
+                ? p.subLocality!
+                : p.locality ?? '';
+          }
+        } catch (_) {}
+
+        // ── Fetch nearby shops from backend ───────────────────────────
         final shops = await ShopService.instance.fetchNearbyShops(
-          lat: pos.latitude,
-          lng: pos.longitude,
+          lat: lat,
+          lng: lng,
           radiusKm: 4.0,
         );
-        if (mounted) setState(() => _nearbyShops = shops);
+
+        if (mounted) {
+          setState(() {
+            _userLat = lat;
+            _userLng = lng;
+            _detectedArea = areaName;
+            _nearbyShops = shops;
+          });
+        }
       }
     } catch (e) {
-      debugPrint('Dashboard GPS error: $e');
+      debugPrint('Dashboard GPS error: \$e');
     }
     if (mounted) setState(() => _loadingNearbyShops = false);
   }
@@ -1473,9 +1505,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bannerTimer?.cancel();
     _bannerCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-fetch nearby shops when user returns to app (location may have changed)
+    if (state == AppLifecycleState.resumed) {
+      _loadNearbyShopsFromGPS();
+    }
   }
 
   // ── Custom white AppBar ──────────────────────────────────────────────────
@@ -1493,37 +1534,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           child: Row(
             children: [
-              // ── Logo ─────────────────────────────
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                     
-                      shape: BoxShape.circle,
-                    ),
-                  child: Center(
-  child: Image.asset(
-    'assets/icons/main_icon.png',
-    width: 50,
-    height: 35,
-    // fit: BoxFit.contain,
-  ),
-),
-                  ),
-
-                  const SizedBox(width: 6),
-
-                  const Text(
-                    'claimit',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1565C0),
-                    ),
-                  ),
-                ],
+              // ── Logo (home_main_logo has icon + "claimit" text built-in) ──
+              Image.asset(
+                'assets/images/home_main_logo.png',
+                height: 38,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Row(
+                  children: [
+                    Image.asset('assets/icons/main_icon.png',
+                        width: 38, height: 38, fit: BoxFit.contain),
+                    const SizedBox(width: 6),
+                    const Text('claimit',
+                        style: TextStyle(fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1565C0))),
+                  ],
+                ),
               ),
 
               const Spacer(),
@@ -1546,7 +1572,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
                   ],
                 ),
               ),
@@ -1555,8 +1581,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               // ── Search ──────────────────────────
               Container(
-                width: 38,
-                height: 38,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -1566,7 +1592,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: IconButton(
                   icon: Icon(
                     Icons.search,
-                    size: 20,
+                    size: 28,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   onPressed: () => context.push('/search'),
@@ -1581,7 +1607,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onTap: () => context.push('/notifications'),
                 child: Icon(
                   Icons.notifications_none_rounded,
-                  size: 26,
+                  size: 30,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
@@ -1693,14 +1719,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               else if (_nearbyShops.isNotEmpty) ...[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Text('Shops Near You',
-                          style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1A1A1A))),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _detectedArea.isNotEmpty
+                                ? 'Near \$_detectedArea'
+                                : 'Shops Near You',
+                            style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1A1A1A)),
+                          ),
+                          Text(
+                            'Within 4 km · \${_nearbyShops.length} shops',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ),
                       const Spacer(),
                       GestureDetector(
                         onTap: () => context.push('/shops',
@@ -1720,7 +1762,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 SizedBox(
-                  height: 130,
+                  height: 175,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1800,9 +1842,9 @@ class _CategoryRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  // 3 pages of 5 slots; last page has 4 real icons + "Show All" button
+  // 3 pages of 4 slots; last page has 3 real icons + "Show All" button
   static const int _pages = 3;
-  static const int _perPage = 5;
+  static const int _perPage = 4;
 
   Widget _buildIcon({
     required BuildContext context,
@@ -1818,13 +1860,13 @@ class _CategoryRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 66,
+              height: 66,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Theme.of(context).colorScheme.surface,
                 border: Border.all(
-                  color: active ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB),
+                  color: active ? const Color(0xFF2563EB) : const Color.fromARGB(255, 210, 186, 6),
                   width: active ? 2 : 1,
                 ),
               ),
@@ -1833,7 +1875,7 @@ class _CategoryRow extends StatelessWidget {
                 children: [
                   Icon(
                     cat.icon,
-                    size: 26,
+                    size: 32,
                     color: active ? const Color(0xFF2563EB) : cat.color,
                   ),
                   if (cat.isNew)
@@ -1850,7 +1892,7 @@ class _CategoryRow extends StatelessWidget {
                         child: const Text(
                           'New',
                           style: TextStyle(
-                            fontSize: 7,
+                            fontSize: 8,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
@@ -1866,7 +1908,7 @@ class _CategoryRow extends StatelessWidget {
               maxLines: 2,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 height: 1.2,
                 color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
@@ -1886,8 +1928,8 @@ class _CategoryRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 66,
+              height: 66,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Theme.of(context).brightness == Brightness.dark
@@ -1897,7 +1939,7 @@ class _CategoryRow extends StatelessWidget {
               ),
               child: const Icon(
                 Icons.apps_rounded,
-                size: 26,
+                size: 32,
                 color: Color(0xFF2563EB),
               ),
             ),
@@ -1907,7 +1949,7 @@ class _CategoryRow extends StatelessWidget {
               maxLines: 2,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 height: 1.2,
                 color: Color(0xFF2563EB),
                 fontWeight: FontWeight.w600,
@@ -1922,7 +1964,7 @@ class _CategoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 100,
+      height: 108,
       child: PageView.builder(
         controller: PageController(viewportFraction: 1),
         itemCount: _pages,
@@ -1985,7 +2027,7 @@ class _DealsToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 52,
+      height: 58,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -2093,19 +2135,19 @@ class _DealCardState extends State<_DealCard> {
                   bottomLeft: Radius.circular(14),
                 ),
                 child: SizedBox(
-                  width: 110,
+                  width: 120,
                   child: CachedNetworkImage(
                     imageUrl: d.imageUrl,
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(
                       color: d.fallbackColor,
                       child: Icon(d.fallbackIcon,
-                          color: const Color(0xFF9CA3AF), size: 36),
+                          color: const Color(0xFF9CA3AF), size: 44),
                     ),
                     errorWidget: (_, __, ___) => Container(
                       color: d.fallbackColor,
                       child: Icon(d.fallbackIcon,
-                          color: const Color(0xFF9CA3AF), size: 36),
+                          color: const Color(0xFF9CA3AF), size: 44),
                     ),
                   ),
                 ),
@@ -2114,7 +2156,7 @@ class _DealCardState extends State<_DealCard> {
               // ── Right content ───────────────────────────────────────────
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2126,7 +2168,7 @@ class _DealCardState extends State<_DealCard> {
                             child: Text(
                               d.name,
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
@@ -2144,68 +2186,57 @@ class _DealCardState extends State<_DealCard> {
                             ),
                             child: Icon(
                               isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                              size: 20,
-                              color: isFav ? Colors.red : const Color(0xFF9CA3AF),
+                              size: 25,
+                              color: isFav ? Colors.red : const Color.fromARGB(255, 225, 215, 13),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      // const SizedBox(height: 5),
 
-                      // Location
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on_rounded,
-                              size: 13, color: Color(0xFF9CA3AF)),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              d.location,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF6B7280),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      // Location — starts at same left edge as name
+                      Text(
+                        d.location,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF6B7280),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 6),
+                      // const SizedBox(height: 8),
 
                       // Offer badge
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFF1E3A6E)
-                              : const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                        // padding: const EdgeInsets.symmetric(
+                        //     horizontal: 10, vertical: 5),
+                        // decoration: BoxDecoration(
+                        //   color: Theme.of(context).brightness == Brightness.dark
+                        //       ? const Color.fromARGB(255, 92, 113, 152)
+                        //       : const Color.fromARGB(255, 255, 255, 255),
+                        //   borderRadius: BorderRadius.circular(6),
+                        // ),
                         child: Text(
                           d.offer,
                           style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF2563EB),
+                            fontSize: 16,
+                            color: Color.fromARGB(255, 14, 68, 184),
                             fontWeight: FontWeight.w600,
+                            
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      // const SizedBox(height: 10),
 
-                      // Distance + type
+                      // Distance + type — starts at same left edge as name
                       Row(
                         children: [
-                          const Icon(Icons.directions_walk_rounded,
-                              size: 13, color: Color(0xFF2563EB)),
-                          const SizedBox(width: 3),
                           Text(
                             d.distance,
                             style: const TextStyle(
-                              fontSize: 12,
+                              fontSize: 13,
                               color: Color(0xFF2563EB),
                               fontWeight: FontWeight.w600,
                             ),
@@ -2235,7 +2266,7 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Builder(
       builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
               ? const Color(0xFF2A2A3A)
@@ -2245,7 +2276,7 @@ class _Chip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 12,
             color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
             fontWeight: FontWeight.w500,
           ),
@@ -2267,11 +2298,11 @@ class _NearbyShopChip extends StatelessWidget {
     return GestureDetector(
       onTap: () => context.push('/shop-detail', extra: shop),
       child: Container(
-        width: 140,
-        margin: const EdgeInsets.only(right: 12),
+        width: 168,
+        margin: const EdgeInsets.only(right: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.07),
@@ -2286,11 +2317,11 @@ class _NearbyShopChip extends StatelessWidget {
             // Image
             ClipRRect(
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(14),
-                topRight: Radius.circular(14),
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
               ),
               child: SizedBox(
-                height: 72,
+                height: 96,
                 width: double.infinity,
                 child: shop.imageData != null && shop.imageData!.isNotEmpty
                     ? Image.memory(
@@ -2303,7 +2334,7 @@ class _NearbyShopChip extends StatelessWidget {
             ),
             // Info
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2312,9 +2343,9 @@ class _NearbyShopChip extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                          fontSize: 14,
                           color: Color(0xFF111827))),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     shop.distance.isNotEmpty
                         ? shop.distance
@@ -2322,8 +2353,7 @@ class _NearbyShopChip extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 10, color: Color(0xFF2563EB),
-                        fontWeight: FontWeight.w600),
+                        fontSize: 12, color: Color(0xFF6B7280)),
                   ),
                 ],
               ),
@@ -2337,6 +2367,6 @@ class _NearbyShopChip extends StatelessWidget {
   Widget _fallback(ShopItem s) => Container(
         color: s.fallbackColor,
         alignment: Alignment.center,
-        child: Icon(s.fallbackIcon, color: Colors.grey.shade400, size: 22),
+        child: Icon(s.fallbackIcon, color: Colors.grey.shade400, size: 32),
       );
 }

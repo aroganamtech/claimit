@@ -574,7 +574,7 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.close,
-                                    size: 12, color: Colors.white),
+                                    size: 28, color: Colors.white),
                               ),
                             ),
                           ),
@@ -868,7 +868,7 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.lock_rounded,
-                  size: 12, color: Color(0xFF94A3B8)),
+                  size: 28, color: Color(0xFF94A3B8)),
               const SizedBox(width: 4),
               Text(
                 'Secured by 256-bit SSL encryption',
@@ -976,7 +976,7 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
                           Row(
                             children: [
                               const Icon(Icons.location_on_rounded,
-                                  size: 12, color: Color(0xFF94A3B8)),
+                                  size: 28, color: Color(0xFF94A3B8)),
                               const SizedBox(width: 3),
                               Text(
                                 _selectedPincode!.area,

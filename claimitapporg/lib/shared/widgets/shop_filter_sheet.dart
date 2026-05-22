@@ -206,7 +206,7 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
               // Apply button
               Padding(
                 padding: EdgeInsets.fromLTRB(
-                    20, 8, 20, MediaQuery.of(context).padding.bottom + 16),
+                    20, 8, 20, MediaQuery.of(context).padding.bottom + 90),
                 child: GestureDetector(
                   onTap: () {
                     widget.onApply(_sort, _catId, _rating, _price);
@@ -450,7 +450,7 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
                 const SizedBox(width: 3),
                 Icon(
                   Icons.star_rounded,
-                  size: 14,
+                  size: 26,
                   color: active
                       ? const Color(0xFFF59E0B)
                       : const Color(0xFFD1D5DB),

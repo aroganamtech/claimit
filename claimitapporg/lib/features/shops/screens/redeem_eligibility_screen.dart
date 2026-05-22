@@ -275,7 +275,7 @@ class _ShopCard extends StatelessWidget {
                 Row(
                   children: [
                     const Icon(Icons.location_on_rounded,
-                        size: 12, color: Color(0xFF9CA3AF)),
+                        size: 28, color: Color(0xFF9CA3AF)),
                     const SizedBox(width: 3),
                     Text(s.location,
                         style: const TextStyle(

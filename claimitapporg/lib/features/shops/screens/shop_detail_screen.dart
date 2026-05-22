@@ -72,16 +72,33 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
 
   Future<void> _loadNearbyShops() async {
     setState(() => _loadingNearby = true);
-    // Extract area from location string e.g. "Padi, Chennai" → "Padi"
-    final area = widget.shop.location.split(',').first.trim();
-    final shops = await ShopService.instance.fetchShopsNearArea(
-      area: area,
-      excludeId: widget.shop.id,
-      limit: 5,
-    );
+    List<ShopItem> shops = [];
+
+    // Prefer GPS-radius search when shop has coordinates
+    final shopLat = widget.shop.lat;
+    final shopLng = widget.shop.lng;
+
+    if (shopLat != null && shopLng != null) {
+      // Use the shop's GPS position as the centre → show stores within 4 km
+      shops = await ShopService.instance.fetchNearbyShops(
+        lat: shopLat,
+        lng: shopLng,
+        radiusKm: 4.0,
+        excludeId: widget.shop.id,
+      );
+    } else {
+      // Fallback: area-text match (for shops without GPS coords in DB)
+      final area = widget.shop.location.split(',').first.trim();
+      shops = await ShopService.instance.fetchShopsNearArea(
+        area: area,
+        excludeId: widget.shop.id,
+        limit: 6,
+      );
+    }
+
     if (!mounted) return;
     setState(() {
-      _nearbyShops = shops;
+      _nearbyShops = shops.take(6).toList();
       _loadingNearby = false;
     });
   }
@@ -291,7 +308,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                   child: Row(
                     children: [
                       const Icon(Icons.location_on_rounded,
-                          size: 14, color: Color(0xFF6B7280)),
+                          size: 26, color: Color(0xFF6B7280)),
                       const SizedBox(width: 3),
                       Text(s.location,
                           style: const TextStyle(
@@ -846,7 +863,7 @@ class _NearbyShopCard extends StatelessWidget {
                   profile.isLiked(shop.id)
                       ? Icons.favorite_rounded
                       : Icons.favorite_border_rounded,
-                  size: 20,
+                  size: 28,
                   color: profile.isLiked(shop.id)
                       ? Colors.redAccent
                       : const Color(0xFF9CA3AF),

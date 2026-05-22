@@ -348,7 +348,7 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _whatsapp,
-                icon: const Icon(Icons.chat_rounded, size: 20),
+                icon: const Icon(Icons.chat_rounded, size: 28),
                 label: const Text('WhatsApp'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF25D366),
@@ -367,7 +367,7 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
               flex: 2,
               child: ElevatedButton.icon(
                 onPressed: _call,
-                icon: const Icon(Icons.call_rounded, size: 20),
+                icon: const Icon(Icons.call_rounded, size: 28),
                 label: Text(
                   p.userPhone.isNotEmpty ? 'Call ${p.userPhone}' : 'Call Now',
                   overflow: TextOverflow.ellipsis,

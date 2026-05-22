@@ -25,6 +25,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   late TextEditingController _amtCtrl;
   bool _confirmed = false;
   bool _claiming = false;
+  bool _showOcrText = false;  // expand/collapse raw OCR view
 
   @override
   void initState() {
@@ -79,6 +80,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     final provider = context.read<BillRewardProvider>();
     final imagePath = provider.pendingImagePath;
     final extractedTotal = provider.pendingTotal;
+    final ocrText = provider.pendingOcrText ?? '';
     final points = _estimatedPoints;
 
     return Scaffold(
@@ -277,7 +279,67 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                 ),
               ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+
+            // ── Raw OCR text (expandable) ─────────────────────────────────
+            if (ocrText.isNotEmpty)
+              GestureDetector(
+                onTap: () => setState(() => _showOcrText = !_showOcrText),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(10),
+                    border:
+                        Border.all(color: const Color(0xFFD1D5DB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.text_snippet_outlined,
+                              size: 28, color: Color(0xFF6B7280)),
+                          const SizedBox(width: 6),
+                          const Expanded(
+                            child: Text(
+                              'What OCR read (tap to expand)',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF6B7280)),
+                            ),
+                          ),
+                          Icon(
+                            _showOcrText
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                            size: 26,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ],
+                      ),
+                      if (_showOcrText) ...[
+                        const Divider(height: 12),
+                        Text(
+                          ocrText.trim().isEmpty
+                              ? '(No text detected)'
+                              : ocrText.trim(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF374151),
+                            fontFamily: 'monospace',
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 24),
 
             // ── Confirm button ────────────────────────────────────────────
             SizedBox(
@@ -314,7 +376,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
               child: OutlinedButton.icon(
                 onPressed: _rescan,
                 icon: const Icon(Icons.qr_code_scanner_rounded,
-                    size: 20),
+                    size: 28),
                 label: const Text('Scan Again',
                     style: TextStyle(fontSize: 15)),
                 style: OutlinedButton.styleFrom(

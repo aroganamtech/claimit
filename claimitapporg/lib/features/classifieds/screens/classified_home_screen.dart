@@ -207,7 +207,7 @@ class _CategorySection extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 88,
+            height: 108,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -248,32 +248,36 @@ class _SubcategoryIcon extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 72,
+        width: 84,
         margin: const EdgeInsets.symmetric(horizontal: 4),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 62,
+              height: 62,
               decoration: BoxDecoration(
                 color: const Color(0xFFEFF6FF),
                 shape: BoxShape.circle,
                 border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
               ),
               child: Icon(subcategory.icon,
-                  size: 24, color: const Color(0xFF2563EB)),
+                  size: 30, color: const Color(0xFF2563EB)),
             ),
             const SizedBox(height: 6),
-            Text(
-              subcategory.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Color(0xFF334155),
-                height: 1.2,
+            SizedBox(
+              height: 32,
+              child: Text(
+                subcategory.name,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF334155),
+                  height: 1.2,
+                ),
               ),
             ),
           ],

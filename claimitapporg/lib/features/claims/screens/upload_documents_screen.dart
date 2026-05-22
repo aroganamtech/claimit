@@ -232,7 +232,7 @@ class _UploadDocumentsScreenState extends State<UploadDocumentsScreen> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, size: 18),
+                        icon: const Icon(Icons.close, size: 26),
                         onPressed: () {
                           setState(() => _selectedFiles.removeAt(index));
                         },

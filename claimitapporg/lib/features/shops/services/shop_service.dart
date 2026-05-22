@@ -127,6 +127,7 @@ class ShopService {
     required double lat,
     required double lng,
     double radiusKm = 4.0,
+    String? excludeId,
   }) async {
     try {
       final resp = await _api.get(
@@ -135,6 +136,7 @@ class ShopService {
           'lat': lat,
           'lng': lng,
           'radius_km': radiusKm,
+          if (excludeId != null) 'exclude_id': excludeId,
         },
       );
       if (resp.statusCode == 200 && resp.data is Map) {

@@ -148,7 +148,7 @@ class _LocationScreenState extends State<LocationScreen> {
                   GestureDetector(
                     onTap: () => context.canPop() ? context.pop() : context.go('/home'),
                     child: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 22, color: Color(0xFF2563EB)),
+                        size: 26, color: Color(0xFF2563EB)),
                   ),
                   const SizedBox(width: 8),
                   const Text(

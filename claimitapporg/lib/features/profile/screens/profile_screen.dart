@@ -51,19 +51,19 @@ class _ProfileScreenState extends State<ProfileScreen>
                 children: [
                   // ── Logo ──────────────────────────────────────────────────
                   Image.asset(
-                    'assets/icons/main_icon.png',
-                    width: 50,
-                    height: 35,
+                    'assets/images/home_main_logo.png',
+                    height: 38,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const SizedBox(width: 36),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'claimit',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.primary,
+                    errorBuilder: (_, __, ___) => Row(
+                      children: [
+                        Image.asset('assets/icons/main_icon.png',
+                            width: 38, height: 38, fit: BoxFit.contain),
+                        const SizedBox(width: 6),
+                        const Text('claimit',
+                            style: TextStyle(fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1565C0))),
+                      ],
                     ),
                   ),
 
@@ -88,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ),
                         Icon(
                           Icons.keyboard_arrow_down_rounded,
-                          size: 20,
+                          size: 28,
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ],
@@ -108,7 +108,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     child: IconButton(
                       icon: Icon(
                         Icons.search,
-                        size: 20,
+                        size: 28,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       onPressed: () => context.push('/search'),
@@ -264,7 +264,7 @@ class _ProfileCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.location_on_outlined,
-                          size: 14, color: Color(0xFF2563EB)),
+                          size: 26, color: Color(0xFF2563EB)),
                       const SizedBox(width: 4),
                       Text(
                         user?.location ?? 'Set Location',
