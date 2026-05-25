@@ -305,6 +305,7 @@ class ProfileProvider extends ChangeNotifier {
   Future<bool> updateProfile({
     required String fullName,
     String? email,
+    String? phone,
     String? dateOfBirth,
     String? address,
     String? city,
@@ -322,6 +323,7 @@ class ProfileProvider extends ChangeNotifier {
         data: {
           'full_name': fullName,
           if (email != null && email.isNotEmpty) 'email': email,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
           if (dateOfBirth != null && dateOfBirth.isNotEmpty) 'date_of_birth': dateOfBirth,
           if (address != null && address.isNotEmpty) 'address': address,
           if (city != null && city.isNotEmpty) 'city': city,

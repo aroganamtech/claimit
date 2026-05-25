@@ -19,6 +19,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
+  late TextEditingController _mobileController;
   late TextEditingController _dobController;
   late TextEditingController _addressController;
   late TextEditingController _cityController;
@@ -27,12 +28,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _aadharController;
   late TextEditingController _panController;
 
+  /// True when the user registered/logged in via phone — phone is their
+  /// primary login credential so we show it read-only.
+  bool _phoneIsReadOnly = false;
+
   @override
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().user;
     _nameController = TextEditingController(text: user?.fullName ?? '');
     _emailController = TextEditingController(text: user?.email ?? '');
+    _mobileController = TextEditingController(text: user?.phone ?? '');
     _dobController = TextEditingController(text: user?.dateOfBirth ?? '');
     _addressController = TextEditingController(text: user?.address ?? '');
     _cityController = TextEditingController(text: user?.city ?? '');
@@ -40,12 +46,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _pincodeController = TextEditingController(text: user?.pincode ?? '');
     _aadharController = TextEditingController(text: user?.aadharNumber ?? '');
     _panController = TextEditingController(text: user?.panNumber ?? '');
+
+    // If the user already has a phone number, mark it read-only — it is their
+    // login credential and shouldn't be silently overwritten from the profile form.
+    _phoneIsReadOnly = (user?.phone.isNotEmpty == true);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _mobileController.dispose();
     _dobController.dispose();
     _addressController.dispose();
     _cityController.dispose();
@@ -63,6 +74,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final success = await profileProvider.updateProfile(
       fullName: _nameController.text.trim(),
       email: _emailController.text.trim(),
+      phone: _phoneIsReadOnly ? null : _mobileController.text.trim(),
       dateOfBirth: _dobController.text.trim(),
       address: _addressController.text.trim(),
       city: _cityController.text.trim(),
@@ -127,6 +139,84 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 validator: Validators.validateEmail,
               ),
               const SizedBox(height: 16),
+
+              // ── Mobile number ────────────────────────────────────────────────
+              if (_phoneIsReadOnly)
+                // Already linked — show as display-only with a badge
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFD1D5DB)),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_outlined,
+                          color: Color(0xFF9CA3AF), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Mobile Number',
+                              style: TextStyle(
+                                
+                                fontSize: 11,
+                                color: Color(0xFF9CA3AF),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _mobileController.text,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Color(0xFF374151),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Login Number',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF065F46),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                CustomTextField(
+                  controller: _mobileController,
+                  label: 'Mobile Number',
+                  hint: '10-digit mobile number',
+                  keyboardType: TextInputType.phone,
+                  prefixIcon: Icons.phone_outlined,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return null; // optional
+                    if (!RegExp(r'^\d{10}$').hasMatch(val)) {
+                      return 'Enter a valid 10-digit mobile number';
+                    }
+                    return null;
+                  },
+                ),
+              const SizedBox(height: 16),
+
               CustomTextField(
                 controller: _dobController,
                 label: 'Date of Birth',

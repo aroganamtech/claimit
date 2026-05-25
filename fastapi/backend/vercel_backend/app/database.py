@@ -72,10 +72,22 @@ async def disconnect_db():
         print("❌ Disconnected from MongoDB")
 
 
+async def get_db_async():
+    """
+    Async version — ensures connection exists before returning.
+    Use this as a FastAPI dependency: db = await get_db_async()
+    Handles the case where Vercel didn't fire the lifespan startup hook.
+    """
+    if _db is None:
+        await connect_db()
+    return _db
+
+
 def get_db():
     """
-    Returns the active DB handle.
-    All route handlers call this; if somehow called before connect_db(),
-    it returns None and routes will surface a 500 rather than crashing hard.
+    Sync wrapper used by route handlers that already have a connected DB.
+    Falls back to None if called before any connection — routes will 500
+    rather than crash hard. For Vercel, prefer using the middleware below
+    which calls connect_db() on every cold start.
     """
     return _db

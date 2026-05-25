@@ -78,26 +78,26 @@ class BillRewardWalletScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     // Redeem Now button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        onPressed: () => context.push('/redeem-zone'),
-                        icon: const Icon(Icons.storefront_rounded, size: 26),
-                        label: const Text(
-                          'Redeem Now',
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.bold),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(
-                              color: Colors.white70, width: 1.5),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
-                        ),
-                      ),
-                    ),
+                    // SizedBox(
+                    //   width: double.infinity,
+                    //   height: 44,
+                    //   child: OutlinedButton.icon(
+                    //     onPressed: () => context.push('/profile'),
+                    //     icon: const Icon(Icons.storefront_rounded, size: 26),
+                    //     label: const Text(
+                    //       'Redeem Now',
+                    //       style: TextStyle(
+                    //           fontSize: 15, fontWeight: FontWeight.bold),
+                    //     ),
+                    //     style: OutlinedButton.styleFrom(
+                    //       foregroundColor: Colors.white,
+                    //       side: const BorderSide(
+                    //           color: Colors.white70, width: 1.5),
+                    //       shape: RoundedRectangleBorder(
+                    //           borderRadius: BorderRadius.circular(24)),
+                    //     ),
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
@@ -142,14 +142,14 @@ class BillRewardWalletScreen extends StatelessWidget {
       ),
 
       // ── Scan another bill FAB ──────────────────────────────────────────────
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _blue,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.qr_code_scanner_rounded),
-        label: const Text('Scan Bill',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        onPressed: () => context.push('/bill-reader/scanner'),
-      ),
+      // floatingActionButton: FloatingActionButton.extended(
+      //   backgroundColor: _blue,
+      //   foregroundColor: Colors.white,
+      //   icon: const Icon(Icons.qr_code_scanner_rounded),
+      //   label: const Text('Scan Bill',
+      //       style: TextStyle(fontWeight: FontWeight.bold)),
+      //   onPressed: () => context.push('/bill-reader/scanner'),
+      // ),
     );
   }
 }
@@ -183,12 +183,17 @@ class _WalletRow extends StatelessWidget {
           prefixWidget!,
           const SizedBox(width: 6),
         ],
-        Text(
-          value,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: valueFontSize,
-            fontWeight: FontWeight.bold,
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: valueFontSize,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ],
@@ -274,6 +279,8 @@ class _HistoryTile extends StatelessWidget {
               children: [
                 Text(
                   entry.shopName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -283,6 +290,8 @@ class _HistoryTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   dateFmt.format(entry.date),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                       fontSize: 11, color: Color(0xFF9E9E9E)),
                 ),
@@ -290,30 +299,39 @@ class _HistoryTile extends StatelessWidget {
             ),
           ),
 
-          // Amount + points
+          // Amount + cashback + points
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '₹${entry.totalBill.toStringAsFixed(0)} Rs',
+                '₹${entry.totalBill.toStringAsFixed(0)}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                   color: Color(0xFF1565C0),
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
+              Text(
+                'CB ₹${entry.cashback.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+              const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _CoinBadge(),
                   const SizedBox(width: 4),
                   Text(
-                    '${entry.rewardPoints}',
+                    '${entry.rewardPoints} pts',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Color(0xFF757575),
+                      fontSize: 12,
+                      color: Color(0xFFD97706),
                     ),
                   ),
                 ],

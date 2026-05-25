@@ -88,9 +88,11 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
         ),
         centerTitle: false,
       ),
-      body: FadeTransition(
+      body: SafeArea(
+        top: false,
+        child: FadeTransition(
         opacity: _fadeAnim,
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
@@ -113,58 +115,129 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
 
               const SizedBox(height: 20),
 
-              // ── Reward points ────────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Coin icon
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEAB308),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'C+',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    entry != null ? '${entry.rewardPoints}' : '--',
-                    style: const TextStyle(
-                      fontSize: 42,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
               // ── Success message ──────────────────────────────────────────
               const Text(
-                'Successfully Reward Claimed',
+                'Reward Claimed Successfully!',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: _blue,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 18),
+
+              // ── Reward breakdown card ────────────────────────────────────
+              if (entry != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      // Bill amount
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Flexible(
+                            child: Text('Bill Amount',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 14)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '₹${entry.totalBill.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const Divider(
+                          color: Colors.white24, height: 20, thickness: 0.8),
+                      // Cashback row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.account_balance_rounded,
+                                    color: Colors.white70, size: 16),
+                                SizedBox(width: 6),
+                                Flexible(
+                                  child: Text('Cashback (1%)',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 14)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '+ ₹${entry.cashback.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                color: Color(0xFF90EE90),
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      // Redeem points row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.stars_rounded,
+                                    color: Colors.white70, size: 16),
+                                SizedBox(width: 6),
+                                Flexible(
+                                  child: Text('Reward Points (10%)',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 14)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '+ ${entry.rewardPoints} pts',
+                            style: const TextStyle(
+                                color: Color(0xFFFFD700),
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 12),
+
               Text(
                 entry != null
-                    ? 'Your ${entry.rewardPoints} Redeem Points is Added in wallet.'
-                    : 'Your Redeem Points are Added in wallet.',
+                    ? '₹${entry.cashback.toStringAsFixed(0)} cashback & ${entry.rewardPoints} points added to your wallet.'
+                    : 'Your rewards have been added to your wallet.',
                 textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 13,
                   color: Color(0xFF757575),
@@ -214,6 +287,8 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                           children: [
                             Text(
                               entry.shopName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
@@ -226,9 +301,9 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                                   fontSize: 13, color: Color(0xFF555555)),
                             ),
                             Text(
-                              'Discount: ₹${entry.discount.toStringAsFixed(0)}',
+                              'Cashback: ₹${entry.cashback.toStringAsFixed(0)}',
                               style: const TextStyle(
-                                  fontSize: 13, color: Color(0xFF555555)),
+                                  fontSize: 13, color: Color(0xFF2563EB)),
                             ),
                           ],
                         ),
@@ -248,7 +323,7 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                   ),
                 ),
 
-              const Spacer(),
+              const SizedBox(height: 24),
 
               // ── Continue button ──────────────────────────────────────────
               SizedBox(
@@ -273,9 +348,10 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
 
               const SizedBox(height: 32),
             ],
-          ),
-        ),
-      ),
+          ),          // Column
+        ),            // SingleChildScrollView
+        ),            // FadeTransition
+      ),              // SafeArea
     );
   }
 }

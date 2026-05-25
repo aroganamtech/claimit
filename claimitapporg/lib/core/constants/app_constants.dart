@@ -1,8 +1,14 @@
 class AppConstants {
-  // API Base URL — pick the line that matches how you run the app:
+  // ── API Base URL ───────────────────────────────────────────────────────────
+  // Comment/uncomment the line you need:
+
+  // 🌐 Production (Vercel)
+  static const String baseUrl = 'https://claimitorgbackend.vercel.app';
+
+  // 💻 Local dev — comment out above and uncomment below when testing locally
+  // static const String baseUrl = 'http://10.103.197.67:8001';
   // static const String baseUrl = 'http://10.0.2.2:8001';   // Android emulator
   // static const String baseUrl = 'http://localhost:8001';   // iOS simulator
-  static const String baseUrl = 'http://10.103.197.67:8001'; // ← update your IP
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   static const String sendOtp        = '/auth/send-otp';
@@ -87,6 +93,13 @@ class AppConstants {
 
   // Bill scan
   static const String billScan = '/bill/scan';
+
+  // ── Gemini AI Vision (for bill OCR) ──────────────────────────────────────
+  // Replace with your Google AI Studio key from https://aistudio.google.com/
+  static const String geminiApiKey =
+      'YOUR_GEMINI_API_KEY_HERE'; // ← paste your key
+  static const String geminiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   // ── Storage Keys ──────────────────────────────────────────────────────────
   static const String tokenKey        = 'access_token';

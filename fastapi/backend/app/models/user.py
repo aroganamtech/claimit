@@ -17,6 +17,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
+    phone: Optional[str] = None        # Allow linking a phone number to an email-registered account
     date_of_birth: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None

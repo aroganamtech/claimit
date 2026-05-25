@@ -315,13 +315,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     GestureDetector(
                       onTap: () => context.push('/location'),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            location,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
+                          Flexible(
+                            child: Text(
+                              location,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 2),
@@ -586,6 +591,8 @@ class _NotifCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             notif.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: notif.isRead
@@ -612,6 +619,8 @@ class _NotifCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       notif.subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF6B7280),

@@ -301,6 +301,12 @@ class ShopService {
     final rawDist = j['distance'];
     final distance = rawDist != null ? rawDist.toString() : '';
 
+    // Parse carousel image list
+    final rawImageList = j['image_data_list'];
+    final imageDataList = rawImageList is List
+        ? rawImageList.whereType<String>().where((s) => s.isNotEmpty).toList()
+        : <String>[];
+
     return ShopItem(
       id:           j['id']            as String? ?? '',
       name:         j['name']          as String? ?? '',
@@ -311,11 +317,13 @@ class ShopService {
       reviewCount:  (j['review_count'] as num?)?.toInt()    ?? 0,
       addedDaysAgo: (j['added_days_ago'] as num?)?.toInt()  ?? 0,
       imageData:    j['image_data']    as String?,
+      imageDataList: imageDataList,
       imageName:    j['image_name']    as String? ?? '',
       fallbackColor: meta.color,
       fallbackIcon:  meta.icon,
       hasRewards:    hasRewards,
       hasRedeem:     hasRedeem,
+      about:         j['about']   as String? ?? '',
       address:       j['address'] as String? ?? '',
       timing:        j['timing']  as String? ?? '',
       phone:         j['phone']   as String? ?? '',

@@ -5,11 +5,15 @@ import 'package:go_router/go_router.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:provider/provider.dart';
 import '../providers/bill_reward_provider.dart';
+import '../../../core/services/gemini_ocr_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillScanningProgressScreen
-// Runs real OCR on the captured bill image, shows animated progress,
-// then pushes to BillConfirmScreen with the extracted total.
+// Runs real OCR on the captured bill image, extracts:
+//   • Total amount
+//   • Shop name  (first non-address lines at top of receipt)
+//   • Bill date  (date printed on the bill)
+// Then validates that the bill date == today before proceeding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BillScanningProgressScreen extends StatefulWidget {
@@ -34,12 +38,17 @@ class _BillScanningProgressScreenState
 
   final List<String> _steps = [
     'Reading bill image…',
-    'Detecting text with OCR…',
-    'Extracting total amount…',
+    'Running AI vision analysis…',
+    'Extracting shop name & bill number…',
+    'Extracting bill date…',
+    'Verifying total amount…',
   ];
 
-  double? _extractedTotal;
-  bool _ocrDone = false;
+  double?   _extractedTotal;
+  String?   _extractedShop;
+  DateTime? _extractedBillDate;
+  String?   _extractedBillNumber;
+  bool      _ocrDone = false;
 
   @override
   void initState() {
@@ -47,15 +56,14 @@ class _BillScanningProgressScreenState
 
     _progressCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 4000),
     );
     _progressAnim = CurvedAnimation(
         parent: _progressCtrl, curve: Curves.easeInOut);
     _progressCtrl.forward();
 
-    // Show checklist steps
     int step = 0;
-    _stepTimer = Timer.periodic(const Duration(milliseconds: 800), (t) {
+    _stepTimer = Timer.periodic(const Duration(milliseconds: 700), (t) {
       if (!mounted) { t.cancel(); return; }
       setState(() {
         if (step < _steps.length) {
@@ -67,7 +75,6 @@ class _BillScanningProgressScreenState
       });
     });
 
-    // Run OCR
     _runOcr();
   }
 
@@ -81,90 +88,144 @@ class _BillScanningProgressScreenState
   // ── OCR ────────────────────────────────────────────────────────────────────
 
   Future<void> _runOcr() async {
-    double? total;
-    String rawText = '';
+    double?   total;
+    String?   shopName;
+    DateTime? billDate;
+    String    rawText = '';
+    String?   billNumber;
+
+    // ── Step 1: Try Gemini Vision AI (most accurate) ─────────────────────────
+    bool geminiSucceeded = false;
     try {
-      final inputImage = InputImage.fromFilePath(widget.imagePath);
-      final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-      final result = await recognizer.processImage(inputImage);
-      await recognizer.close();
-      rawText = result.text;
-      total = _extractTotal(rawText);
+      final gemini = await GeminiOcrService.instance
+          .extractFromImage(widget.imagePath);
+      if (gemini != null && gemini.hasAnyData) {
+        total      = gemini.totalAmount;
+        shopName   = gemini.shopName;
+        billDate   = gemini.billDate;
+        billNumber = gemini.billNumber;
+        rawText    = gemini.rawJson ?? '';
+        geminiSucceeded = true;
+        debugPrint('Gemini OCR succeeded: $gemini');
+      }
     } catch (e) {
-      debugPrint('OCR error: $e');
+      debugPrint('Gemini OCR error: $e');
     }
 
-    // Wait at least enough for the animation to look complete
-    await Future.delayed(const Duration(milliseconds: 3200));
+    // ── Step 2: ML Kit fallback (if Gemini unavailable or returned nulls) ────
+    if (!geminiSucceeded || total == null) {
+      try {
+        final inputImage = InputImage.fromFilePath(widget.imagePath);
+        final recognizer =
+            TextRecognizer(script: TextRecognitionScript.latin);
+        final result = await recognizer.processImage(inputImage);
+        await recognizer.close();
+        rawText = result.text;
+
+        // Only fill fields that Gemini didn't find
+        total      ??= _extractTotal(rawText);
+        shopName   ??= _extractShopName(rawText);
+        billDate   ??= _extractBillDate(rawText);
+        billNumber ??= _extractBillNumber(rawText);
+        debugPrint('ML Kit fallback: total=$total shop=$shopName');
+      } catch (e) {
+        debugPrint('ML Kit OCR error: $e');
+      }
+    }
+
+    // Minimum animation time so progress steps are visible
+    await Future.delayed(const Duration(milliseconds: 3800));
     if (!mounted) return;
 
+    // ── Date validation ──────────────────────────────────────────────────────
+    // Bill date must match today's date.
+    if (billDate != null) {
+      final today = DateTime.now();
+      final isSameDay = billDate.year  == today.year &&
+                        billDate.month == today.month &&
+                        billDate.day   == today.day;
+
+      if (!isSameDay) {
+        // Go back to scanner and show error
+        if (!mounted) return;
+        context.pop(); // back to scanner
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFB71C1C),
+            duration: const Duration(seconds: 4),
+            content: Row(
+              children: [
+                const Icon(Icons.event_busy_rounded,
+                    color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Bill date (${_fmtDate(billDate)}) must be today\'s date. '
+                    'Only today\'s bills can be scanned.',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() {
-      _extractedTotal = total;
+      _extractedTotal      = total;
+      _extractedShop       = shopName;
+      _extractedBillDate   = billDate;
+      _extractedBillNumber = billNumber;
       _ocrDone = true;
     });
 
-    // Populate provider with real (or fallback) data
+    // Populate provider
     context.read<BillRewardProvider>().setScanResult(
       totalAmount: total,
-      imagePath: widget.imagePath,
-      ocrText: rawText,
+      imagePath:   widget.imagePath,
+      ocrText:     rawText,
+      shopName:    shopName,
+      billDate:    billDate,
+      billNumber:  billNumber,
     );
 
-    // Push to confirm screen
     context.pushReplacement('/bill-reader/confirm');
   }
 
-  /// Parse the total amount from OCR text.
-  /// Handles: printed receipts, handwritten text, = signs, spaced numbers, etc.
+  // ── Extract: Total amount ───────────────────────────────────────────────────
+
   double? _extractTotal(String rawText) {
-    // ── Step 1: Log raw OCR for debugging ─────────────────────────────────────
     debugPrint('═══ OCR RAW TEXT ═══\n$rawText\n════════════════════');
 
-    // ── Step 2: Normalize OCR noise ───────────────────────────────────────────
     String text = rawText
-        // Common OCR letter→digit confusions
         .replaceAll(RegExp(r'(?<=[0-9])[oO](?=[0-9])'), '0')
         .replaceAll(RegExp(r'(?<=[0-9])[lIi|](?=[0-9])'), '1')
-        // Collapse multiple spaces / newlines into single space
         .replaceAll(RegExp(r'[ \t]+'), ' ')
         .replaceAll(RegExp(r'\n+'), '\n');
 
-    debugPrint('═══ OCR NORMALIZED ═══\n$text\n══════════════════════');
-
-    // ── Helper: clean a raw matched number string → double? ───────────────────
     double? parseNum(String? raw) {
       if (raw == null) return null;
-      // Remove commas, spaces, ₹, Rs, rs inside the number
       final cleaned = raw.replaceAll(RegExp(r'[,\s₹]'), '');
       final val = double.tryParse(cleaned);
       return (val != null && val >= 10 && val <= 500000) ? val : null;
     }
 
-    // ── Step 3: Keyword-based patterns (ordered: most → least specific) ───────
-    // Delimiter group handles :  =  -  (space)  ₹  Rs  rs  .
     const delim = r'[\s:=\-₹]*(?:rs\.?|Rs\.?)?\s*';
 
     final keywordPatterns = [
-      // "grand total", "net total", "total amount", "amount payable" etc.
       '(?:grand\\s*total|net\\s*total|net\\s*amount|total\\s*amount|'
           'total\\s*bill|bill\\s*total|amount\\s*due|amount\\s*payable|'
           'payable\\s*amount|sub\\s*total|subtotal)'
           '$delim'
           r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-
-      // Plain "total" (not preceded by word chars to avoid "subtotal" double-match)
       '(?:^|\\s)total$delim'
           r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-
-      // "amount" standalone
       '(?:^|\\s)amount$delim'
           r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-
-      // "amt" shorthand
       '(?:^|\\s)amt$delim'
           r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-
-      // ₹ symbol anywhere
       r'₹\s*([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
     ];
 
@@ -182,15 +243,9 @@ class _BillScanningProgressScreenState
       }
     }
 
-    // ── Step 4: Line-by-line scan for "word = number" or "word : number" ──────
-    // Catches handwritten "total amount = 1000" even with unusual spacing
     for (final line in text.split('\n')) {
-      final lineMatch = RegExp(
-        r'(?:total|amount|amt|bill|payable|due)',
-        caseSensitive: false,
-      ).hasMatch(line);
-      if (lineMatch) {
-        // Extract the last number on this line
+      if (RegExp(r'total|amount|amt|bill|payable|due',
+              caseSensitive: false).hasMatch(line)) {
         final numMatches =
             RegExp(r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)').allMatches(line);
         double? last;
@@ -205,9 +260,8 @@ class _BillScanningProgressScreenState
       }
     }
 
-    // ── Step 5: Fallback — largest plausible number on the entire bill ─────────
-    // Most bills end with the total as the largest amount
-    final allNums = RegExp(r'(?<!\d)([0-9]{2,}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)(?!\d)')
+    final allNums = RegExp(
+            r'(?<!\d)([0-9]{2,}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)(?!\d)')
         .allMatches(text)
         .map((m) => parseNum(m.group(1)))
         .whereType<double>()
@@ -222,6 +276,173 @@ class _BillScanningProgressScreenState
 
     debugPrint('OCR: no total found');
     return null;
+  }
+
+  // ── Extract: Shop name ──────────────────────────────────────────────────────
+  // Shop name is usually in the first 1-4 non-empty lines before
+  // address / GSTIN / phone / invoice keywords.
+
+  String? _extractShopName(String rawText) {
+    // Keywords that signal we've passed the shop header
+    final stopPattern = RegExp(
+      r'gstin|gst\s*no|gst\s*number|gst\s*reg|'
+      r'invoice|bill\s*no|receipt|'
+      r'address|addr|ph\s*:|phone|tel\s*:|mobile|'
+      r'tax\s*invoice|vat\s*no|pan\s*no|'
+      r'date\s*:|time\s*:|cashier|counter',
+      caseSensitive: false,
+    );
+
+    final lines = rawText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    final shopLines = <String>[];
+
+    for (final line in lines) {
+      // Stop at receipt metadata keywords
+      if (stopPattern.hasMatch(line)) break;
+      // Stop if line is almost entirely digits / punctuation (phone, invoice no, etc.)
+      final alphaCount = RegExp(r'[a-zA-Z]').allMatches(line).length;
+      if (line.length > 3 && alphaCount < 2) break;
+      // Stop after 4 candidate lines
+      if (shopLines.length >= 4) break;
+
+      shopLines.add(line);
+    }
+
+    if (shopLines.isEmpty) return null;
+
+    // Take the first line as primary shop name (usually the business name)
+    final primary = shopLines.first
+        .replaceAll(RegExp(r"[^a-zA-Z0-9\s\-\&\.\,']"), '')
+        .trim();
+
+    debugPrint('OCR shop name: $primary');
+    return primary.isEmpty ? null : primary;
+  }
+
+  // ── Extract: Bill / Invoice / Receipt number ────────────────────────────────
+  // Recognizes common Indian receipt bill-number patterns:
+  //   "Bill No: 45871"   "Invoice No: 45871"   "Bill #45871"
+  //   "Inv No: 45871"    "Receipt No: 45871"   "Voucher No: 45871"
+  //   "Bill Number: 45871"   "Inv#: 45871"
+  //   Also catches "No: 45871" when preceded by bill/invoice keywords.
+
+  String? _extractBillNumber(String rawText) {
+    final pattern = RegExp(
+      r'(?:bill\s*(?:no|number|num|#)|'
+      r'invoice\s*(?:no|number|num|#)|'
+      r'inv\s*(?:no|num|#)|'
+      r'receipt\s*(?:no|number|num|#)|'
+      r'voucher\s*(?:no|number|num|#)|'
+      r'rcpt\s*(?:no|num|#)|'
+      r'txn\s*(?:no|id|number)|'
+      r'order\s*(?:no|number|num|#))'
+      r'\s*[:\-#]?\s*'
+      r'([A-Za-z0-9][A-Za-z0-9\-\/]{1,20})',
+      caseSensitive: false,
+    );
+
+    for (final m in pattern.allMatches(rawText)) {
+      final raw = m.group(1)?.trim();
+      if (raw != null && raw.isNotEmpty) {
+        // Must contain at least one digit to be a real bill number
+        if (RegExp(r'\d').hasMatch(raw)) {
+          debugPrint('OCR bill number: $raw');
+          return raw;
+        }
+      }
+    }
+
+    debugPrint('OCR: no bill number found');
+    return null;
+  }
+
+  // ── Extract: Bill date ──────────────────────────────────────────────────────
+  // Recognizes common Indian receipt date formats:
+  //   DD/MM/YYYY  DD-MM-YYYY  DD.MM.YYYY
+  //   DD/MM/YY    DD-MM-YY
+  //   DD MMM YYYY  (e.g. 23 May 2026)
+  //   YYYY-MM-DD  (ISO format)
+
+  DateTime? _extractBillDate(String rawText) {
+    final monthNames = {
+      'jan': 1,  'feb': 2,  'mar': 3,  'apr': 4,
+      'may': 5,  'jun': 6,  'jul': 7,  'aug': 8,
+      'sep': 9,  'oct': 10, 'nov': 11, 'dec': 12,
+    };
+
+    // Helper: try to build a DateTime, validate ranges
+    DateTime? tryDate(int y, int m, int d) {
+      if (m < 1 || m > 12) return null;
+      if (d < 1 || d > 31) return null;
+      final year = y < 100 ? 2000 + y : y;
+      if (year < 2000 || year > 2100) return null;
+      try { return DateTime(year, m, d); } catch (_) { return null; }
+    }
+
+    // ── Pattern 1: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY ───────────────────
+    final dmyPattern = RegExp(
+      r'\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2,4})\b',
+    );
+    for (final m in dmyPattern.allMatches(rawText)) {
+      final d = int.tryParse(m.group(1)!);
+      final mo = int.tryParse(m.group(2)!);
+      final y = int.tryParse(m.group(3)!);
+      if (d != null && mo != null && y != null) {
+        final dt = tryDate(y, mo, d);
+        if (dt != null) {
+          debugPrint('OCR bill date (DMY): $dt');
+          return dt;
+        }
+      }
+    }
+
+    // ── Pattern 2: ISO YYYY-MM-DD ────────────────────────────────────────────
+    final isoPattern = RegExp(r'\b(\d{4})-(\d{2})-(\d{2})\b');
+    for (final m in isoPattern.allMatches(rawText)) {
+      final y = int.tryParse(m.group(1)!);
+      final mo = int.tryParse(m.group(2)!);
+      final d = int.tryParse(m.group(3)!);
+      if (y != null && mo != null && d != null) {
+        final dt = tryDate(y, mo, d);
+        if (dt != null) {
+          debugPrint('OCR bill date (ISO): $dt');
+          return dt;
+        }
+      }
+    }
+
+    // ── Pattern 3: DD MMM YYYY  (e.g. 23 May 2026) ──────────────────────────
+    final wordPattern = RegExp(
+      r'\b(\d{1,2})\s+([a-zA-Z]{3,9})\s+(\d{2,4})\b',
+    );
+    for (final m in wordPattern.allMatches(rawText)) {
+      final d = int.tryParse(m.group(1)!);
+      final monthStr = m.group(2)!.toLowerCase().substring(0, 3);
+      final y = int.tryParse(m.group(3)!);
+      final mo = monthNames[monthStr];
+      if (d != null && mo != null && y != null) {
+        final dt = tryDate(y, mo, d);
+        if (dt != null) {
+          debugPrint('OCR bill date (word): $dt');
+          return dt;
+        }
+      }
+    }
+
+    debugPrint('OCR: no bill date found');
+    return null;
+  }
+
+  // ── Date formatter for error message ─────────────────────────────────────────
+  String _fmtDate(DateTime d) {
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${d.day} ${months[d.month]} ${d.year}';
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -244,7 +465,7 @@ class _BillScanningProgressScreenState
               color: _blue, fontWeight: FontWeight.bold, fontSize: 18),
         ),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,15 +497,15 @@ class _BillScanningProgressScreenState
 
             const SizedBox(height: 28),
 
-            // Checklist
+            // Checklist steps
             ..._steps.asMap().entries.map((e) {
               final visible = e.key < _visibleSteps;
-              final isDone = _ocrDone || e.key < _visibleSteps;
+              final isDone  = _ocrDone || e.key < _visibleSteps;
               return AnimatedOpacity(
                 opacity: visible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 400),
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.only(bottom: 14),
                   child: Row(
                     children: [
                       Container(
@@ -320,16 +541,55 @@ class _BillScanningProgressScreenState
               );
             }),
 
+            // Live OCR preview chips (shown while scanning)
+            if (_ocrDone) ...[
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 6),
+              _OcrPreviewChip(
+                icon: Icons.storefront_rounded,
+                label: 'Shop',
+                value: _extractedShop ?? 'Not detected',
+                color: const Color(0xFF2563EB),
+              ),
+              const SizedBox(height: 6),
+              _OcrPreviewChip(
+                icon: Icons.tag_rounded,
+                label: 'Bill No',
+                value: _extractedBillNumber ?? 'Not detected',
+                color: const Color(0xFFE65100),
+              ),
+              const SizedBox(height: 6),
+              _OcrPreviewChip(
+                icon: Icons.calendar_today_rounded,
+                label: 'Date',
+                value: _extractedBillDate != null
+                    ? _fmtDate(_extractedBillDate!)
+                    : 'Not detected',
+                color: const Color(0xFF7B1FA2),
+              ),
+              const SizedBox(height: 6),
+              _OcrPreviewChip(
+                icon: Icons.receipt_rounded,
+                label: 'Amount',
+                value: _extractedTotal != null
+                    ? '₹${_extractedTotal!.toStringAsFixed(0)}'
+                    : 'Not detected',
+                color: const Color(0xFF2E7D32),
+              ),
+            ],
+
             const SizedBox(height: 16),
 
-            // Bill image preview
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+            // Bill image preview — fixed height avoids Expanded-in-Column issues
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 180,
+                width: double.infinity,
                 child: Image.file(
                   File(widget.imagePath),
                   fit: BoxFit.cover,
-                  width: double.infinity,
                   errorBuilder: (_, __, ___) => Container(
                     color: const Color(0xFFF5F5F5),
                     child: const Center(
@@ -340,8 +600,57 @@ class _BillScanningProgressScreenState
                 ),
               ),
             ),
+            const SizedBox(height: 16),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Small chip to preview an OCR-extracted field ──────────────────────────────
+class _OcrPreviewChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _OcrPreviewChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                  fontSize: 12, color: Color(0xFF374151)),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }

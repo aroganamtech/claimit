@@ -1114,12 +1114,40 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      '${s.discount}% OFF on eligible purchases',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF1565C0),
-                          fontWeight: FontWeight.w600),
+                    // Dynamic offer tag — redeem shops show "X% Discount + 1% Cashback",
+                    // reward shops show "Free Reward + 1% Cashback"
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 4,
+                      children: [
+                        if (s.hasRedeem) ...[
+                          _OfferTag(
+                            label: '${s.discount}% Discount',
+                            bg: const Color(0xFFFFF7ED),
+                            border: const Color(0xFFC2410C),
+                            fg: const Color(0xFFC2410C),
+                          ),
+                          const _OfferTag(
+                            label: '+ 1% Cashback',
+                            bg: Color(0xFFF0FDF4),
+                            border: Color(0xFF16A34A),
+                            fg: Color(0xFF15803D),
+                          ),
+                        ] else if (s.hasRewards) ...[
+                          const _OfferTag(
+                            label: 'Free Reward',
+                            bg: Color(0xFFEFF6FF),
+                            border: Color(0xFF1D4ED8),
+                            fg: Color(0xFF1D4ED8),
+                          ),
+                          const _OfferTag(
+                            label: '+ 1% Cashback',
+                            bg: Color(0xFFF0FDF4),
+                            border: Color(0xFF16A34A),
+                            fg: Color(0xFF15803D),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -1153,11 +1181,13 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                         if (s.hasRewards)
                           _SmallChip(
                               label: 'Rewards',
-                              color: const Color(0xFF10B981))
-                        else if (s.hasRedeem)
+                              color: const Color(0xFF10B981)),
+                        if (s.hasRedeem) ...[
+                          if (s.hasRewards) const SizedBox(width: 6),
                           _SmallChip(
                               label: 'Redeem',
                               color: const Color(0xFF1565C0)),
+                        ],
                       ],
                     ),
                   ],
@@ -1188,6 +1218,43 @@ class _SmallChip extends StatelessWidget {
       child: Text(label,
           style: TextStyle(
               fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offer tag pill — shown on each search result card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OfferTag extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color border;
+  final Color fg;
+  const _OfferTag({
+    required this.label,
+    required this.bg,
+    required this.border,
+    required this.fg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border.withOpacity(0.6)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
+      ),
     );
   }
 }

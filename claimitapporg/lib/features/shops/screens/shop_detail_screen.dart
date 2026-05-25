@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../services/shop_service.dart';
@@ -25,6 +27,11 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
   bool _isFav = false;
   bool _toggling = false;
 
+  // ── Image carousel ───────────────────────────────────────────────────────
+  late final PageController _imgPageCtrl;
+  int _currentImg = 0;
+  Timer? _imgTimer;
+
   // Reviews
   List<ShopReview> _reviews = [];
   double _avgRating = 0;
@@ -40,16 +47,41 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
   final _reviewCtrl = TextEditingController();
   bool _submitting = false;
 
+  // Effective image list: use imageDataList if available, else fall back to
+  // single imageData so the carousel always has at least 1 slide.
+  List<String> get _images {
+    final list = widget.shop.imageDataList;
+    if (list.isNotEmpty) return list;
+    final single = widget.shop.imageData;
+    if (single != null && single.isNotEmpty) return [single];
+    return [];
+  }
+
   @override
   void initState() {
     super.initState();
+    _imgPageCtrl = PageController();
     _isFav = context.read<ProfileProvider>().isLiked(widget.shop.id);
     _loadReviews();
     _loadNearbyShops();
+    // Auto-scroll images every 4 seconds (only when more than one image)
+    if (_images.length > 1) {
+      _imgTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!_imgPageCtrl.hasClients) return;
+        final next = (_currentImg + 1) % _images.length;
+        _imgPageCtrl.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      });
+    }
   }
 
   @override
   void dispose() {
+    _imgTimer?.cancel();
+    _imgPageCtrl.dispose();
     _reviewCtrl.dispose();
     super.dispose();
   }
@@ -199,9 +231,9 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
       backgroundColor: Colors.white,
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ─────────────────────────────────────────────────
+          // ── Hero App Bar with image carousel ────────────────────────────
           SliverAppBar(
-            expandedHeight: 260,
+            expandedHeight: 280,
             pinned: true,
             backgroundColor: _blue,
             leading: GestureDetector(
@@ -233,13 +265,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
-              background: s.imageData != null && s.imageData!.isNotEmpty
-                  ? Image.memory(
-                      base64Decode(s.imageData!),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _heroFallback(s),
-                    )
-                  : _heroFallback(s),
+              background: _buildImageCarousel(s),
             ),
           ),
 
@@ -268,6 +294,8 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                     children: [
                       Expanded(
                         child: Text(s.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -310,9 +338,13 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                       const Icon(Icons.location_on_rounded,
                           size: 26, color: Color(0xFF6B7280)),
                       const SizedBox(width: 3),
-                      Text(s.location,
-                          style: const TextStyle(
-                              fontSize: 13, color: Color(0xFF6B7280))),
+                      Expanded(
+                        child: Text(s.location,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13, color: Color(0xFF6B7280))),
+                      ),
                     ],
                   ),
                 ),
@@ -327,6 +359,53 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                           fontSize: 14,
                           color: Color(0xFF374151),
                           height: 1.5),
+                    ),
+                  ),
+
+                // ── Offer chips — one row per mode the shop supports ───────
+                if (s.hasRedeem && s.discount > 0)
+                  // Redeem shop: owner accepts points → user gets X% off + 1% cashback
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    child: Row(
+                      children: [
+                        _OfferChip(
+                          label: '${s.discount}% Discount',
+                          bg: const Color(0xFFFFF7ED),
+                          border: const Color(0xFFFB923C),
+                          fg: const Color(0xFFC2410C),
+                        ),
+                        const SizedBox(width: 8),
+                        const _OfferChip(
+                          label: '+ 1% Cashback',
+                          bg: Color(0xFFECFDF5),
+                          border: Color(0xFF6EE7B7),
+                          fg: Color(0xFF065F46),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (s.hasRewards)
+                  // Reward shop: user scans bill → earns reward points + 1% cashback
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        20, (s.hasRedeem && s.discount > 0) ? 8 : 14, 20, 0),
+                    child: Row(
+                      children: const [
+                        _OfferChip(
+                          label: 'Free Reward Points',
+                          bg: Color(0xFFEFF6FF),
+                          border: Color(0xFF93C5FD),
+                          fg: Color(0xFF1D4ED8),
+                        ),
+                        SizedBox(width: 8),
+                        _OfferChip(
+                          label: '+ 1% Cashback',
+                          bg: Color(0xFFECFDF5),
+                          border: Color(0xFF6EE7B7),
+                          fg: Color(0xFF065F46),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -399,6 +478,14 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                         mode: LaunchMode.externalApplication),
                   ),
 
+                // ── About section ─────────────────────────────────────────
+                if (s.about.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                  const SizedBox(height: 20),
+                  _buildAbout(s.about),
+                ],
+
                 const SizedBox(height: 20),
                 const Divider(height: 1, color: Color(0xFFF3F4F6)),
                 const SizedBox(height: 20),
@@ -425,6 +512,107 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
 
                 const SizedBox(height: 32),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Image carousel (used inside FlexibleSpaceBar) ─────────────────────────
+  Widget _buildImageCarousel(ShopItem s) {
+    final images = _images;
+    if (images.isEmpty) return _heroFallback(s);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Sliding images ──────────────────────────────────────────────────
+        PageView.builder(
+          controller: _imgPageCtrl,
+          itemCount: images.length,
+          onPageChanged: (i) => setState(() => _currentImg = i),
+          itemBuilder: (ctx, i) {
+            try {
+              return Image.memory(
+                base64Decode(images[i]),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _heroFallback(s),
+              );
+            } catch (_) {
+              return _heroFallback(s);
+            }
+          },
+        ),
+
+        // ── Gradient overlay so dots are readable ───────────────────────────
+        Positioned(
+          left: 0, right: 0, bottom: 0,
+          child: Container(
+            height: 60,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Colors.black45, Colors.transparent],
+              ),
+            ),
+          ),
+        ),
+
+        // ── Dot indicators (bottom-center) ──────────────────────────────────
+        if (images.length > 1)
+          Positioned(
+            bottom: 14,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: SmoothPageIndicator(
+                controller: _imgPageCtrl,
+                count: images.length,
+                effect: const WormEffect(
+                  dotHeight: 7,
+                  dotWidth: 7,
+                  activeDotColor: Colors.white,
+                  dotColor: Colors.white38,
+                  spacing: 6,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── About section ─────────────────────────────────────────────────────────
+  Widget _buildAbout(String about) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.info_outline_rounded,
+                  size: 18, color: Color(0xFF2563EB)),
+              SizedBox(width: 8),
+              Text(
+                'About',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            about,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xFF4B5563),
+              height: 1.65,
             ),
           ),
         ],
@@ -676,6 +864,8 @@ class _ReviewTile extends StatelessWidget {
                         fontSize: 11, color: Color(0xFF9CA3AF))),
                 const SizedBox(height: 4),
                 Text(review.comment,
+                    maxLines: 5,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF374151),
@@ -753,9 +943,13 @@ class _ContactRow extends StatelessWidget {
               child: Icon(icon, color: const Color(0xFF2563EB), size: 18),
             ),
             const SizedBox(width: 14),
-            Text(text,
-                style: const TextStyle(
-                    fontSize: 14, color: Color(0xFF374151))),
+            Expanded(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, color: Color(0xFF374151))),
+            ),
           ],
         ),
       ),
@@ -812,6 +1006,8 @@ class _NearbyShopCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(shop.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -911,3 +1107,39 @@ Widget _heroFallback(ShopItem shop) => Container(
       child: Icon(shop.fallbackIcon,
           color: const Color(0xFF9CA3AF), size: 72),
     );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small offer chip — used for "30% Discount" and "+ 1% Cashback" tags
+// ─────────────────────────────────────────────────────────────────────────────
+class _OfferChip extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color border;
+  final Color fg;
+  const _OfferChip({
+    required this.label,
+    required this.bg,
+    required this.border,
+    required this.fg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border.withOpacity(0.6)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}

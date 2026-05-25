@@ -320,8 +320,8 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
                     ),
                   ),
 
-                // Bottom spacing for the sticky button
-                const SizedBox(height: 100),
+                // Bottom spacing for the sticky button — use SafeArea bottom inset.
+                SizedBox(height: MediaQuery.of(context).padding.bottom + 80),
               ],
             ),
           ),
@@ -405,12 +405,15 @@ class _AvatarHero extends StatelessWidget {
     return Container(
       color: color,
       alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 72,
-          fontWeight: FontWeight.bold,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 48,      // reduced; FittedBox scales it down if container is smaller
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );

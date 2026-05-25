@@ -40,6 +40,8 @@ class LoadingButton extends StatelessWidget {
             )
           : Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,

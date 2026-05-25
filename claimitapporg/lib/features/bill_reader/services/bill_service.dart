@@ -16,6 +16,9 @@ class BillService {
   Future<Map<String, dynamic>> submitBillScan({
     required double totalAmount,
     String? imagePath,
+    String? shopName,
+    String? billNumber,
+    DateTime? billDate,
   }) async {
     final rewardPoints = (totalAmount * 0.1).round();
 
@@ -29,8 +32,15 @@ class BillService {
     }
 
     final body = <String, dynamic>{
-      'total_amount': totalAmount,
+      'total_amount':  totalAmount,
       'reward_points': rewardPoints,
+      // Security fields for server-side duplicate detection
+      if (shopName?.isNotEmpty   == true) 'shop_name':   shopName,
+      if (billNumber?.isNotEmpty == true) 'bill_number': billNumber,
+      if (billDate != null)
+        'bill_date':
+            '${billDate.year}-${billDate.month.toString().padLeft(2, '0')}'
+            '-${billDate.day.toString().padLeft(2, '0')}',
       if (imageBase64 != null) 'image_base64': imageBase64,
     };
 

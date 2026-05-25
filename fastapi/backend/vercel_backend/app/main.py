@@ -13,11 +13,11 @@ Key differences from the local dev version:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .database import connect_db, disconnect_db
+from .database import connect_db, disconnect_db, get_db
 from .routes import (
     auth, users, claims, notifications, dashboard,
     policies, locations, deals, shops, rewards,
@@ -40,6 +40,16 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+
+# ── Vercel cold-start guard ───────────────────────────────────────────────────
+# Vercel serverless may skip the lifespan startup hook on cold starts.
+# This middleware ensures the DB is always connected before any request.
+@app.middleware("http")
+async def ensure_db_connected(request: Request, call_next):
+    if get_db() is None:
+        await connect_db()
+    return await call_next(request)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # Flutter mobile apps send Bearer tokens (no cookies), so credentials=False

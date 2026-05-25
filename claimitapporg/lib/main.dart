@@ -74,16 +74,19 @@ class _ClaimitAppState extends State<ClaimitApp> {
           darkTheme: AppTheme.darkTheme,
           themeMode: themeProvider.themeMode,
           routerConfig: _router,
-          // ── Global text size boost ─────────────────────────────────────
-          // Increases every text in the app by 20% so nothing is hard to read.
-          // Change 1.2 here to adjust globally (1.0 = original, 1.3 = 30% larger).
+          // ── Responsive text-scale guard ───────────────────────────────
+          // Prevents system "Display size / Font size" (Samsung, Xiaomi, etc.)
+          // from scaling text beyond 1.1× so layouts never overflow.
+          // The font sizes in AppTheme are already sized for comfortable reading;
+          // extreme system scaling breaks fixed-height containers.
           builder: (context, child) {
             final mq = MediaQuery.of(context);
+            // Clamp system text scale: allow slight boosts but cap at 1.1×.
+            final clampedScale =
+                mq.textScaler.scale(1.0).clamp(0.9, 1.1);
             return MediaQuery(
               data: mq.copyWith(
-                textScaler: TextScaler.linear(
-                  (mq.textScaler.scale(1.0)).clamp(1.0, 1.0) * 1.2,
-                ),
+                textScaler: TextScaler.linear(clampedScale),
               ),
               child: child!,
             );

@@ -535,13 +535,15 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
       // ── Bottom App Bar (notched for FAB) ───────────────────────────────
+      // Height is adaptive: kBottomNavigationBarHeight (56) + extra for tall
+      // phones so the bar is never cramped on any device.
       bottomNavigationBar: BottomAppBar(
         notchMargin: 10.0,
         shape: const CircularNotchedRectangle(),
         color: const Color.fromARGB(255, 20, 143, 208), // kept blue as brand color
         elevation: 8,
         padding: EdgeInsets.zero,
-        height: 76,
+        height: kBottomNavigationBarHeight + 16, // 56 + 16 = 72, scales with device
         child: Row(
           children: [
             // Left half
@@ -559,9 +561,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   _NavItem(
                     icon: Icons.storefront_outlined,
                     activeIcon: Icons.storefront_rounded,
-                    label: 'Redeem+',
+                    label: 'Reels',
                     isSelected: sel == 1,
-                    onTap: () => context.go('/redeem-zone'),
+                    onTap: () => context.go('/reelz'),
                   ),
                 ],
               ),
@@ -819,6 +821,8 @@ class _ZoneTile extends StatelessWidget {
           Text(
             zone.label,
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -877,8 +881,9 @@ class _NavItemState extends State<_NavItem> {
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: 76,
+        // Use ConstrainedBox so the tap target is never too narrow on small phones.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 56, maxWidth: 90),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -887,15 +892,17 @@ class _NavItemState extends State<_NavItem> {
                     ? widget.activeIcon
                     : widget.icon,
                 color: color,
-                size: 30,
+                size: 28,
               ),
 
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
 
               Text(
                 widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: widget.isSelected
                       ? FontWeight.w700
                       : FontWeight.w500,

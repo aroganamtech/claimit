@@ -28,7 +28,9 @@ class BillReaderIntroScreen extends StatelessWidget {
         ),
         centerTitle: false,
       ),
-      body: Column(
+      body: SafeArea(
+        top: false,          // AppBar handles top inset
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Subtitle
@@ -150,9 +152,9 @@ class BillReaderIntroScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
-          // Scan Bill button
+          // Scan Bill button — bottom padding accounts for home bar on tall phones.
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: SizedBox(
               width: double.infinity,
               height: 52,
@@ -174,7 +176,8 @@ class BillReaderIntroScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+        ),       // Column
+      ),         // SafeArea
     );
   }
 }

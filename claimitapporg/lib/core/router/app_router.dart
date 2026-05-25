@@ -47,9 +47,17 @@ import '../../features/bill_reader/screens/bill_scanning_progress_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_success_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_wallet_screen.dart';
 
+// ── Navigator keys ─────────────────────────────────────────────────────────────
+// Must be module-level finals so they are never recreated on rebuild.
+// Passing them explicitly to GoRouter + ShellRoute prevents the
+// "GlobalKey used multiple times" / HeroControllerScope crash.
+final _rootNavKey  = GlobalKey<NavigatorState>(debugLabel: 'root');
+final _shellNavKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
+
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
     return GoRouter(
+      navigatorKey: _rootNavKey,
       initialLocation: '/splash',
       refreshListenable: authProvider.authStateNotifier,
       redirect: (context, state) {
@@ -123,10 +131,22 @@ class AppRouter {
           },
         ),
         GoRoute(
+          // parentNavigatorKey ensures this route renders in the ROOT navigator
+          // (full-screen, no bottom nav), not inside the ShellRoute's navigator.
+          parentNavigatorKey: _rootNavKey,
           path: '/shop-detail',
-          builder: (context, state) {
+          pageBuilder: (context, state) {
             final shop = state.extra as ShopItem;
-            return ShopDetailScreen(shop: shop);
+            // CustomTransitionPage does NOT add a HeroControllerScope, so it
+            // never conflicts with the one MaterialApp.router already provides.
+            // The unique ValueKey per shop.id lets multiple detail pages coexist
+            // in the navigator stack without _debugCheckDuplicatedPageKeys firing.
+            return CustomTransitionPage(
+              key: ValueKey('shop-detail-${shop.id}'),
+              child: ShopDetailScreen(shop: shop),
+              transitionsBuilder: (context, animation, secondary, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            );
           },
         ),
         GoRoute(
@@ -186,33 +206,73 @@ class AppRouter {
         ),
 
         // ── Bill Reader flow ───────────────────────────────────────────────
+        // parentNavigatorKey + explicit ValueKey on every screen ensures the
+        // root navigator's pages list is 100% explicitly-keyed.  go_router
+        // 17.2.3 throws _debugCheckDuplicatedPageKeys when auto-keyed pages
+        // are mixed with CustomTransitionPage pages in the same navigator.
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader',
-          builder: (context, state) => const BillReaderIntroScreen(),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-intro'),
+            child: const BillReaderIntroScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/scanner',
-          builder: (context, state) => const BillScannerScreen(),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-scanner'),
+            child: const BillScannerScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/scanning',
-          builder: (context, state) {
+          pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>? ?? {};
             final imagePath = extra['imagePath'] as String? ?? '';
-            return BillScanningProgressScreen(imagePath: imagePath);
+            return CustomTransitionPage(
+              key: const ValueKey('bill-reader-scanning'),
+              child: BillScanningProgressScreen(imagePath: imagePath),
+              transitionsBuilder: (context, animation, secondary, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            );
           },
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/confirm',
-          builder: (context, state) => const BillConfirmScreen(),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-confirm'),
+            child: const BillConfirmScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/success',
-          builder: (context, state) => const BillRewardSuccessScreen(),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-success'),
+            child: const BillRewardSuccessScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/wallet',
-          builder: (context, state) => const BillRewardWalletScreen(),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-wallet'),
+            child: const BillRewardWalletScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
         ),
 
         // ── Other standalone pages ─────────────────────────────────────────
@@ -226,29 +286,52 @@ class AppRouter {
         ),
 
         // ── Redeem flow ────────────────────────────────────────────────────
+        // parentNavigatorKey: _rootNavKey → rendered in root navigator (no
+        // bottom nav), matching /shop-detail. pageBuilder + unique ValueKey
+        // per shop.id prevents _debugCheckDuplicatedPageKeys assertion in
+        // go_router 17.x when multiple redeem routes exist in the stack.
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/redeem-loading',
-          builder: (context, state) {
+          pageBuilder: (context, state) {
             final shop = state.extra as ShopItem;
-            return RedeemLoadingScreen(shop: shop);
+            return CustomTransitionPage(
+              key: ValueKey('redeem-loading-${shop.id}'),
+              child: RedeemLoadingScreen(shop: shop),
+              transitionsBuilder: (context, animation, secondary, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            );
           },
         ),
         GoRoute(
+          parentNavigatorKey: _rootNavKey,
           path: '/redeem-eligibility',
-          builder: (context, state) {
+          pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>;
-            return RedeemEligibilityScreen(
-              shop: extra['shop'],
-              eligible: extra['eligible'] as bool? ?? false,
-              discount: extra['discount'] as int? ?? 0,
-              message: extra['message'] as String? ?? '',
+            final shop  = extra['shop'] as ShopItem;
+            return CustomTransitionPage(
+              key: ValueKey('redeem-eligibility-${shop.id}'),
+              child: RedeemEligibilityScreen(
+                shop:     shop,
+                eligible: extra['eligible'] as bool?   ?? false,
+                discount: extra['discount'] as int?    ?? 0,
+                message:  extra['message']  as String? ?? '',
+              ),
+              transitionsBuilder: (context, animation, secondary, child) =>
+                  FadeTransition(opacity: animation, child: child),
             );
           },
         ),
 
         // ── Shell (bottom nav) ─────────────────────────────────────────────
+        // pageBuilder with a fixed ValueKey prevents go_router 17.x from
+        // auto-generating a key that could conflict with pushed route pages.
         ShellRoute(
-          builder: (context, state, child) => HomeScreen(child: child),
+          navigatorKey: _shellNavKey,
+          pageBuilder: (context, state, child) => NoTransitionPage<void>(
+            key: const ValueKey('app-shell'),
+            child: HomeScreen(child: child),
+          ),
           routes: [
             GoRoute(
               path: '/home',

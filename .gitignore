@@ -1,0 +1,5 @@
+
+# Vercel config contains secrets — do not commit
+fastapi/backend/vercel_backend/vercel.json
+fastapi/backend/.env
+fastapi/backend/vercel_backend/.env

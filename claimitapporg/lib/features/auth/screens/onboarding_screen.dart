@@ -392,7 +392,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardingSlide(
       title: 'Earn IT',
       description:
-          'At Claimit-affiliated Redeem Zones,\nscan your bill to enjoy Rewards as Discounts\nplus 1% Cashback on every purchase.',
+          'At Claimit-affiliated Redeem Zones,scan your bill to enjoy Rewards as Discounts plus 1% Cashback on every purchase.',
       imageAsset: 'assets/images/onb3.png', 
     ),
   ];
@@ -562,55 +562,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 class _ClaimitLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFFD93D), Color(0xFFF59E0B)],
-            ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Text(
-                'c',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w300,
-                  height: 1,
-                ),
-              ),
-              Positioned(
-                top: 5,
-                right: 5,
-                child: Icon(
-                  Icons.star_rounded,
-                  color: Colors.white.withOpacity(0.9),
-                  size: 8,
-                ),
-              ),
-            ],
-          ),
+    return Image.asset(
+      'assets/images/home_main_logo.png',
+      height: 38,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const Text(
+        'claimit',
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF2563EB),
         ),
-        const SizedBox(width: 6),
-        const Text(
-          'claimit',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2563EB),
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
+      ),
+      
     );
   }
 }
@@ -622,48 +586,41 @@ class _SlideContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return Padding(
+    // Use SingleChildScrollView so content never overflows on small screens.
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         children: [
-          const SizedBox(height: 8),
-          
-          // 2. Replaced the dummy card drawing with your custom Image.asset
-          Container(
+          // Responsive top gap: 6% of screen height (≈ 50 dp on a 360p phone).
+          SizedBox(height: size.height * 0.06),
+
+          // Slide illustration — height capped so text always fits below.
+          SizedBox(
             width: double.infinity,
             height: size.height * 0.30,
-            decoration: BoxDecoration(
-              color: const Color(0xFFDCECFB), // Kept the light blue background for transparent PNGs (remove if you don't want it)
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
+            child: Center(
               child: Image.asset(
                 slide.imageAsset,
-                fit: BoxFit.contain, // Ensures the whole image is visible without stretching
-                errorBuilder: (context, error, stackTrace) {
-                  return const Center(
-                    child: Text(
-                      'Image not found\nCheck asset path in pubspec.yaml',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  );
-                },
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 64,
+                  color: Color(0xFFCBD5E1),
+                ),
               ),
             ),
           ),
-          
-          const SizedBox(height: 32),
+
+          SizedBox(height: size.height * 0.04),
           Text(
             slide.title,
             style: const TextStyle(
-              fontSize: 26,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1E3A8A),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Text(
             slide.description,
             textAlign: TextAlign.center,
@@ -673,6 +630,7 @@ class _SlideContent extends StatelessWidget {
               height: 1.65,
             ),
           ),
+          SizedBox(height: size.height * 0.05),
         ],
       ),
     );

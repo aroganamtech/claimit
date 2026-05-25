@@ -164,7 +164,7 @@ class _OtpScreenState extends State<OtpScreen> {
             children: [
               const SizedBox(height: 32),
 
-              _ClaimitAuthLogo(),
+              _HomeLogoWidget(),
 
               const SizedBox(height: 36),
 
@@ -182,6 +182,8 @@ class _OtpScreenState extends State<OtpScreen> {
               Text(
                 'Enter the OTP sent to +91 $_maskedPhone',
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 14,
                   color: Color(0xFF2563EB),
@@ -191,48 +193,60 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 40),
 
-              // ── 6 OTP boxes ────────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(_kOtpLength, (i) {
-                  final filled = i < _boxControllers.length &&
-                      _boxControllers[i].text.isNotEmpty;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 5),
-                    width: 46,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(
-                        color: filled
-                            ? const Color(0xFF2563EB)
-                            : const Color(0xFFCBD5E1),
-                        width: 1.5,
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: TextField(
-                      controller: _boxControllers[i],
-                      focusNode: _focusNodes[i],
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      maxLength: 1,
-                      showCursor: false,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E3A8A),
-                      ),
-                      decoration: const InputDecoration(
-                        counterText: '',
-                        border: InputBorder.none,
-                      ),
-                      onChanged: (v) => _onBoxChanged(v, i),
-                    ),
-                  );
-                }),
+              // ── 6 OTP boxes — responsive width ─────────────────────────
+              LayoutBuilder(
+  builder: (context, constraints) {
+    final boxWidth =
+        (constraints.maxWidth - (_kOtpLength * 10)) /
+            _kOtpLength;
+    final clampedWidth = boxWidth.clamp(36.0, 52.0);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_kOtpLength, (i) {
+        final filled = i < _boxControllers.length &&
+            _boxControllers[i].text.isNotEmpty;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          width: clampedWidth,
+          height: clampedWidth, // 🟢 Make it a perfect square
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(
+              color: filled
+                  ? const Color(0xFF2563EB)
+                  : const Color(0xFFCBD5E1),
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          // 🟢 Center the inner block vertically and horizontally
+          child: Center(
+            child: TextField(
+              controller: _boxControllers[i],
+              focusNode: _focusNodes[i],
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              maxLength: 1,
+              showCursor: false,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E3A8A),
               ),
-
+              decoration: const InputDecoration(
+                counterText: '',
+                contentPadding: EdgeInsets.zero, // Clears layout side-padding
+                border: InputBorder.none,
+                isDense: true, // Forces text bounds to collapse tightly to the digit
+              ),
+              onChanged: (v) => _onBoxChanged(v, i),
+            ),
+          ),
+        );
+      }),
+    );
+  },
+),
               const SizedBox(height: 20),
 
               Text(
@@ -298,58 +312,34 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 }
 
-class _ClaimitAuthLogo extends StatelessWidget {
+class _HomeLogoWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFFD93D), Color(0xFFF59E0B)],
+    return Image.asset(
+      'assets/images/home_main_logo.png',
+      height: 64,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/icons/main_icon.png',
+            width: 48,
+            height: 48,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'claimit',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1565C0),
             ),
           ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Text(
-                'c',
-                style: TextStyle(
-                  fontSize: 22,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w300,
-                  height: 1,
-                ),
-              ),
-              Positioned(
-                top: 5,
-                right: 5,
-                child: Icon(
-                  Icons.star_rounded,
-                  color: Colors.white.withOpacity(0.9),
-                  size: 9,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'claimit',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2563EB),
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

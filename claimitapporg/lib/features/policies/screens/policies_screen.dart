@@ -66,7 +66,11 @@ class _PoliciesScreenState extends State<PoliciesScreen> {
       onRefresh: provider.fetchPolicies,
       child: ListView(
         children: [
-          const SizedBox(height: 120),
+          // Responsive top gap — percentage-based so it centres correctly
+          // on both small and large screens.
+          Builder(builder: (ctx) => SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.12,
+          )),
           Icon(
             Icons.policy_outlined,
             size: 80,

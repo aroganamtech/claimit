@@ -11,8 +11,20 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     static_otp: str = "123456"
     # upload_dir removed — Vercel has no persistent filesystem.
-    # Store files in MongoDB (base64) or use an external service like Cloudinary.
     max_file_size_mb: int = 10
+
+    # Twilio SMS (OTP delivery)
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+    twilio_default_country_code: str = "+91"
+
+    # SMTP email (OTP fallback)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "Claimit"
 
     class Config:
         # On Vercel, all vars come from the dashboard (env vars).

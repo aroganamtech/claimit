@@ -15,11 +15,13 @@ class ShopCreate(BaseModel):
     rating: float
     has_rewards: bool = True
     has_redeem: bool = True
+    about: str = ''          # Short description shown in the About section
     address: str = ''
     timing: str = ''
     phone: str = ''
     email: str = ''
     image_name: str = ''
+    image_names: List[str] = []   # Up to 3 image filenames for the carousel
     added_days_ago: int = 0
     lat: Optional[float] = None   # GPS latitude
     lng: Optional[float] = None   # GPS longitude
@@ -35,12 +37,14 @@ class ShopResponse(BaseModel):
     review_count: int = 0
     has_rewards: bool
     has_redeem: bool
+    about: str = ''          # Short description shown in the About section
     address: str = ''
     timing: str = ''
     phone: str = ''
     email: str = ''
     image_name: str = ''
     image_data: Optional[str] = None
+    image_data_list: Optional[List[str]] = None   # base64 list for carousel
     added_days_ago: int = 0
     lat: Optional[float] = None
     lng: Optional[float] = None

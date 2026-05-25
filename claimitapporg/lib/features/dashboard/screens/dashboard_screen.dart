@@ -1105,6 +1105,7 @@ import 'dart:convert';
 //   }
 // }
 import 'dart:async';
+import 'dart:math' show Random;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -1119,6 +1120,8 @@ import '../../shops/models/shop_category.dart';
 import '../../shops/screens/shop_list_screen.dart';
 import '../../shops/services/shop_service.dart';
 import '../../profile/providers/profile_provider.dart';
+import '../../reels/models/reel_model.dart';
+import '../../reels/services/reel_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock data  (replace with live API calls once backend is wired up)
@@ -1405,6 +1408,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   double? _userLat;
   double? _userLng;
 
+  // Reelz ad overlay
+  Timer? _reelzAdTimer;
+  bool _reelzAdShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -1421,6 +1428,43 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
     _loadDeals();
     _loadNearbyShopsFromGPS();
+    _scheduleReelzAd();
+  }
+
+  /// Fetch reels then show one randomly after a random delay (5–12 s).
+  Future<void> _scheduleReelzAd() async {
+    final reels = await ReelService.instance.fetchReels();
+    if (!mounted || reels.isEmpty || _reelzAdShown) return;
+
+    // Random delay between 5 and 12 seconds
+    final delaySec = 5 + Random().nextInt(8); // 5..12
+    _reelzAdTimer = Timer(Duration(seconds: delaySec), () {
+      if (!mounted || _reelzAdShown) return;
+      _reelzAdShown = true;
+      final reel = reels[Random().nextInt(reels.length)];
+      _showReelzAd(reel);
+    });
+  }
+
+  void _showReelzAd(ReelItem reel) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black,           // full black — dialog fills screen
+      transitionDuration: const Duration(milliseconds: 350),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+        child: child,
+      ),
+      pageBuilder: (ctx, _, __) => _ReelzAdDialog(
+        reel: reel,
+        onClose: () => Navigator.of(ctx).pop(),
+        onWatch: () {
+          Navigator.of(ctx).pop();
+          context.push('/reelz');
+        },
+      ),
+    );
   }
 
   /// Fetch nearby + brand deals from the backend
@@ -1507,6 +1551,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _bannerTimer?.cancel();
+    _reelzAdTimer?.cancel();
     _bannerCtrl.dispose();
     super.dispose();
   }
@@ -1522,7 +1567,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ── Custom white AppBar ──────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
   return PreferredSize(
-    preferredSize: const Size.fromHeight(70),
+    // kToolbarHeight = 56 dp (Material standard). Using that + small padding
+    // keeps the bar proportional on any screen density or display-zoom level.
+    preferredSize: const Size.fromHeight(kToolbarHeight + 12),
     child: Container(
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
@@ -1762,7 +1809,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 SizedBox(
-                  height: 175,
+                  // 175dp ≈ 21.9% of 800dp design baseline
+                  height: MediaQuery.of(context).size.height * 0.22,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1963,8 +2011,10 @@ class _CategoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 108dp ≈ 13.5% of 800dp design baseline → scales with screen height
+    final catRowH = MediaQuery.of(context).size.height * 0.135;
     return SizedBox(
-      height: 108,
+      height: catRowH,
       child: PageView.builder(
         controller: PageController(viewportFraction: 1),
         itemCount: _pages,
@@ -2237,7 +2287,7 @@ class _DealCardState extends State<_DealCard> {
                             d.distance,
                             style: const TextStyle(
                               fontSize: 13,
-                              color: Color(0xFF2563EB),
+                              color: Color.fromARGB(255, 119, 120, 123),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -2369,4 +2419,298 @@ class _NearbyShopChip extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(s.fallbackIcon, color: Colors.grey.shade400, size: 32),
       );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reelz Ad Dialog — shown randomly on the home screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Full-screen Reelz ad overlay — covers the entire screen like an
+/// Instagram/TikTok interstitial. ✕ button is immediately visible (no delay).
+class _ReelzAdDialog extends StatelessWidget {
+  final ReelItem reel;
+  final VoidCallback onClose;
+  final VoidCallback onWatch;
+
+  const _ReelzAdDialog({
+    required this.reel,
+    required this.onClose,
+    required this.onWatch,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── Full-screen thumbnail ──────────────────────────────────────
+          GestureDetector(
+            onTap: onWatch,
+            child: reel.thumbnailUrl.isNotEmpty
+                ? Image.network(
+                    reel.thumbnailUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: const Color(0xFF0F172A),
+                      child: const Center(
+                        child: Icon(Icons.movie_creation_rounded,
+                            color: Colors.white24, size: 80),
+                      ),
+                    ),
+                  )
+                : Container(
+                    color: const Color(0xFF0F172A),
+                    child: const Center(
+                      child: Icon(Icons.movie_creation_rounded,
+                          color: Colors.white24, size: 80),
+                    ),
+                  ),
+          ),
+
+          // ── Gradient: dark at top & bottom ────────────────────────────
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.55),
+                    Colors.transparent,
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.80),
+                  ],
+                  stops: const [0.0, 0.25, 0.60, 1.0],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Top bar: "Promo Reelz" badge  +  ✕ close ─────────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    // Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAB308),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.movie_creation_rounded,
+                              color: Colors.white, size: 14),
+                          SizedBox(width: 5),
+                          Text(
+                            'Ad',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    // ✕ Close — immediately visible, no delay
+                    GestureDetector(
+                      onTap: onClose,
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Colors.white38, width: 1),
+                        ),
+                        child: const Icon(Icons.close_rounded,
+                            color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Centre play button ─────────────────────────────────────────
+          Center(
+            child: GestureDetector(
+              onTap: onWatch,
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  shape: BoxShape.circle,
+                  border:
+                      Border.all(color: Colors.white70, width: 2),
+                ),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Colors.white, size: 44),
+              ),
+            ),
+          ),
+
+          // ── Bottom info + action buttons ───────────────────────────────
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Shop name
+                    if (reel.shopName.isNotEmpty)
+                      Text(
+                        reel.shopName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                                color: Colors.black54, blurRadius: 8)
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+
+                    if (reel.shopLocation.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on_rounded,
+                              color: Colors.white70, size: 14),
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(
+                              reel.shopLocation,
+                              style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    if (reel.offer.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: Colors.white30, width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_offer_rounded,
+                                color: Color(0xFFFBBF24), size: 14),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                reel.offer,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+
+                    // Action buttons row
+                    Row(
+                      children: [
+                        // Skip
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: onClose,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(
+                                  color: Colors.white38, width: 1.5),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(28)),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
+                            ),
+                            child: const Text('Skip',
+                                style: TextStyle(fontSize: 15)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Watch Reel
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed: onWatch,
+                            icon: const Icon(
+                                Icons.play_circle_filled_rounded,
+                                size: 20),
+                            label: const Text('Watch Reel',
+                                style: TextStyle(fontSize: 15)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(28)),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

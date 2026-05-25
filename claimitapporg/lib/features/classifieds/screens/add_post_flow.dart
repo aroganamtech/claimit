@@ -501,7 +501,8 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
             onTap: _pickPhotos,
             child: Container(
               width: double.infinity,
-              height: 160,
+              // 160dp ≈ 20% of 800dp design baseline
+              height: MediaQuery.of(context).size.height * 0.20,
               decoration: BoxDecoration(
                 border: Border.all(
                   color: const Color(0xFFCBD5E1),

@@ -98,9 +98,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const SizedBox(height: 40),
 
-                  _ClaimitAuthLogo(),
+                  _HomeLogoWidget(),
 
-                  const SizedBox(height: 36),
+                  // Responsive gap — 8% of screen height instead of fixed 106 px.
+                  SizedBox(height: size.height * 0.08),
 
                   const Text(
                     'Log in here',
@@ -249,58 +250,34 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class _ClaimitAuthLogo extends StatelessWidget {
+class _HomeLogoWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFFD93D), Color(0xFFF59E0B)],
+    return Image.asset(
+      'assets/images/home_main_logo.png',
+      height: 64,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/icons/main_icon.png',
+            width: 48,
+            height: 48,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'claimit',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1565C0),
             ),
           ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Text(
-                'c',
-                style: TextStyle(
-                  fontSize: 22,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w300,
-                  height: 1,
-                ),
-              ),
-              Positioned(
-                top: 5,
-                right: 5,
-                child: Icon(
-                  Icons.star_rounded,
-                  color: Colors.white.withOpacity(0.9),
-                  size: 9,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'claimit',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2563EB),
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

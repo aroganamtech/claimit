@@ -180,24 +180,37 @@ class ClassifiedHomeScreen extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// One category row (header + horizontal scroll of subcategory icons)
+// One category section — 4-icon grid, expandable to show all
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CategorySection extends StatelessWidget {
+class _CategorySection extends StatefulWidget {
   const _CategorySection({required this.category});
   final ClassifiedCategory category;
 
   @override
+  State<_CategorySection> createState() => _CategorySectionState();
+}
+
+class _CategorySectionState extends State<_CategorySection> {
+  static const int _initialCount = 4;
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final subs = widget.category.subcategories;
+    final hasMore = subs.length > _initialCount;
+    final visible = _expanded ? subs : subs.take(_initialCount).toList();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Section header ────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              category.name,
+              widget.category.name,
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
@@ -206,20 +219,28 @@ class _CategorySection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            height: 108,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: category.subcategories.length,
+
+          // ── 4-column icon grid ────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 0,
+                childAspectRatio: 0.82, // icon circle + label
+              ),
+              itemCount: visible.length,
               itemBuilder: (context, i) {
-                final sub = category.subcategories[i];
+                final sub = visible[i];
                 return _SubcategoryIcon(
                   subcategory: sub,
                   onTap: () => context.push(
                     '/classified/list',
                     extra: {
-                      'category': category.id,
+                      'category': widget.category.id,
                       'subcategory': sub.name,
                       'title': sub.name,
                     },
@@ -228,6 +249,44 @@ class _CategorySection extends StatelessWidget {
               },
             ),
           ),
+
+          // ── View all / Show less toggle ───────────────────────────────
+          if (hasMore) ...[
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _expanded
+                          ? 'Show less'
+                          : 'View all ${subs.length}',
+                      style: const TextStyle(
+                        color: Color(0xFF2563EB),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: const Color(0xFF2563EB),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 4),
+          const Divider(
+              color: Color(0xFFE2E8F0), thickness: 1, height: 1),
         ],
       ),
     );
@@ -247,41 +306,34 @@ class _SubcategoryIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 84,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 62,
-              height: 62,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
-              ),
-              child: Icon(subcategory.icon,
-                  size: 30, color: const Color(0xFF2563EB)),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
             ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 32,
-              child: Text(
-                subcategory.name,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF334155),
-                  height: 1.2,
-                ),
-              ),
+            child: Icon(subcategory.icon,
+                size: 28, color: const Color(0xFF2563EB)),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            subcategory.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF334155),
+              height: 1.2,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

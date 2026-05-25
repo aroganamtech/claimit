@@ -24,7 +24,12 @@ async def update_profile(
     update_data: UserUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    """Update user profile fields."""
+    """Update user profile fields.
+
+    When a user links a new phone number or email address the endpoint
+    checks that the identifier is not already in use by a *different* account,
+    preventing two accounts from sharing the same login credential.
+    """
     db = get_db()
     user_id = current_user.get("_id") or current_user.get("id")
 
@@ -33,6 +38,23 @@ async def update_profile(
 
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # ── Uniqueness checks for login credentials ──────────────────────────────
+    if "phone" in update_dict:
+        existing = await db.users.find_one({"phone": update_dict["phone"]})
+        if existing and str(existing.get("_id")) != str(user_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This mobile number is already linked to another account.",
+            )
+
+    if "email" in update_dict:
+        existing = await db.users.find_one({"email": update_dict["email"]})
+        if existing and str(existing.get("_id")) != str(user_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email address is already linked to another account.",
+            )
 
     await db.users.update_one(
         {"_id": ObjectId(str(user_id))},

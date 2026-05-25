@@ -64,6 +64,8 @@ class DealDetailScreen extends StatelessWidget {
                       Expanded(
                         child: Text(
                           d.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -98,20 +100,28 @@ class DealDetailScreen extends StatelessWidget {
                       const Icon(Icons.location_on_rounded,
                           size: 15, color: Color(0xFF6B7280)),
                       const SizedBox(width: 4),
-                      Text(
-                        d.location,
-                        style: const TextStyle(
-                            fontSize: 13, color: Color(0xFF6B7280)),
+                      Flexible(
+                        child: Text(
+                          d.location,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF6B7280)),
+                        ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 1),
                       const Icon(Icons.directions_walk_rounded,
                           size: 26, color: Color(0xFF2563EB)),
                       const SizedBox(width: 3),
-                      Text(
-                        d.distance,
-                        style: const TextStyle(
-                            fontSize: 13, color: Color(0xFF2563EB),
-                            fontWeight: FontWeight.w600),
+                      Flexible(
+                        child: Text(
+                          d.distance,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF2563EB),
+                              fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ],
                   ),
@@ -138,7 +148,7 @@ class DealDetailScreen extends StatelessWidget {
                                 color: Color(0xFFFFD93D), size: 18),
                             SizedBox(width: 8),
                             Text(
-                              'Exclusive Offer',
+                              'OFFER',
                               style: TextStyle(
                                 color: Color(0xFFFFD93D),
                                 fontSize: 13,
@@ -150,6 +160,8 @@ class DealDetailScreen extends StatelessWidget {
                         const SizedBox(height: 6),
                         Text(
                           d.offer,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -157,13 +169,13 @@ class DealDetailScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
-                          '+ 1% Cashback on every purchase',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
+                        // const Text(
+                        //   '+ 1% Cashback on every purchase',
+                        //   style: TextStyle(
+                        //     color: Colors.white70,
+                        //     fontSize: 12,
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),
@@ -171,7 +183,7 @@ class DealDetailScreen extends StatelessWidget {
 
                   // About section
                   const Text(
-                    'About',
+                    'Offer Details',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -235,24 +247,24 @@ class DealDetailScreen extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     height: 52,
-                    child: ElevatedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.document_scanner_outlined,
-                          size: 28),
-                      label: const Text(
-                        'Scan Bill & Earn Rewards',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
+                    // child: ElevatedButton.icon(
+                    //   onPressed: () {},
+                    //   icon: const Icon(Icons.document_scanner_outlined,
+                    //       size: 28),
+                    //   label: const Text(
+                    //     'Scan Bill & Earn Rewards',
+                    //     style: TextStyle(
+                    //         fontSize: 16, fontWeight: FontWeight.bold),
+                    //   ),
+                    //   style: ElevatedButton.styleFrom(
+                    //     backgroundColor: const Color(0xFF2563EB),
+                    //     foregroundColor: Colors.white,
+                    //     shape: RoundedRectangleBorder(
+                    //       borderRadius: BorderRadius.circular(30),
+                    //     ),
+                    //     elevation: 0,
+                    //   ),
+                    // ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -292,6 +304,8 @@ class _InfoRow extends StatelessWidget {
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
                 Text(value,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontSize: 13, color: Color(0xFF374151))),
               ],

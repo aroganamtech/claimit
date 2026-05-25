@@ -45,7 +45,18 @@ class _ReelzScreenState extends State<ReelzScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/home');
+          }
+        }
+      },
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
@@ -79,7 +90,13 @@ class _ReelzScreenState extends State<ReelzScreen> {
                           child: Row(
                             children: [
                               GestureDetector(
-                                onTap: () => context.pop(),
+                                onTap: () {
+                                  if (context.canPop()) {
+                                    context.pop();
+                                  } else {
+                                    context.go('/home');
+                                  }
+                                },
                                 child: Container(
                                   width: 38,
                                   height: 38,
@@ -115,6 +132,7 @@ class _ReelzScreenState extends State<ReelzScreen> {
                     ),
                   ],
                 ),
+      ),
     );
   }
 }

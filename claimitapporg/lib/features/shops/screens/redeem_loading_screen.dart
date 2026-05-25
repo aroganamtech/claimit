@@ -135,12 +135,14 @@ class _RedeemLoadingScreenState extends State<RedeemLoadingScreen>
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 24),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 24),
 
             // ── Spinner ────────────────────────────────────────────────────
             Center(
@@ -244,9 +246,11 @@ class _RedeemLoadingScreenState extends State<RedeemLoadingScreen>
                 duration: const Duration(milliseconds: 400),
                 child: _ShopPreviewCard(shop: s),
               ),
+            const SizedBox(height: 24),
           ],
-        ),
-      ),
+        ),         // Column
+        ),         // SingleChildScrollView
+      ),           // SafeArea
     );
   }
 }

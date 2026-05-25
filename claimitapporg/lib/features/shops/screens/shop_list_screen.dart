@@ -30,6 +30,9 @@ class ShopItem {
   /// Render with: Image.memory(base64Decode(imageData!))
   final String? imageData;
 
+  /// List of up to 3 base64-encoded images for the detail page carousel.
+  final List<String> imageDataList;
+
   /// Filename reference, e.g. "img1.jpg"
   final String imageName;
 
@@ -39,6 +42,9 @@ class ShopItem {
 
   final bool hasRewards;
   final bool hasRedeem;
+
+  /// Short description shown in the "About" section on the detail page.
+  final String about;
 
   final String address;
   final String timing;
@@ -64,9 +70,11 @@ class ShopItem {
     required this.fallbackIcon,
     this.reviewCount = 0,
     this.imageData,
+    this.imageDataList = const [],
     this.imageName = '',
     this.hasRewards = true,
     this.hasRedeem = true,
+    this.about = '',
     this.address = '',
     this.timing = '',
     this.phone = '',
@@ -458,6 +466,9 @@ class _ShopListScreenState extends State<ShopListScreen> {
                                   return _ShopCard(
                                     shop: s,
                                     isFav: profile.isLiked(s.id),
+                                    // isTab locks to Redeem+ Zone; otherwise
+                                    // follow the active Rewards/Redeem toggle
+                                    isRedeemMode: widget.isTab || !_isRewards,
                                     onToggleFav: () => profile.toggleFavourite(
                                       s.id,
                                       name: s.name,
@@ -548,10 +559,15 @@ class _ShopCard extends StatelessWidget {
   final ShopItem shop;
   final bool isFav;
   final VoidCallback onToggleFav;
-  const _ShopCard(
-      {required this.shop,
-      required this.isFav,
-      required this.onToggleFav});
+  /// true  → card is shown inside the Redeem tab  → "X% Disc + 1% Cashback"
+  /// false → card is shown inside the Rewards tab → "Free Reward + 1% Cashback"
+  final bool isRedeemMode;
+  const _ShopCard({
+    required this.shop,
+    required this.isFav,
+    required this.onToggleFav,
+    required this.isRedeemMode,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -650,14 +666,61 @@ class _ShopCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
 
-                    // Offer text
-                    Text(
-                      '${shop.discount}% Offer on All grocery',
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF2563EB),
-                          fontWeight: FontWeight.w600),
-                    ),
+                    // Offer tag — differs by tab context
+                    if (isRedeemMode)
+                      // Redeem tab: dynamic discount % + static 1% cashback
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: const Color(0xFFFB923C).withOpacity(0.45)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_offer_rounded,
+                                size: 11, color: Color(0xFFF97316)),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${shop.discount}% Disc + 1% Cashback',
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFC2410C)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      // Rewards tab: static — user earns reward points + 1% cashback
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: const Color(0xFF93C5FD).withOpacity(0.7)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.card_giftcard_rounded,
+                                size: 11, color: Color(0xFF2563EB)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Free Reward + 1% Cashback',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1D4ED8)),
+                            ),
+                          ],
+                        ),
+                      ),
 
                     const SizedBox(height: 6),
 
