@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -25,6 +26,14 @@ class LocationService {
     timeLimit: Duration(seconds: 10),
   );
 
+  // ── Concurrency guard ──────────────────────────────────────────────────────
+  // Android throws "Can request only one set of permissions at a time" when
+  // multiple widgets call getPosition() simultaneously. We serialise all
+  // calls behind a single in-flight request so the OS only sees one
+  // permission dialog at a time.
+  static bool _requesting = false;
+  static Completer<Position?>? _inFlight;
+
   // ─────────────────────────────────────────────────────────────────────────
   /// Main entry point.
   ///
@@ -34,6 +43,30 @@ class LocationService {
   /// Returns a [Position] or `null` if unavailable.
   // ─────────────────────────────────────────────────────────────────────────
   static Future<Position?> getPosition({BuildContext? context}) async {
+    // If a request is already in flight, piggyback on it instead of making
+    // a second concurrent permission request (which Android rejects).
+    if (_requesting && _inFlight != null) {
+      return _inFlight!.future;
+    }
+
+    _requesting = true;
+    _inFlight = Completer<Position?>();
+
+    try {
+      final result = await _doGetPosition(context: context);
+      _inFlight!.complete(result);
+      return result;
+    } catch (e) {
+      _inFlight!.complete(null);
+      return null;
+    } finally {
+      _requesting = false;
+      _inFlight = null;
+    }
+  }
+
+  /// Internal implementation — called only when no request is in flight.
+  static Future<Position?> _doGetPosition({BuildContext? context}) async {
     // 1 ── Are location services turned on at the device level? ──────────────
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -79,7 +112,7 @@ class LocationService {
     return _lastKnown();
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   static Future<Position?> _lastKnown() async {
     try {
@@ -93,7 +126,9 @@ class LocationService {
   static void _showServiceDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      // Use the dialog's own BuildContext (dlgCtx) — not the outer `context` —
+      // so that Navigator.pop() closes the dialog and not a go_router page.
+      builder: (dlgCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Location Off'),
         content: const Text(
@@ -101,12 +136,12 @@ class LocationService {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dlgCtx).pop(),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.of(context).pop();
+              Navigator.of(dlgCtx).pop();
               Geolocator.openLocationSettings();
             },
             child: const Text('Open Settings'),
@@ -120,7 +155,9 @@ class LocationService {
   static void _showSettingsDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      // Use the dialog's own BuildContext (dlgCtx) — not the outer `context` —
+      // so that Navigator.pop() closes the dialog and not a go_router page.
+      builder: (dlgCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Location Permission Required'),
         content: const Text(
@@ -129,12 +166,12 @@ class LocationService {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dlgCtx).pop(),
             child: const Text('Not Now'),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.of(context).pop();
+              Navigator.of(dlgCtx).pop();
               Geolocator.openAppSettings();
             },
             child: const Text('Open App Settings'),

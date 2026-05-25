@@ -58,6 +58,10 @@ async def connect_db():
     await _db.classifieds.create_index("category")
     await _db.classifieds.create_index("subcategory")
     await _db.classifieds.create_index("pincode")
+    # Bill scan / wallet
+    await _db.user_wallets.create_index("user_id", unique=True)
+    await _db.bill_scans.create_index("user_id")
+    await _db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
 
     print("✅ Connected to MongoDB Atlas")
 

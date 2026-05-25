@@ -1,29 +1,43 @@
-import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bill_reward_model.dart';
 import '../services/bill_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillRewardProvider
+//
+// Persistence strategy (two-layer):
+//   1. SharedPreferences cache — restored immediately on every app launch so
+//      the user always sees their last-known wallet/history without waiting
+//      for a network round-trip.
+//   2. Server (Vercel API) — authoritative source; overwrites the cache after
+//      every successful API call.
+//
+// loadAll() is the public entry-point called:
+//   • From main.dart via authStateNotifier whenever the user authenticates
+//   • From BillRewardWalletScreen.initState (refresh on screen open)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BillRewardProvider extends ChangeNotifier {
   // ── Wallet ─────────────────────────────────────────────────────────────────
-  double _lifetimeCashback = 5000;
-  int    _currentPoints    = 2780;
-  double _cashbackWallet   = 500;
+  double _lifetimeCashback = 0;
+  int    _currentPoints    = 0;
+  double _cashbackWallet   = 0;
+  bool   _walletLoaded     = false;
 
   double get lifetimeCashback => _lifetimeCashback;
   int    get currentPoints    => _currentPoints;
   double get cashbackWallet   => _cashbackWallet;
+  bool   get walletLoaded     => _walletLoaded;
 
-  // ── Pending scan data (set by OCR screen, consumed by confirm screen) ──────
+  // ── Pending scan data ──────────────────────────────────────────────────────
   double?   _pendingTotal;
   String?   _pendingImagePath;
-  String?   _pendingOcrText;    // raw OCR text for debugging / display
-  String?   _pendingShopName;   // shop name extracted by OCR
-  DateTime? _pendingBillDate;   // date printed on the bill (from OCR)
-  String?   _pendingBillNumber; // bill/invoice/receipt number from OCR
+  String?   _pendingOcrText;
+  String?   _pendingShopName;
+  DateTime? _pendingBillDate;
+  String?   _pendingBillNumber;
 
   double?   get pendingTotal      => _pendingTotal;
   String?   get pendingImagePath  => _pendingImagePath;
@@ -33,62 +47,141 @@ class BillRewardProvider extends ChangeNotifier {
   String?   get pendingBillNumber => _pendingBillNumber;
 
   // ── History ────────────────────────────────────────────────────────────────
-  final List<BillRewardEntry> _history = [
-    BillRewardEntry(
-      id: 'h1',
-      shopName: 'Big Bazaar',
-      shopColor: const Color(0xFF1565C0),
-      totalBill: 4500,
-      discount: 45,   // 1% cashback
-      cashback: 45,
-      rewardPoints: 450, // 10% points
-      date: DateTime(2024, 9, 17, 10, 34),
-    ),
-    BillRewardEntry(
-      id: 'h2',
-      shopName: 'Amazon',
-      shopColor: const Color(0xFFFF9900),
-      totalBill: 3200,
-      discount: 32,
-      cashback: 32,
-      rewardPoints: 320,
-      date: DateTime(2024, 9, 18, 11, 15),
-    ),
-    BillRewardEntry(
-      id: 'h3',
-      shopName: 'Myntra',
-      shopColor: const Color(0xFFE91E8C),
-      totalBill: 2500,
-      discount: 25,
-      cashback: 25,
-      rewardPoints: 250,
-      date: DateTime(2024, 9, 19, 9, 45),
-    ),
-    BillRewardEntry(
-      id: 'h4',
-      shopName: 'D Mart',
-      shopColor: const Color(0xFF1B5E20),
-      totalBill: 5600,
-      discount: 56,
-      cashback: 56,
-      rewardPoints: 560,
-      date: DateTime(2024, 9, 20, 14, 22),
-    ),
-  ];
-
+  final List<BillRewardEntry> _history = [];
   List<BillRewardEntry> get history => List.unmodifiable(_history);
 
+  // ── New-user bonus popup ───────────────────────────────────────────────────
+  bool _showNewUserBonusPopup = false;
+  int  _bonusPoints           = 0;
+  bool get showNewUserBonusPopup => _showNewUserBonusPopup;
+  int  get bonusPoints           => _bonusPoints;
+  void dismissBonusPopup() {
+    _showNewUserBonusPopup = false;
+    notifyListeners();
+  }
+
+  // ── SharedPreferences keys ─────────────────────────────────────────────────
+  static const _kPoints   = 'bill_reward_points';
+  static const _kCbWallet = 'bill_cashback_wallet';
+  static const _kLifetime = 'bill_lifetime_cashback';
+  static const _kHistory  = 'bill_history_json';
+
   // ─────────────────────────────────────────────────────────────────────────
-  // Called by BillScanningProgressScreen after OCR finishes.
-  // Stores the result so BillConfirmScreen can display it.
+  // Constructor — immediately restore cached data so UI is not blank on
+  // app restart while the network request is in flight.
+  // ─────────────────────────────────────────────────────────────────────────
+  BillRewardProvider() {
+    _restoreFromCache();
+  }
+
+  // ── Restore from SharedPreferences ────────────────────────────────────────
+  Future<void> _restoreFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentPoints    = prefs.getInt(_kPoints)       ?? 0;
+      _cashbackWallet   = prefs.getDouble(_kCbWallet)  ?? 0;
+      _lifetimeCashback = prefs.getDouble(_kLifetime)  ?? 0;
+
+      final raw = prefs.getString(_kHistory);
+      if (raw != null && raw.isNotEmpty) {
+        final list = jsonDecode(raw) as List<dynamic>;
+        _history.clear();
+        for (var i = 0; i < list.length; i++) {
+          final m = list[i] as Map<String, dynamic>;
+          _history.add(_entryFromMap(m, _shopColors[i % _shopColors.length]));
+        }
+      }
+
+      if (_currentPoints > 0 || _history.isNotEmpty) {
+        _walletLoaded = true;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Cache miss / parse error — start fresh, API will fill in on loadAll()
+    }
+  }
+
+  // ── Persist wallet + history to SharedPreferences ──────────────────────────
+  Future<void> _saveToCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt   (_kPoints,   _currentPoints);
+      await prefs.setDouble(_kCbWallet, _cashbackWallet);
+      await prefs.setDouble(_kLifetime, _lifetimeCashback);
+
+      // Keep last 100 entries to avoid unbounded storage growth
+      final slice   = _history.take(100).toList();
+      final encoded = jsonEncode(slice.map(_entryToMap).toList());
+      await prefs.setString(_kHistory, encoded);
+    } catch (_) {}
+  }
+
+  // ── Clear cache (e.g. on logout) ──────────────────────────────────────────
+  Future<void> clearCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kPoints);
+      await prefs.remove(_kCbWallet);
+      await prefs.remove(_kLifetime);
+      await prefs.remove(_kHistory);
+    } catch (_) {}
+    _currentPoints    = 0;
+    _cashbackWallet   = 0;
+    _lifetimeCashback = 0;
+    _walletLoaded     = false;
+    _history.clear();
+    notifyListeners();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Load wallet + history from server
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<void> loadWallet() async {
+    try {
+      final data = await BillService.instance.fetchWallet();
+      _currentPoints    = (data['reward_points']     as num?)?.toInt()    ?? _currentPoints;
+      _cashbackWallet   = (data['cashback_wallet']   as num?)?.toDouble() ?? _cashbackWallet;
+      _lifetimeCashback = (data['lifetime_cashback'] as num?)?.toDouble() ?? _lifetimeCashback;
+      _walletLoaded     = true;
+      notifyListeners();
+      await _saveToCache();
+    } catch (e) {
+      debugPrint('BillRewardProvider.loadWallet error: $e');
+      // Cache already shown from _restoreFromCache — nothing more to do
+    }
+  }
+
+  Future<void> loadHistory() async {
+    try {
+      final items = await BillService.instance.fetchHistory();
+      _history.clear();
+      for (var i = 0; i < items.length; i++) {
+        _history.add(_entryFromMap(items[i], _shopColors[i % _shopColors.length]));
+      }
+      notifyListeners();
+      await _saveToCache();
+    } catch (e) {
+      debugPrint('BillRewardProvider.loadHistory error: $e');
+      // Cache already shown — nothing more to do
+    }
+  }
+
+  /// Load both wallet + history in parallel.
+  /// Called from main.dart on auth, and from wallet screen on open.
+  Future<void> loadAll() async {
+    await Future.wait([loadWallet(), loadHistory()]);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Called by BillScanningProgressScreen after OCR finishes
   // ─────────────────────────────────────────────────────────────────────────
   void setScanResult({
-    double? totalAmount,
-    String? imagePath,
-    String? ocrText,
-    String? shopName,
+    double?   totalAmount,
+    String?   imagePath,
+    String?   ocrText,
+    String?   shopName,
     DateTime? billDate,
-    String? billNumber,
+    String?   billNumber,
   }) {
     _pendingTotal      = totalAmount;
     _pendingImagePath  = imagePath;
@@ -99,9 +192,6 @@ class BillRewardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Called by BillConfirmScreen when user corrects the amount / shop name.
-  // ─────────────────────────────────────────────────────────────────────────
   void updatePendingTotal(double amount) {
     _pendingTotal = amount;
     notifyListeners();
@@ -113,20 +203,18 @@ class BillRewardProvider extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Duplicate detection — returns true if this bill was already scanned.
-  // Matches on: shop name (case-insensitive) + amount + bill calendar date.
+  // Local duplicate check (fast path — server also enforces via 409)
   // ─────────────────────────────────────────────────────────────────────────
   bool isDuplicate({
-    required String shopName,
-    required double amount,
+    required String   shopName,
+    required double   amount,
     required DateTime billDate,
-    String? billNumber,
+    String?           billNumber,
   }) {
     final shop    = shopName.toLowerCase().trim();
     final amt     = amount.toStringAsFixed(0);
     final dateStr = '${billDate.year}-${billDate.month}-${billDate.day}';
 
-    // Build the same key logic as BillRewardEntry.duplicateKey
     final String key;
     if (billNumber != null && billNumber.trim().isNotEmpty) {
       final bn = billNumber.toLowerCase().replaceAll(RegExp(r'\s+'), '');
@@ -138,21 +226,21 @@ class BillRewardProvider extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Commit: POST to backend, add to history, update wallet.
-  // If the backend call fails we still add locally so the user isn't stuck.
+  // Commit: POST to backend → update wallet from server response → cache
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> claimReward() async {
     final total = _pendingTotal;
     if (total == null || total <= 0) return;
 
-    final points   = BillRewardEntry.calcPoints(total);    // 10% pts
-    final cashback = BillRewardEntry.calcCashback(total);  // 1% cashback
-
-    // ── Attempt backend sync ────────────────────────────────────────────
-    // Use the OCR-extracted shop name as the default, fall back to 'Shop'
     String shopName = (_pendingShopName?.isNotEmpty == true)
         ? _pendingShopName!
         : 'Shop';
+
+    final localPts = BillRewardEntry.calcPoints(total);
+    final localCb  = BillRewardEntry.calcCashback(total);
+
+    bool serverSuccess = false;
+
     try {
       final result = await BillService.instance.submitBillScan(
         totalAmount: total,
@@ -161,67 +249,129 @@ class BillRewardProvider extends ChangeNotifier {
         billNumber:  _pendingBillNumber,
         billDate:    _pendingBillDate,
       );
-      // Backend shop name overrides OCR only if explicitly provided
-      shopName = result['shop_name'] as String? ?? shopName;
-      // Backend may return updated points — use them if available
-      final serverPoints = result['reward_points'] as int?;
-      if (serverPoints != null) {
-        _currentPoints = serverPoints;
-      } else {
-        _currentPoints += points;
+
+      serverSuccess = true;
+
+      // Server is authoritative — overwrite wallet from response
+      final serverName = result['shop_name'] as String?;
+      if (serverName != null && serverName.isNotEmpty) shopName = serverName;
+
+      _currentPoints    = (result['reward_points']     as num?)?.toInt()    ?? (_currentPoints + localPts);
+      _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
+      _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
+
+      // New-user 1000-point welcome bonus
+      if (result['is_new_user_bonus'] == true) {
+        _bonusPoints           = (result['bonus_points'] as num?)?.toInt() ?? 1000;
+        _showNewUserBonusPopup = true;
       }
-      _lifetimeCashback += cashback;
-      _cashbackWallet   += cashback;
     } catch (e) {
+      if (e is BillAlreadyScannedException) rethrow;
       debugPrint('Bill sync error: $e — applying locally');
-      _currentPoints    += points;
-      _lifetimeCashback += cashback;
-      _cashbackWallet   += cashback;
+      // Fallback: apply locally so the user still sees the reward this session
+      _currentPoints    += localPts;
+      _cashbackWallet   += localCb;
+      _lifetimeCashback += localCb;
     }
 
-    // ── Add to history ──────────────────────────────────────────────────
-    final colors = [
-      const Color(0xFF1565C0),
-      const Color(0xFF7B1FA2),
-      const Color(0xFF2E7D32),
-      const Color(0xFFE65100),
-      const Color(0xFFB71C1C),
-    ];
+    // Add to local history (even on server fallback — avoids blank history)
     final scanNow = DateTime.now();
     final entry = BillRewardEntry(
-      id: 'scan_${scanNow.millisecondsSinceEpoch}',
-      shopName: shopName,
-      shopColor: colors[Random().nextInt(colors.length)],
-      totalBill: total,
-      discount: cashback,
-      cashback: cashback,
-      rewardPoints: points,
-      date: scanNow,
-      billDate: _pendingBillDate,
-      billNumber: _pendingBillNumber,
+      id:           serverSuccess
+                      ? 'scan_${scanNow.millisecondsSinceEpoch}'
+                      : 'local_${scanNow.millisecondsSinceEpoch}',
+      shopName:     shopName,
+      shopColor:    _shopColors[_history.length % _shopColors.length],
+      totalBill:    total,
+      discount:     localCb,
+      cashback:     localCb,
+      rewardPoints: localPts,
+      date:         scanNow,
+      billDate:     _pendingBillDate,
+      billNumber:   _pendingBillNumber,
     );
-
     _history.insert(0, entry);
+
     _pendingTotal      = null;
     _pendingImagePath  = null;
     _pendingShopName   = null;
     _pendingBillDate   = null;
     _pendingBillNumber = null;
+
     notifyListeners();
+
+    // ── Persist immediately — survives app kill/restart ────────────────────
+    await _saveToCache();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Transfer cashback wallet balance to bank.
-  // Returns true on success, false if balance is insufficient.
-  // ─────────────────────────────────────────────────────────────────────────
-  Future<bool> transferToBank({required double amount, required String accountDetails}) async {
+  // ── Transfer cashback to bank ──────────────────────────────────────────────
+  Future<bool> transferToBank({
+    required double amount,
+    required String accountDetails,
+  }) async {
     if (amount <= 0 || amount > _cashbackWallet) return false;
-
-    // Simulate network delay / backend call
     await Future.delayed(const Duration(milliseconds: 800));
-
     _cashbackWallet -= amount;
     notifyListeners();
+    await _saveToCache();
     return true;
   }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  static const _shopColors = [
+    Color(0xFF1565C0),
+    Color(0xFF7B1FA2),
+    Color(0xFF2E7D32),
+    Color(0xFFE65100),
+    Color(0xFFB71C1C),
+    Color(0xFF00838F),
+    Color(0xFF558B2F),
+    Color(0xFF6A1B9A),
+  ];
+
+  static BillRewardEntry _entryFromMap(Map<String, dynamic> m, Color color) {
+    final total = (m['total_amount']    as num?)?.toDouble() ?? 0;
+    final cb    = (m['earned_cashback'] as num?)?.toDouble()
+               ?? (m['cashback']        as num?)?.toDouble()
+               ?? total * 0.01;
+    final pts   = (m['earned_points']   as num?)?.toInt()
+               ?? (m['reward_points']   as num?)?.toInt()
+               ?? (total * 0.1).round();
+
+    DateTime? billDate;
+    if (m['bill_date'] != null) {
+      try { billDate = DateTime.parse(m['bill_date'] as String); } catch (_) {}
+    }
+    DateTime scannedAt = DateTime.now();
+    if (m['scanned_at'] != null) {
+      try { scannedAt = DateTime.parse(m['scanned_at'] as String); } catch (_) {}
+    } else if (m['date'] != null) {
+      try { scannedAt = DateTime.parse(m['date'] as String); } catch (_) {}
+    }
+
+    return BillRewardEntry(
+      id:           m['id'] as String? ?? m['_id'] as String? ?? '',
+      shopName:     m['shop_name'] as String? ?? 'Shop',
+      shopColor:    color,
+      totalBill:    total,
+      discount:     cb,
+      cashback:     cb,
+      rewardPoints: pts,
+      date:         scannedAt,
+      billDate:     billDate,
+      billNumber:   m['bill_number'] as String?,
+    );
+  }
+
+  /// Serialise an entry to a plain Map for JSON storage in SharedPreferences
+  static Map<String, dynamic> _entryToMap(BillRewardEntry e) => {
+    'id':              e.id,
+    'shop_name':       e.shopName,
+    'total_amount':    e.totalBill,
+    'earned_cashback': e.cashback,
+    'earned_points':   e.rewardPoints,
+    'bill_number':     e.billNumber,
+    'bill_date':       e.billDate?.toIso8601String(),
+    'scanned_at':      e.date.toIso8601String(),
+  };
 }

@@ -186,6 +186,7 @@ export default function ShopRegister() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
     shopName: '', shopAddress: '', pincode: '', about: '',
+    location: '', phone: '', timing: '',
     lat: null, lng: null,
   })
   const [locating, setLocating] = useState(false)
@@ -223,7 +224,7 @@ export default function ShopRegister() {
   }
 
   const handleContinue = () => {
-    if (!form.shopName || !form.shopAddress || !form.pincode) {
+    if (!form.shopName || !form.shopAddress || !form.pincode || !form.location || !form.phone || !form.timing) {
       setError('Please fill all required fields')
       return
     }
@@ -286,6 +287,21 @@ export default function ShopRegister() {
               <label style={labelStyle}>Pincode</label>
               <input className="input-field" placeholder="Pincode"
                 value={form.pincode} onChange={e => handleChange('pincode', e.target.value)} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>City / Area <span style={{ color: '#e53935' }}>*</span></label>
+              <input className="input-field" placeholder="e.g. Nungambakkam, Chennai"
+                value={form.location} onChange={e => handleChange('location', e.target.value)} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Phone Number <span style={{ color: '#e53935' }}>*</span></label>
+              <input className="input-field" placeholder="+91 99999 99999"
+                value={form.phone} onChange={e => handleChange('phone', e.target.value)} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Shop Timing <span style={{ color: '#e53935' }}>*</span></label>
+              <input className="input-field" placeholder="e.g. Daily: 10am – 10pm"
+                value={form.timing} onChange={e => handleChange('timing', e.target.value)} />
             </div>
             <div style={{ marginBottom: 16 }}>
               <button

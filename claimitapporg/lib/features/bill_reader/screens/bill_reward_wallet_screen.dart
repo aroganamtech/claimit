@@ -5,10 +5,24 @@ import 'package:provider/provider.dart';
 import '../models/bill_reward_model.dart';
 import '../providers/bill_reward_provider.dart';
 
-class BillRewardWalletScreen extends StatelessWidget {
+class BillRewardWalletScreen extends StatefulWidget {
   const BillRewardWalletScreen({super.key});
 
+  @override
+  State<BillRewardWalletScreen> createState() => _BillRewardWalletScreenState();
+}
+
+class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
   static const _blue = Color(0xFF1565C0);
+
+  @override
+  void initState() {
+    super.initState();
+    // Refresh wallet + history from server every time the screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BillRewardProvider>().loadAll();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

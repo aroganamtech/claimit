@@ -7,6 +7,7 @@ export function ReviewAndSubmit() {
   const basic = JSON.parse(sessionStorage.getItem('shop_basic') || '{}')
   const category = sessionStorage.getItem('shop_category') || '—'
   const shopType = sessionStorage.getItem('shop_type') || 'redeem'
+  const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
   const coverB64 = sessionStorage.getItem('shop_cover_b64')
   const photosB64Raw = sessionStorage.getItem('shop_photos_b64')
   const galleryPreviews = photosB64Raw ? JSON.parse(photosB64Raw) : []
@@ -52,8 +53,11 @@ export function ReviewAndSubmit() {
             {[
               { label: 'Shop Name', value: basic.shopName || '—' },
               { label: 'Shop Address', value: basic.shopAddress || '—' },
-              { label: 'Geo Location', value: basic.pincode ? `Pincode ${basic.pincode}` : '—' },
-              { label: 'description', value: basic.about || '—' },
+              { label: 'City / Area', value: basic.location || '—' },
+              { label: 'Phone', value: basic.phone || '—' },
+              { label: 'Timing', value: basic.timing || '—' },
+              { label: 'Pincode', value: basic.pincode || '—' },
+              { label: 'Description', value: basic.about || '—' },
             ].map(item => (
               <div key={item.label} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 13, color: '#888' }}>{item.label}:</span>
@@ -114,7 +118,7 @@ export function ReviewAndSubmit() {
               <div style={{ fontSize: 14, fontWeight: 600, color: '#1565C0', textTransform: 'capitalize' }}>
                 {shopType === 'redeem' ? '🏪' : '🎯'} {shopType.charAt(0).toUpperCase() + shopType.slice(1)} Shop
               </div>
-              {shopType === 'redeem' && <div style={{ fontSize: 12, color: '#888' }}>20%</div>}
+              <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{shopDiscount}% discount</div>
             </div>
           </div>
 
@@ -144,6 +148,7 @@ export function ShopPayment() {
       const basic = JSON.parse(sessionStorage.getItem('shop_basic') || '{}')
       const category = sessionStorage.getItem('shop_category') || ''
       const shopType = sessionStorage.getItem('shop_type') || 'redeem'
+      const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
 
       // ── Step 1: Register shop basic info ──────────────────
       const formData = new FormData()
@@ -151,9 +156,12 @@ export function ShopPayment() {
       formData.append('shop_address', basic.shopAddress || '')
       formData.append('pincode', basic.pincode || '')
       formData.append('about', basic.about || '')
+      formData.append('location', basic.location || '')
+      formData.append('phone', basic.phone || '')
+      formData.append('timing', basic.timing || '')
       formData.append('category', category)
       formData.append('shop_type', shopType)
-      formData.append('discount_percentage', '15')
+      formData.append('discount_percentage', shopDiscount)
       if (basic.lat != null) formData.append('lat', basic.lat)
       if (basic.lng != null) formData.append('lng', basic.lng)
 
@@ -181,6 +189,7 @@ export function ShopPayment() {
       sessionStorage.removeItem('shop_basic')
       sessionStorage.removeItem('shop_category')
       sessionStorage.removeItem('shop_type')
+      sessionStorage.removeItem('shop_discount')
       sessionStorage.removeItem('shop_cover_b64')
       sessionStorage.removeItem('shop_photos_b64')
       setPaid(true)

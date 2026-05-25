@@ -36,18 +36,37 @@ class _ClaimitAppState extends State<ClaimitApp> {
   // Recreating GoRouter on every notifyListeners() call resets it to
   // initialLocation ('/splash'), which is why the app jumped back to the
   // splash screen whenever _isLoading changed.
-  late final AuthProvider _authProvider;
+  late final AuthProvider       _authProvider;
+  late final BillRewardProvider _billProvider;
   late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
     _authProvider = AuthProvider();
+    _billProvider = BillRewardProvider();
     _router = AppRouter.router(_authProvider);
+
+    // ── Auto-load bill wallet + history whenever the user authenticates ──────
+    // authStateNotifier fires only when isAuthenticated flips true/false, so
+    // this triggers once after login/app-restart and not on every rebuild.
+    _authProvider.authStateNotifier.addListener(_onAuthChanged);
+  }
+
+  void _onAuthChanged() {
+    if (_authProvider.isAuthenticated) {
+      // Fire-and-forget: cache is already showing from SharedPreferences,
+      // this refreshes from the server in the background.
+      _billProvider.loadAll();
+    } else {
+      // User logged out — clear stale wallet data
+      _billProvider.clearCache();
+    }
   }
 
   @override
   void dispose() {
+    _authProvider.authStateNotifier.removeListener(_onAuthChanged);
     _authProvider.dispose();
     super.dispose();
   }
@@ -64,7 +83,8 @@ class _ClaimitAppState extends State<ClaimitApp> {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => PolicyProvider()),
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
-        ChangeNotifierProvider(create: (_) => BillRewardProvider()),
+        // Use .value so the same instance pre-loaded in initState is shared
+        ChangeNotifierProvider.value(value: _billProvider),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp.router(

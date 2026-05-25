@@ -1604,23 +1604,32 @@ class _DashboardScreenState extends State<DashboardScreen>
               // ── Location (from user profile) ────────────────────────
               GestureDetector(
                 onTap: () => context.push('/location'),
-                child: Row(
-                  children: [
-                    Text(
-                      context.select<AuthProvider, String>(
-                        (a) => a.user?.location?.isNotEmpty == true
-                            ? a.user!.location!
-                            : 'Select Area',
+                child: ConstrainedBox(
+                  // Cap the location chip so long names like
+                  // "Chennai, Tamil Nadu" don't overflow the AppBar Row.
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          context.select<AuthProvider, String>(
+                            (a) => a.user?.location?.isNotEmpty == true
+                                ? a.user!.location!
+                                : 'Select Area',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                       ),
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                  ],
+                      const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
+                    ],
+                  ),
                 ),
               ),
 

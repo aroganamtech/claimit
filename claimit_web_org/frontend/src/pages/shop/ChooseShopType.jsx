@@ -1,13 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+const DISCOUNT_OPTIONS = [5, 10, 15, 20, 25, 30]
+
 export default function ChooseShopType() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState('')
+  const [discount, setDiscount] = useState(15)   // default 15 %
 
   const handleContinue = () => {
     if (!selected) return
     sessionStorage.setItem('shop_type', selected)
+    sessionStorage.setItem('shop_discount', String(discount))
     navigate('/shop/onboard/review')
   }
 
@@ -91,6 +95,39 @@ export default function ChooseShopType() {
               background: selected === 'redeem' ? '#1565C0' : '#fff'
             }} />
           </div>
+
+          {/* Discount % picker — shown once a type is chosen */}
+          {selected && (
+            <div style={{
+              background: '#f0f4ff', borderRadius: 10, padding: '16px 20px',
+              marginBottom: 20, border: '1.5px solid #c5d0f0'
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12, color: '#1565C0' }}>
+                Set your discount percentage
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {DISCOUNT_OPTIONS.map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => setDiscount(pct)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, fontWeight: 600,
+                      fontSize: 14, cursor: 'pointer', fontFamily: 'Poppins',
+                      border: discount === pct ? '2px solid #1565C0' : '1.5px solid #ccd4f0',
+                      background: discount === pct ? '#1565C0' : '#fff',
+                      color: discount === pct ? '#fff' : '#444',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 10 }}>
+                Customers get <strong style={{ color: '#1565C0' }}>{discount}% off</strong> when they redeem rewards at your shop.
+              </div>
+            </div>
+          )}
 
           <button
             className="btn-primary"

@@ -58,6 +58,67 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
     if (_entry == null && provider.history.isNotEmpty) {
       _entry = provider.history.first;
     }
+    // Show new-user welcome-bonus popup once
+    if (provider.showNewUserBonusPopup) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showBonusDialog(provider.bonusPoints);
+        provider.dismissBonusPopup();
+      });
+    }
+  }
+
+  void _showBonusDialog(int pts) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dlgCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(28),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72, height: 72,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFF8E1), shape: BoxShape.circle),
+              child: const Center(
+                child: Text('🎉', style: TextStyle(fontSize: 36)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Welcome Bonus!',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1565C0)),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'You just earned $pts free reward points\nas a welcome gift!',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 14, color: Color(0xFF374151), height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1565C0),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Awesome!'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from database import (
     shops_collection, transactions_collection, reviews_collection,
+    app_shops_collection,
 )
 from models.schemas import OfferUpdateRequest, StoreUpdateRequest, ReviewCreate, ReviewReplyRequest, GalleryPhotoRequest
 from utils.dependencies import get_current_user
@@ -9,6 +10,75 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
 import json
+import re
+
+# ─── Category string → category_ids mapping ───────────────────────────────────
+_CATEGORY_MAP: dict[str, int] = {
+    "new deals": 1, "groceries": 2, "supermarket": 3, "pharmacy": 4,
+    "salon": 5, "gym": 6, "restaurant": 7, "cafes": 8, "cafe": 8,
+    "clothing": 9, "department": 10, "electronics": 11, "books": 12,
+    "toys": 13, "baby": 14, "home decor": 15, "furniture": 16, "spa": 17,
+    "clinics": 21, "clinic": 21, "pets": 23, "sports": 24,
+    "mobile": 26, "computer": 27, "gifts": 28, "jewellery": 29,
+    "jewelry": 29, "shoes": 30,
+}
+
+
+def _category_to_ids(category: str) -> list[int]:
+    """Map a category string to a list of int category_ids for the app."""
+    key = category.strip().lower()
+    cid = _CATEGORY_MAP.get(key)
+    return [cid] if cid else [1]          # default to "New deals" (1)
+
+
+def _strip_b64_prefix(data_url: str | None) -> str:
+    """Remove 'data:image/...;base64,' prefix — app expects raw base64."""
+    if not data_url:
+        return ""
+    match = re.match(r"data:[^;]+;base64,(.+)", data_url, re.DOTALL)
+    return match.group(1) if match else data_url
+
+
+async def _sync_shop_to_app(user_id: str) -> None:
+    """Read the latest web shop doc and upsert it into claimit_db.shops."""
+    shop = await shops_collection.find_one({"user_id": user_id})
+    if not shop:
+        return
+
+    cover_raw  = _strip_b64_prefix(shop.get("cover_photo_b64") or "")
+    gallery    = shop.get("gallery_photos", []) or []
+    gallery_raw = [_strip_b64_prefix(p) for p in gallery if p]
+
+    app_doc = {
+        # identity / lookup
+        "web_shop_id": str(shop["_id"]),
+        # fields the Flutter app reads
+        "name":         shop.get("shop_name", ""),
+        "location":     shop.get("location", ""),          # "City, Area" string
+        "category_ids": _category_to_ids(shop.get("category", "")),
+        "discount":     shop.get("discount_percentage", 0),
+        "rating":       shop.get("rating", 4.0),
+        "added_days_ago": 0,
+        "image_name":   "",
+        "image_names":  [],
+        "has_rewards":  shop.get("shop_type", "") == "reward",
+        "has_redeem":   shop.get("shop_type", "") == "redeem",
+        "about":        shop.get("about", ""),
+        "address":      shop.get("shop_address", ""),
+        "timing":       shop.get("timing", ""),
+        "phone":        shop.get("phone", ""),
+        "lat":          shop.get("lat"),
+        "lng":          shop.get("lng"),
+        "image_data":      cover_raw,
+        "image_data_list": gallery_raw,
+        "created_at":   shop.get("created_at", datetime.utcnow()),
+    }
+
+    await app_shops_collection.update_one(
+        {"web_shop_id": str(shop["_id"])},
+        {"$set": app_doc},
+        upsert=True,
+    )
 
 router = APIRouter()
 
@@ -30,6 +100,9 @@ async def register_shop(
     lat: Optional[float] = Form(None),
     lng: Optional[float] = Form(None),
     about: str = Form(""),
+    location: str = Form(""),          # "City / Area" — shown in app
+    phone: str = Form(""),             # contact phone
+    timing: str = Form(""),            # opening hours e.g. "Daily: 10am – 10pm"
     category: str = Form(...),
     shop_type: str = Form(...),
     discount_percentage: int = Form(15),
@@ -47,6 +120,9 @@ async def register_shop(
         "lat": lat,
         "lng": lng,
         "about": about,
+        "location": location,
+        "phone": phone,
+        "timing": timing,
         "category": category,
         "shop_type": shop_type,
         "discount_percentage": discount_percentage,
@@ -70,6 +146,10 @@ async def register_shop(
     else:
         result = await shops_collection.insert_one(shop_doc)
         shop_doc["id"] = str(result.inserted_id)
+
+    # Mirror into app database
+    await _sync_shop_to_app(user_id)
+
     if "_id" in shop_doc:
         del shop_doc["_id"]
     return {"ok": True, "shop": shop_doc}
@@ -257,6 +337,8 @@ async def upload_cover_photo(request: GalleryPhotoRequest, current_user=Depends(
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Shop not found")
+    # Mirror updated cover photo into app database
+    await _sync_shop_to_app(user_id)
     return {"ok": True}
 
 
@@ -269,6 +351,8 @@ async def add_gallery_photo(request: GalleryPhotoRequest, current_user=Depends(g
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Shop not found")
+    # Mirror updated gallery into app database
+    await _sync_shop_to_app(user_id)
     return {"ok": True}
 
 
@@ -286,6 +370,8 @@ async def delete_gallery_photo(index: int, current_user=Depends(get_current_user
         {"user_id": user_id},
         {"$set": {"gallery_photos": gallery}}
     )
+    # Mirror updated gallery into app database
+    await _sync_shop_to_app(user_id)
     return {"ok": True}
 
 
