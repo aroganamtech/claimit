@@ -77,27 +77,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.max,
                         children: [
-                          Flexible(
-                            child: Text(
-                              context.select<AuthProvider, String>(
-                                (a) => a.user?.location?.isNotEmpty == true
-                                    ? a.user!.location!
-                                    : 'Select Area',
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 28,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
+                          // Flexible(
+                          //   child: Text(
+                          //     context.select<AuthProvider, String>(
+                          //       (a) => a.user?.location?.isNotEmpty == true
+                          //           ? a.user!.location!
+                          //           : 'Select Area',
+                          //     ),
+                          //     maxLines: 1,
+                          //     overflow: TextOverflow.ellipsis,
+                          //     style: TextStyle(
+                          //       fontSize: 15,
+                          //       fontWeight: FontWeight.w600,
+                          //       color: Theme.of(context).colorScheme.onSurface,
+                          //     ),
+                          //   ),
+                          // ),
+                          // Icon(
+                          //   Icons.keyboard_arrow_down_rounded,
+                          //   size: 28,
+                          //   color: Theme.of(context).colorScheme.onSurface,
+                          // ),
                         ],
                       ),
                     ),

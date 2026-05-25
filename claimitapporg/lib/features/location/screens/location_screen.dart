@@ -144,34 +144,51 @@ class _LocationScreenState extends State<LocationScreen> {
 
   // ── GPS ───────────────────────────────────────────────────────────────────
   Future<void> _useCurrentLocation() async {
+    if (!mounted) return;
     setState(() => _isGpsLoading = true);
     try {
+      // ── GPS service check ────────────────────────────────────────────────
       if (!await Geolocator.isLocationServiceEnabled()) {
-        _snack('Please enable device location (GPS)');
-        setState(() => _isGpsLoading = false);
+        if (!mounted) return;
+        // GPS off → close the screen; user must enable it first
+        _exitScreen();
         return;
       }
+
+      // ── Permission ───────────────────────────────────────────────────────
       LocationPermission perm = await Geolocator.checkPermission();
+
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) {
-          _snack('Location permission denied');
-          setState(() => _isGpsLoading = false);
+        // After the system dialog closes, Android fires a flood of IME-hide
+        // events. Do NOT call setState/ScaffoldMessenger here — just leave.
+        if (!mounted) return;
+        if (perm == LocationPermission.denied ||
+            perm == LocationPermission.deniedForever) {
+          _exitScreen();
           return;
         }
       }
+
+      if (!mounted) return;
       if (perm == LocationPermission.deniedForever) {
-        _snack('Enable location permission in App Settings');
-        setState(() => _isGpsLoading = false);
+        _exitScreen();
         return;
       }
+
+      // ── Get position ─────────────────────────────────────────────────────
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           timeLimit: Duration(seconds: 15),
         ),
       );
+      if (!mounted) return;
+
+      // ── Reverse-geocode ───────────────────────────────────────────────────
       final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (!mounted) return;
+
       String area = 'Current Location';
       if (marks.isNotEmpty) {
         final p = marks.first;
@@ -183,16 +200,20 @@ class _LocationScreenState extends State<LocationScreen> {
       }
       await _selectLocation(area);
     } catch (_) {
-      if (mounted) {
-        _snack('Could not detect location. Select manually.');
-        setState(() => _isGpsLoading = false);
-      }
+      if (mounted) _exitScreen();
     }
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
-  );
+  /// Close the location screen — used when permission is denied or GPS fails.
+  /// Goes home if we can't pop (i.e. location screen was the root route).
+  void _exitScreen() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
 
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
