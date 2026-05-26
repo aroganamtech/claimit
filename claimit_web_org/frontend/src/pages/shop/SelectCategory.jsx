@@ -1,10 +1,40 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+// Each label maps to a value (lowercase) that must exist in the backend _CATEGORY_MAP
 const CATEGORIES = [
-  'Supermarket', 'Grocery', 'Pharmacy', 'Bakery', 'Salon',
-  'Gym', 'Electronics', 'Cafe', 'Restaurant', 'Clothing',
-  'Footwear', 'Jewelry', 'Books', 'Toys', 'Hardware'
+  // Food & Grocery
+  { label: 'Grocery',              value: 'grocery'            },  // 2
+  { label: 'Supermarket',          value: 'supermarket'        },  // 3
+  { label: 'Restaurant',           value: 'restaurant'         },  // 7
+  { label: 'Cafe / Bakery',        value: 'cafe'               },  // 8
+  // Health & Wellness
+  { label: 'Pharmacy',             value: 'pharmacy'           },  // 4
+  { label: 'Salon',                value: 'salon'              },  // 5
+  { label: 'Spa',                  value: 'spa'                },  // 17
+  { label: 'Gym / Fitness',        value: 'gym'                },  // 6
+  { label: 'Clinics',              value: 'clinics'            },  // 21
+  // Fashion & Lifestyle
+  { label: 'Clothing',             value: 'clothing'           },  // 9
+  { label: 'Footwear / Shoes',     value: 'footwear'           },  // 30
+  { label: 'Jewellery',            value: 'jewellery'          },  // 29
+  { label: 'Department Store',     value: 'department'         },  // 10
+  // Electronics & Tech
+  { label: 'Electronics',          value: 'electronics'        },  // 11
+  { label: 'Mobile & Accessories', value: 'mobile'             },  // 26
+  { label: 'Computer & Laptop',    value: 'computer'           },  // 27
+  // Books, Toys & Kids
+  { label: 'Books',                value: 'books'              },  // 12
+  { label: 'Toys',                 value: 'toys'               },  // 13
+  { label: 'Baby Products',        value: 'baby'               },  // 14
+  // Home & Living
+  { label: 'Home Decor',           value: 'home decor'         },  // 15
+  { label: 'Furniture',            value: 'furniture'          },  // 16
+  // Other
+  { label: 'Pets',                 value: 'pets'               },  // 23
+  { label: 'Sports',               value: 'sports'             },  // 24
+  { label: 'Gifts',                value: 'gifts'              },  // 28
+  { label: 'Hardware',             value: 'hardware'           },  // 1
 ]
 
 export default function SelectCategory() {
@@ -54,7 +84,7 @@ export default function SelectCategory() {
           >
             <option value="">Select your business category</option>
             {CATEGORIES.map(c => (
-              <option key={c} value={c.toLowerCase()}>{c}</option>
+              <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
 

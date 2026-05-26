@@ -14,13 +14,56 @@ import re
 
 # ─── Category string → category_ids mapping ───────────────────────────────────
 _CATEGORY_MAP: dict[str, int] = {
-    "new deals": 1, "groceries": 2, "supermarket": 3, "pharmacy": 4,
-    "salon": 5, "gym": 6, "restaurant": 7, "cafes": 8, "cafe": 8,
-    "clothing": 9, "department": 10, "electronics": 11, "books": 12,
-    "toys": 13, "baby": 14, "home decor": 15, "furniture": 16, "spa": 17,
-    "clinics": 21, "clinic": 21, "pets": 23, "sports": 24,
-    "mobile": 26, "computer": 27, "gifts": 28, "jewellery": 29,
-    "jewelry": 29, "shoes": 30,
+    # ID 1 — New Deals / General
+    "new deals": 1,  "hardware": 1,
+    # ID 2 — Groceries
+    "groceries": 2,  "grocery": 2,
+    # ID 3 — Supermarket
+    "supermarket": 3,
+    # ID 4 — Pharmacy
+    "pharmacy": 4,   "medical": 4,
+    # ID 5 — Salon
+    "salon": 5,      "salons": 5,      "beauty": 5,
+    # ID 6 — Gym
+    "gym": 6,        "fitness": 6,
+    # ID 7 — Restaurant
+    "restaurant": 7, "restaurants": 7, "food": 7,   "bakery": 7,
+    # ID 8 — Cafes
+    "cafes": 8,      "cafe": 8,        "coffee": 8,
+    # ID 9 — Clothing
+    "clothing": 9,   "fashion": 9,     "apparel": 9,
+    # ID 10 — Department Store
+    "department": 10, "department store": 10,
+    # ID 11 — Electronics
+    "electronics": 11,
+    # ID 12 — Books
+    "books": 12,     "book": 12,       "stationery": 12,
+    # ID 13 — Toys
+    "toys": 13,      "toy": 13,
+    # ID 14 — Baby
+    "baby": 14,      "baby products": 14,
+    # ID 15 — Home Decor
+    "home decor": 15, "home": 15,
+    # ID 16 — Furniture
+    "furniture": 16,
+    # ID 17 — Spa
+    "spa": 17,
+    # ID 21 — Clinics
+    "clinics": 21,   "clinic": 21,     "hospital": 21, "dental": 21, "dentist": 21,
+    # ID 23 — Pets
+    "pets": 23,      "pet": 23,
+    # ID 24 — Sports
+    "sports": 24,    "sport": 24,
+    # ID 26 — Mobile & Accessories
+    "mobile": 26,    "mobile & accessories": 26,  "accessories": 26,
+    # ID 27 — Computer & Laptop
+    "computer": 27,  "computer & laptop": 27,     "laptop": 27,
+    # ID 28 — Gifts
+    "gifts": 28,     "gift": 28,
+    # ID 29 — Jewellery
+    "jewellery": 29, "jewelry": 29,
+    # ID 30 — Shoes / Footwear
+    "shoes": 30,     "footwear": 30,   "shoe": 30,
 }
 
 
@@ -40,44 +83,49 @@ def _strip_b64_prefix(data_url: str | None) -> str:
 
 
 async def _sync_shop_to_app(user_id: str) -> None:
-    """Read the latest web shop doc and upsert it into claimit_db.shops."""
+    """
+    Add / refresh app-friendly field aliases directly on the existing
+    claimit_db.shops document so the Flutter app can read them without
+    a separate 'sync' document being created.
+
+    Previously this upserted a second document keyed by web_shop_id,
+    which caused duplicate docs in the collection — one with web fields
+    only and one with app fields only.  Now we update in-place.
+    """
     shop = await shops_collection.find_one({"user_id": user_id})
     if not shop:
         return
 
-    cover_raw  = _strip_b64_prefix(shop.get("cover_photo_b64") or "")
-    gallery    = shop.get("gallery_photos", []) or []
+    cover_raw   = _strip_b64_prefix(shop.get("cover_photo_b64") or "")
+    gallery     = shop.get("gallery_photos", []) or []
     gallery_raw = [_strip_b64_prefix(p) for p in gallery if p]
 
-    app_doc = {
-        # identity / lookup
-        "web_shop_id": str(shop["_id"]),
-        # fields the Flutter app reads
-        "name":         shop.get("shop_name", ""),
-        "location":     shop.get("location", ""),          # "City, Area" string
-        "category_ids": _category_to_ids(shop.get("category", "")),
-        "discount":     shop.get("discount_percentage", 0),
-        "rating":       shop.get("rating", 4.0),
-        "added_days_ago": 0,
-        "image_name":   "",
-        "image_names":  [],
-        "has_rewards":  shop.get("shop_type", "") == "reward",
-        "has_redeem":   shop.get("shop_type", "") == "redeem",
-        "about":        shop.get("about", ""),
-        "address":      shop.get("shop_address", ""),
-        "timing":       shop.get("timing", ""),
-        "phone":        shop.get("phone", ""),
-        "lat":          shop.get("lat"),
-        "lng":          shop.get("lng"),
+    # App-friendly aliases written directly onto the same document
+    app_fields = {
+        "name":            shop.get("shop_name", ""),
+        "location":        shop.get("location", ""),
+        "category_ids":    _category_to_ids(shop.get("category", "")),
+        "discount":        shop.get("discount_percentage", 0),
+        "rating":          shop.get("rating", 4.0),
+        "added_days_ago":  0,
+        "image_name":      "",
+        "image_names":     [],
+        "has_rewards":     shop.get("shop_type", "") == "reward",
+        "has_redeem":      shop.get("shop_type", "") == "redeem",
+        "about":           shop.get("about", ""),
+        "address":         shop.get("shop_address", ""),
+        "timing":          shop.get("timing", ""),
+        "phone":           shop.get("phone", ""),
+        "lat":             shop.get("lat"),
+        "lng":             shop.get("lng"),
         "image_data":      cover_raw,
         "image_data_list": gallery_raw,
-        "created_at":   shop.get("created_at", datetime.utcnow()),
     }
 
-    await app_shops_collection.update_one(
-        {"web_shop_id": str(shop["_id"])},
-        {"$set": app_doc},
-        upsert=True,
+    # Update the original document in-place — no new doc created
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
+        {"$set": app_fields},
     )
 
 router = APIRouter()

@@ -96,8 +96,8 @@ export default function ChooseShopType() {
             }} />
           </div>
 
-          {/* Discount % picker — shown once a type is chosen */}
-          {selected && (
+          {/* Discount % picker — shown only for Redeem Shop */}
+          {selected === 'redeem' && (
             <div style={{
               background: '#f0f4ff', borderRadius: 10, padding: '16px 20px',
               marginBottom: 20, border: '1.5px solid #c5d0f0'

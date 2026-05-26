@@ -31,7 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.sendOtp(input);
+    final success = await authProvider.sendOtp(input, isLogin: false);
 
     if (!mounted) return;
 

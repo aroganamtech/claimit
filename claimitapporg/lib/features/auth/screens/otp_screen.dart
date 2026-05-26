@@ -107,7 +107,11 @@ class _OtpScreenState extends State<OtpScreen> {
     }
 
     final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.verifyOtp(widget.phone, _otp);
+    final success = await authProvider.verifyOtp(
+      widget.phone,
+      _otp,
+      isLogin: !widget.isRegistration,
+    );
 
     if (!mounted) return;
 
@@ -132,7 +136,10 @@ class _OtpScreenState extends State<OtpScreen> {
   Future<void> _resendOtp() async {
     if (!_canResend) return;
     final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.sendOtp(widget.phone);
+    final success = await authProvider.sendOtp(
+      widget.phone,
+      isLogin: !widget.isRegistration,
+    );
     if (!mounted) return;
     if (success) {
       _startTimer();

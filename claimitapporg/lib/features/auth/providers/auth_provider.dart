@@ -106,7 +106,9 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<bool> sendOtp(String phone) async {
+  /// [isLogin] true  → login mode  (fails if account not found)
+  /// [isLogin] false → register mode (fails if account already exists)
+  Future<bool> sendOtp(String phone, {bool isLogin = true}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -114,7 +116,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final response = await _apiClient.post(
         AppConstants.sendOtp,
-        data: {'phone': phone},
+        data: {'phone': phone, 'mode': isLogin ? 'login' : 'register'},
       );
       final ok = response.statusCode == 200 || response.statusCode == 201;
       if (!ok) {
@@ -131,7 +133,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> verifyOtp(String phone, String otp) async {
+  Future<bool> verifyOtp(String phone, String otp, {bool isLogin = true}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -139,7 +141,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final response = await _apiClient.post(
         AppConstants.verifyOtp,
-        data: {'phone': phone, 'otp': otp},
+        data: {'phone': phone, 'otp': otp, 'mode': isLogin ? 'login' : 'register'},
       );
 
       if (response.statusCode == 200 && response.data is Map) {

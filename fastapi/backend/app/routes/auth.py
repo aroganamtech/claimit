@@ -24,11 +24,15 @@ class SendOtpRequest(BaseModel):
     # Field kept as "phone" for backward-compat with Flutter client.
     # Accepts mobile number OR email address.
     phone: str
+    # "login"    → account MUST already exist; 404 if not found
+    # "register" → account MUST NOT exist; 409 if already registered
+    mode: str = "login"
 
 
 class VerifyOtpRequest(BaseModel):
     phone: str   # mobile number OR email – same as above
     otp: str
+    mode: str = "login"  # same semantics as SendOtpRequest.mode
 
 
 class RefreshTokenRequest(BaseModel):
@@ -58,7 +62,7 @@ async def _auto_create_user(db, identifier: str) -> dict:
 
     user_doc = {
         "full_name": default_name,
-        "phone": identifier if not _is_email(identifier) else "",
+        "phone": identifier if not _is_email(identifier) else None,
         "email": identifier if _is_email(identifier) else None,
         "is_verified": True,
         "created_at": datetime.utcnow(),
@@ -75,14 +79,30 @@ async def _auto_create_user(db, identifier: str) -> dict:
 async def send_otp(request: SendOtpRequest):
     """
     Send OTP to a mobile number or email address.
-    Works for both new (signup) and existing (login) users –
-    no separate registration step required.
+
+    mode="login"    → the account must already exist; returns 404 if not found.
+    mode="register" → the account must NOT exist; returns 409 if already registered.
     """
     identifier = request.phone.strip()
     if not identifier:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mobile number or email is required",
+        )
+
+    db = get_db()
+    existing_user = await _find_user(db, identifier)
+
+    if request.mode == "login" and not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this mobile number or email. Please register first.",
+        )
+
+    if request.mode == "register" and existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account already exists with this mobile number or email. Please login instead.",
         )
 
     otp = generate_otp()
@@ -122,9 +142,21 @@ async def verify_otp_endpoint(request: VerifyOtpRequest):
     user = await _find_user(db, identifier)
 
     if not user:
-        # New user — create account automatically
+        if request.mode == "login":
+            # Login attempted with an unregistered identifier
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account found with this mobile number or email. Please register first.",
+            )
+        # Register mode — create account
         user = await _auto_create_user(db, identifier)
     else:
+        if request.mode == "register":
+            # Registration attempted with an already-registered identifier
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account already exists with this mobile number or email. Please login instead.",
+            )
         # Existing user — update last-login timestamp
         await db.users.update_one(
             {"_id": user["_id"]},

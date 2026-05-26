@@ -559,8 +559,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => context.go('/home'),
                   ),
                   _NavItem(
-                    icon: Icons.storefront_outlined,
-                    activeIcon: Icons.storefront_rounded,
+                    icon: Icons.video_library_outlined,
+                    activeIcon: Icons.video_library_rounded,
                     label: 'Reels',
                     isSelected: sel == 1,
                     onTap: () => context.go('/reelz'),

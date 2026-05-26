@@ -37,7 +37,7 @@ async def connect_db():
     _db = _client[settings.database_name]
 
     # Ensure indexes exist (idempotent — safe to run every cold start)
-    await _db.users.create_index("phone", unique=True)
+    await _db.users.create_index("phone", unique=True, sparse=True)
     await _db.users.create_index("email", sparse=True)
     await _db.claims.create_index("user_id")
     await _db.claims.create_index("claim_number", unique=True)

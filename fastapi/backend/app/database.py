@@ -12,7 +12,7 @@ async def connect_db():
     client = AsyncIOMotorClient(settings.mongodb_url)
     db = client[settings.database_name]
     # Create indexes
-    await db.users.create_index("phone", unique=True)
+    await db.users.create_index("phone", unique=True, sparse=True)
     await db.users.create_index("email", sparse=True)
     await db.claims.create_index("user_id")
     await db.claims.create_index("claim_number", unique=True)

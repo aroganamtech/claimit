@@ -1709,7 +1709,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
 
             // ── Dots ────────────────────────────────────────────────────
             Center(
@@ -1726,7 +1726,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 4),
 
             // ── Category row ─────────────────────────────────────────────
             _CategoryRow(
@@ -1734,7 +1734,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               onSelect: (i) => setState(() => _selectedCategory = i),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 4),
 
             // ── Nearby / Brand toggle ─────────────────────────────────────
             Padding(
