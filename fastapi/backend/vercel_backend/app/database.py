@@ -85,37 +85,53 @@ async def connect_db():
     )
     _db = _client[settings.database_name]
 
-    # ── Users: ensure phone index is sparse (fix legacy non-sparse index) ─────
-    await _ensure_phone_index_sparse(_db)
-    # ── Users: also ensure email index is sparse + unique ─────────────────────
-    await _db.users.create_index("email", unique=True, sparse=True)
-    # ── Clean up any legacy phone/email: "" / null fields ─────────────────────
-    await _clean_legacy_empty_credentials(_db)
-    await _db.claims.create_index("user_id")
-    await _db.claims.create_index("claim_number", unique=True)
-    await _db.notifications.create_index("user_id")
-    await _db.otp_store.create_index("phone")
-    await _db.otp_store.create_index("expires_at", expireAfterSeconds=0)
-    await _db.shops.create_index("category_ids")
-    await _db.shops.create_index("name")
-    await _db.deals.create_index("deal_group")
-    await _db.deals.create_index("category")
-    await _db.rewards.create_index("shop_id")
-    await _db.rewards.create_index("is_active")
-    await _db.rewards.create_index("expires_at")
-    await _db.redeem.create_index("user_id")
-    await _db.redeem.create_index("reward_id")
-    await _db.redeem.create_index([("user_id", 1), ("reward_id", 1)])
-    await _db.reels.create_index("shop_id")
-    await _db.banners.create_index("status")
-    await _db.banners.create_index("created_at")
-    await _db.classifieds.create_index("category")
-    await _db.classifieds.create_index("subcategory")
-    await _db.classifieds.create_index("pincode")
-    # Bill scan / wallet
-    await _db.user_wallets.create_index("user_id", unique=True)
-    await _db.bill_scans.create_index("user_id")
-    await _db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
+    try:
+        # ── STEP 1: Clean legacy empty/null credentials BEFORE any unique index ops ──
+        # Old code stored phone: None or phone: "" for email-only users.
+        # Sparse unique indexes still enforce uniqueness on null/"", so we must
+        # $unset those fields before creating/verifying any unique sparse index.
+        await _clean_legacy_empty_credentials(_db)
+
+        # ── STEP 2: Fix phone sparse index ────────────────────────────────────────
+        await _ensure_phone_index_sparse(_db)
+
+        # ── STEP 3: Email index — sparse only, NOT unique ─────────────────────────
+        # Uniqueness is enforced at the application level (_find_user + 409 response).
+        # Making it unique here would fail on cold start if any legacy null emails
+        # still exist in Atlas that the cleanup above couldn't reach.
+        await _db.users.create_index("email", sparse=True)
+
+        # ── STEP 4: All other indexes ─────────────────────────────────────────────
+        await _db.claims.create_index("user_id")
+        await _db.claims.create_index("claim_number", unique=True)
+        await _db.notifications.create_index("user_id")
+        await _db.otp_store.create_index("phone")
+        await _db.otp_store.create_index("expires_at", expireAfterSeconds=0)
+        await _db.shops.create_index("category_ids")
+        await _db.shops.create_index("name")
+        await _db.deals.create_index("deal_group")
+        await _db.deals.create_index("category")
+        await _db.rewards.create_index("shop_id")
+        await _db.rewards.create_index("is_active")
+        await _db.rewards.create_index("expires_at")
+        await _db.redeem.create_index("user_id")
+        await _db.redeem.create_index("reward_id")
+        await _db.redeem.create_index([("user_id", 1), ("reward_id", 1)])
+        await _db.reels.create_index("shop_id")
+        await _db.banners.create_index("status")
+        await _db.banners.create_index("created_at")
+        await _db.classifieds.create_index("category")
+        await _db.classifieds.create_index("subcategory")
+        await _db.classifieds.create_index("pincode")
+        # Bill scan / wallet
+        await _db.user_wallets.create_index("user_id", unique=True)
+        await _db.bill_scans.create_index("user_id")
+        await _db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
+
+    except Exception as exc:
+        # Log but do NOT re-raise — a missing index is survivable.
+        # Re-raising here would 500 every request on this cold start.
+        print(f"⚠️  Index setup warning (non-fatal): {exc}")
 
     print("✅ Connected to MongoDB Atlas")
 
