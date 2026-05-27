@@ -154,7 +154,7 @@ def _send_email_sync(to_email: str, otp: str) -> None:
     """Blocking SMTP send — run this inside an executor to avoid blocking the event loop."""
     msg = _build_otp_email(to_email, otp)
     context = ssl.create_default_context()
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=8) as server:
         server.ehlo()
         server.starttls(context=context)
         server.login(settings.smtp_username, settings.smtp_password)

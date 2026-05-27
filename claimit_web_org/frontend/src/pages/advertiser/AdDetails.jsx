@@ -180,7 +180,11 @@ function DealFields({ data, onChange }) {
 }
 
 // ─── Phone preview per type ───────────────────────────────────────────────────
-function PhonePreview({ adType, data }) {
+function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
+  // Generate object URLs so we can show the actual uploaded image/video thumbnail
+  const creativePreview  = creativeFile  ? URL.createObjectURL(creativeFile)  : null
+  const thumbnailPreview = thumbnailFile ? URL.createObjectURL(thumbnailFile) : null
+
   return (
     <div style={{ background: '#e8f0fe', borderRadius: 12, padding: 20, border: '1px solid #c5d5f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -196,17 +200,29 @@ function PhonePreview({ adType, data }) {
           </div>
 
           {adType === 'home_banner' && (
-            <div style={{ background: 'linear-gradient(135deg,#1565C0,#2563EB)', padding: 20, minHeight: 110, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{data.headline || 'BANNER HEADLINE!'}</div>
-              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11 }}>{data.sub || 'Your sub-text appears here'}</div>
-              {data.cta_link && <div style={{ marginTop: 8, background: '#fff', color: '#1565C0', fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, display: 'inline-block', width: 'fit-content' }}>Learn More →</div>}
-            </div>
+            creativePreview
+              ? <div style={{ position: 'relative', height: 120, overflow: 'hidden' }}>
+                  <img src={creativePreview} alt="banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.38)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '12px 14px' }}>
+                    <div style={{ color: '#fff', fontWeight: 800, fontSize: 13, marginBottom: 3 }}>{data.headline || 'BANNER HEADLINE!'}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{data.sub || 'Your sub-text appears here'}</div>
+                    {data.cta_link && <div style={{ marginTop: 6, background: '#fff', color: '#1565C0', fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 20, display: 'inline-block', width: 'fit-content' }}>Learn More →</div>}
+                  </div>
+                </div>
+              : <div style={{ background: 'linear-gradient(135deg,#1565C0,#2563EB)', padding: 20, minHeight: 110, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{data.headline || 'BANNER HEADLINE!'}</div>
+                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11 }}>{data.sub || 'Your sub-text appears here'}</div>
+                  {data.cta_link && <div style={{ marginTop: 8, background: '#fff', color: '#1565C0', fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, display: 'inline-block', width: 'fit-content' }}>Learn More →</div>}
+                </div>
           )}
 
           {adType === 'promo_reelz' && (
             <div style={{ padding: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#1565C0', marginBottom: 10 }}>▶ Promo Reelz</div>
-              <div style={{ background: '#111', borderRadius: 10, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
+              <div style={{ background: '#111', borderRadius: 10, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative', overflow: 'hidden' }}>
+                {(thumbnailPreview || creativePreview) && (
+                  <img src={thumbnailPreview || creativePreview} alt="thumb" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+                )}
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)', borderRadius: 10 }} />
                 <span style={{ fontSize: 28, zIndex: 2 }}>▶</span>
                 <div style={{ position: 'absolute', bottom: 8, left: 10, right: 10, zIndex: 2 }}>
@@ -225,7 +241,12 @@ function PhonePreview({ adType, data }) {
                 {adType === 'nearby_deals' ? '📍 Nearby Deals' : '⭐ Brand Deals'}
               </div>
               <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 10, display: 'flex', gap: 10, alignItems: 'center', border: '1.5px solid #e8f0fe' }}>
-                <div style={{ width: 60, height: 60, borderRadius: 8, background: '#e0e0e0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏪</div>
+                <div style={{ width: 60, height: 60, borderRadius: 8, background: '#e0e0e0', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+                  {creativePreview
+                    ? <img src={creativePreview} alt="ad" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : '🏪'
+                  }
+                </div>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>{data.name || 'Business Name'}</div>
                   <div style={{ fontSize: 10, color: '#888', marginBottom: 3 }}>📍 {data.location || 'Area, City'}</div>
@@ -374,7 +395,7 @@ export default function AdDetails() {
 
           {/* ── Right: live preview ────────────────────────────── */}
           <div>
-            <PhonePreview adType={adType} data={extra} />
+            <PhonePreview adType={adType} data={extra} creativeFile={creative} thumbnailFile={thumbnail} />
           </div>
         </div>
       </main>

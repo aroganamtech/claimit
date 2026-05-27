@@ -39,7 +39,7 @@ class _BillScanningProgressScreenState
   final List<String> _steps = [
     'Reading bill image…',
     'Running AI vision analysis…',
-    'Extracting shop name & bill number…',
+    'Extracting shop name…',
     'Extracting bill date…',
     'Verifying total amount…',
   ];
@@ -205,6 +205,22 @@ class _BillScanningProgressScreenState
         .replaceAll(RegExp(r'[ \t]+'), ' ')
         .replaceAll(RegExp(r'\n+'), '\n');
 
+    // ── Normalise ₹ OCR misreads ─────────────────────────────────────────────
+    // ML Kit commonly misreads the ₹ (Rupee) symbol as Z, F, or R when it
+    // appears before a 3–7 digit amount (e.g. Z1860.00 → ₹1860.00).
+    // We handle this BEFORE any pattern matching so keyword patterns can find
+    // the correct amounts even when ₹ is garbled.
+    text = text.replaceAllMapped(
+      // At start-of-line: Z/F/R immediately followed by 3-7 digits + decimal
+      RegExp(r'^([ZFRzfr])(\d{3,7}(?:\.\d{1,2})?)', multiLine: true),
+      (m) => '₹${m.group(2)}',
+    );
+    text = text.replaceAllMapped(
+      // After whitespace: same pattern
+      RegExp(r'([ \t])([ZFRzfr])(\d{3,7}(?:\.\d{1,2})?)'),
+      (m) => '${m.group(1)}₹${m.group(3)}',
+    );
+
     double? parseNum(String? raw) {
       if (raw == null) return null;
       final cleaned = raw.replaceAll(RegExp(r'[,\s₹]'), '');
@@ -212,24 +228,25 @@ class _BillScanningProgressScreenState
       return (val != null && val >= 10 && val <= 500000) ? val : null;
     }
 
-    const delim = r'[\s:=\-₹]*(?:rs\.?|Rs\.?)?\s*';
+    // Two delimiter variants:
+    // • delim        — allows newlines; used only for Stage 1 where label and
+    //                  value may span lines (e.g. "TOTAL AMOUNT:\n₹2008.80")
+    // • delimStrict  — NO newlines; used for lower-priority standalone keywords
+    //                  so "TOTAL\n360.00" doesn't capture the wrong number.
+    const delim       = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t\n]*';
+    const delimStrict = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t]*';
 
-    final keywordPatterns = [
+    // ── Stage 1: High-confidence grand total keywords ─────────────────────────
+    // Uses delim (allows newlines) so the value found on the next line is caught.
+    final highConfidencePatterns = [
       '(?:grand\\s*total|net\\s*total|net\\s*amount|total\\s*amount|'
           'total\\s*bill|bill\\s*total|amount\\s*due|amount\\s*payable|'
-          'payable\\s*amount|sub\\s*total|subtotal)'
+          'payable\\s*amount)'
           '$delim'
-          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-      '(?:^|\\s)total$delim'
-          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-      '(?:^|\\s)amount$delim'
-          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-      '(?:^|\\s)amt$delim'
-          r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
-      r'₹\s*([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)',
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
     ];
 
-    for (final pattern in keywordPatterns) {
+    for (final pattern in highConfidencePatterns) {
       final matches =
           RegExp(pattern, caseSensitive: false, multiLine: true).allMatches(text);
       double? best;
@@ -238,28 +255,67 @@ class _BillScanningProgressScreenState
         if (val != null && (best == null || val > best)) best = val;
       }
       if (best != null) {
-        debugPrint('OCR total found via keyword pattern: $best');
+        debugPrint('OCR total found via high-confidence keyword: $best');
         return best;
       }
     }
 
+    // ── Stage 2: Lower-priority keyword patterns ──────────────────────────────
+    // Uses delimStrict (no newlines) to prevent "TOTAL\n360.00" from matching
+    // the column header "TOTAL" and stealing the first item's line-price (₹360).
+    final lowerPatterns = [
+      '(?:sub\\s*total|subtotal)$delimStrict'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      '(?:^|[ \\t])total$delimStrict'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      '(?:^|[ \\t])amount$delimStrict'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      '(?:^|[ \\t])amt$delimStrict'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      r'₹\s*([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+    ];
+
+    for (final pattern in lowerPatterns) {
+      final matches =
+          RegExp(pattern, caseSensitive: false, multiLine: true).allMatches(text);
+      double? best;
+      for (final m in matches) {
+        final val = parseNum(m.group(1));
+        if (val != null && (best == null || val > best)) best = val;
+      }
+      if (best != null) {
+        debugPrint('OCR total found via lower-priority keyword: $best');
+        return best;
+      }
+    }
+
+    // ── Stage 3: Line scan — collect ALL keyword lines, return LARGEST ────────
+    // Bug fix: the old code returned on the FIRST matching line (which could be
+    // "SUBTOTAL" or the column header "TOTAL" next to item ₹360). We now scan
+    // ALL matching lines and return the largest valid amount found.
+    double? lineScanBest;
     for (final line in text.split('\n')) {
+      // Skip lines that are only the column header (no digits on the line)
+      if (!RegExp(r'\d').hasMatch(line)) continue;
       if (RegExp(r'total|amount|amt|bill|payable|due',
               caseSensitive: false).hasMatch(line)) {
         final numMatches =
             RegExp(r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)').allMatches(line);
-        double? last;
         for (final nm in numMatches) {
           final val = parseNum(nm.group(1));
-          if (val != null) last = val;
-        }
-        if (last != null) {
-          debugPrint('OCR total found via line scan: $last');
-          return last;
+          if (val != null &&
+              (lineScanBest == null || val > lineScanBest)) {
+            lineScanBest = val;
+          }
         }
       }
     }
+    if (lineScanBest != null) {
+      debugPrint('OCR total found via line scan (largest): $lineScanBest');
+      return lineScanBest;
+    }
 
+    // ── Stage 4: Absolute fallback — largest number in the whole text ─────────
     final allNums = RegExp(
             r'(?<!\d)([0-9]{2,}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)(?!\d)')
         .allMatches(text)
@@ -279,17 +335,35 @@ class _BillScanningProgressScreenState
   }
 
   // ── Extract: Shop name ──────────────────────────────────────────────────────
-  // Shop name is usually in the first 1-4 non-empty lines before
-  // address / GSTIN / phone / invoice keywords.
+  // Primary pass  : first clean lines before any stop keyword (works when the
+  //                 shop name is at the very top of the OCR output).
+  // Secondary pass: scans ALL lines and skips any that look like dates, times,
+  //                 addresses, or receipt metadata — then returns the first
+  //                 ALL-CAPS candidate.  This handles receipts where ML Kit
+  //                 reads the date block before the business name block.
 
   String? _extractShopName(String rawText) {
-    // Keywords that signal we've passed the shop header
+    // Lines that signal receipt metadata (stop primary, skip secondary)
     final stopPattern = RegExp(
       r'gstin|gst\s*no|gst\s*number|gst\s*reg|'
-      r'invoice|bill\s*no|receipt|'
+      r'invoice|bill\s*no|'
       r'address|addr|ph\s*:|phone|tel\s*:|mobile|'
       r'tax\s*invoice|vat\s*no|pan\s*no|'
-      r'date\s*:|time\s*:|cashier|counter',
+      r'date\s*:|time\s*:|cashier|counter|'
+      r'qty|unit\s*price|items\s*purchased',
+      caseSensitive: false,
+    );
+
+    // Extra patterns to SKIP in the secondary pass (but not stop)
+    // Covers date/time lines that slip through the primary stop pattern
+    final skipPattern = RegExp(
+      r'receipt\s*no|receipt\s*#|'
+      r'\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|'
+      r'\d{1,2}:\d{2}\s*(?:am|pm)|'                 // time like 12:34 PM
+      r'subtotal|tax\s*\(|total|thank\s*you|enjoy|'
+      r'payment|status|paid|cash|card|visa|master|upi|'
+      r'way,|road|street|nagar|colony|sector|phase|'  // address words
+      r'innovation|tech\s*city',                       // address keywords
       caseSensitive: false,
     );
 
@@ -299,29 +373,56 @@ class _BillScanningProgressScreenState
         .where((l) => l.isNotEmpty)
         .toList();
 
+    // ── Primary pass: first clean lines before any stop keyword ──────────────
     final shopLines = <String>[];
-
     for (final line in lines) {
-      // Stop at receipt metadata keywords
       if (stopPattern.hasMatch(line)) break;
-      // Stop if line is almost entirely digits / punctuation (phone, invoice no, etc.)
       final alphaCount = RegExp(r'[a-zA-Z]').allMatches(line).length;
       if (line.length > 3 && alphaCount < 2) break;
-      // Stop after 4 candidate lines
-      if (shopLines.length >= 4) break;
-
+      if (shopLines.length >= 5) break;
       shopLines.add(line);
     }
 
-    if (shopLines.isEmpty) return null;
+    if (shopLines.isNotEmpty) {
+      final primary = shopLines.first
+          .replaceAll(RegExp(r"[^a-zA-Z0-9\s\-\&\.\,']"), '')
+          .trim();
+      if (primary.isNotEmpty) {
+        debugPrint('OCR shop name (primary): $primary');
+        return primary;
+      }
+    }
 
-    // Take the first line as primary shop name (usually the business name)
-    final primary = shopLines.first
-        .replaceAll(RegExp(r"[^a-zA-Z0-9\s\-\&\.\,']"), '')
-        .trim();
+    // ── Secondary pass: scan ALL lines (not just top N) ───────────────────────
+    // ML Kit sometimes reads date/receipt blocks before the shop name block.
+    // We skip any line matching stop OR skip patterns, then look for the first
+    // ALL-CAPS line that has ≥5 alpha chars and ≥60 % uppercase letters.
+    for (final line in lines) {
+      if (stopPattern.hasMatch(line)) continue;  // skip, not break
+      if (skipPattern.hasMatch(line)) continue;
 
-    debugPrint('OCR shop name: $primary');
-    return primary.isEmpty ? null : primary;
+      final stripped = line.replaceAll(RegExp(r'[^a-zA-Z\s]'), '').trim();
+      if (stripped.length < 5) continue;
+
+      // Must have at least 60 % uppercase — typical for receipt business names
+      final upperCount = stripped.replaceAll(RegExp(r'[^A-Z]'), '').length;
+      final totalAlpha = stripped.replaceAll(RegExp(r'[^a-zA-Z]'), '').length;
+      if (totalAlpha == 0 || upperCount / totalAlpha < 0.6) continue;
+
+      // Reject lines that start with a digit (likely address "123 Main St")
+      if (RegExp(r'^\d').hasMatch(line)) continue;
+
+      final clean = line
+          .replaceAll(RegExp(r"[^a-zA-Z0-9\s\-\&\.\,']"), '')
+          .trim();
+      if (clean.isNotEmpty) {
+        debugPrint('OCR shop name (secondary all-lines): $clean');
+        return clean;
+      }
+    }
+
+    debugPrint('OCR: no shop name found');
+    return null;
   }
 
   // ── Extract: Bill / Invoice / Receipt number ────────────────────────────────
@@ -362,20 +463,20 @@ class _BillScanningProgressScreenState
   }
 
   // ── Extract: Bill date ──────────────────────────────────────────────────────
-  // Recognizes common Indian receipt date formats:
-  //   DD/MM/YYYY  DD-MM-YYYY  DD.MM.YYYY
-  //   DD/MM/YY    DD-MM-YY
+  // Recognizes receipt date formats:
+  //   DD/MM/YYYY  DD-MM-YYYY  DD.MM.YYYY  (and YY variants)
+  //   YYYY-MM-DD  (ISO)
   //   DD MMM YYYY  (e.g. 23 May 2026)
-  //   YYYY-MM-DD  (ISO format)
+  //   MMM DD, YYYY (e.g. May 23, 2026)  ← American format used by many POS
 
   DateTime? _extractBillDate(String rawText) {
-    final monthNames = {
+    const monthNames = {
       'jan': 1,  'feb': 2,  'mar': 3,  'apr': 4,
       'may': 5,  'jun': 6,  'jul': 7,  'aug': 8,
       'sep': 9,  'oct': 10, 'nov': 11, 'dec': 12,
     };
 
-    // Helper: try to build a DateTime, validate ranges
+    // Helper: validate and build DateTime
     DateTime? tryDate(int y, int m, int d) {
       if (m < 1 || m > 12) return null;
       if (d < 1 || d > 31) return null;
@@ -385,13 +486,11 @@ class _BillScanningProgressScreenState
     }
 
     // ── Pattern 1: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY ───────────────────
-    final dmyPattern = RegExp(
-      r'\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2,4})\b',
-    );
+    final dmyPattern = RegExp(r'\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2,4})\b');
     for (final m in dmyPattern.allMatches(rawText)) {
-      final d = int.tryParse(m.group(1)!);
+      final d  = int.tryParse(m.group(1)!);
       final mo = int.tryParse(m.group(2)!);
-      final y = int.tryParse(m.group(3)!);
+      final y  = int.tryParse(m.group(3)!);
       if (d != null && mo != null && y != null) {
         final dt = tryDate(y, mo, d);
         if (dt != null) {
@@ -404,9 +503,9 @@ class _BillScanningProgressScreenState
     // ── Pattern 2: ISO YYYY-MM-DD ────────────────────────────────────────────
     final isoPattern = RegExp(r'\b(\d{4})-(\d{2})-(\d{2})\b');
     for (final m in isoPattern.allMatches(rawText)) {
-      final y = int.tryParse(m.group(1)!);
+      final y  = int.tryParse(m.group(1)!);
       final mo = int.tryParse(m.group(2)!);
-      final d = int.tryParse(m.group(3)!);
+      final d  = int.tryParse(m.group(3)!);
       if (y != null && mo != null && d != null) {
         final dt = tryDate(y, mo, d);
         if (dt != null) {
@@ -416,19 +515,37 @@ class _BillScanningProgressScreenState
       }
     }
 
-    // ── Pattern 3: DD MMM YYYY  (e.g. 23 May 2026) ──────────────────────────
-    final wordPattern = RegExp(
-      r'\b(\d{1,2})\s+([a-zA-Z]{3,9})\s+(\d{2,4})\b',
+    // ── Pattern 3: MMM DD, YYYY  (e.g. May 23, 2026) — American POS format ──
+    final americanPattern = RegExp(
+      r'\b([a-zA-Z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})\b',
     );
+    for (final m in americanPattern.allMatches(rawText)) {
+      final monthStr = m.group(1)!.toLowerCase();
+      final key = monthStr.length >= 3 ? monthStr.substring(0, 3) : monthStr;
+      final mo = monthNames[key];
+      final d  = int.tryParse(m.group(2)!);
+      final y  = int.tryParse(m.group(3)!);
+      if (mo != null && d != null && y != null) {
+        final dt = tryDate(y, mo, d);
+        if (dt != null) {
+          debugPrint('OCR bill date (American MMM DD YYYY): $dt');
+          return dt;
+        }
+      }
+    }
+
+    // ── Pattern 4: DD MMM YYYY  (e.g. 23 May 2026) ──────────────────────────
+    final wordPattern = RegExp(r'\b(\d{1,2})\s+([a-zA-Z]{3,9})\s+(\d{2,4})\b');
     for (final m in wordPattern.allMatches(rawText)) {
-      final d = int.tryParse(m.group(1)!);
-      final monthStr = m.group(2)!.toLowerCase().substring(0, 3);
-      final y = int.tryParse(m.group(3)!);
-      final mo = monthNames[monthStr];
+      final d  = int.tryParse(m.group(1)!);
+      final monthStr = m.group(2)!.toLowerCase();
+      final key = monthStr.length >= 3 ? monthStr.substring(0, 3) : monthStr;
+      final y  = int.tryParse(m.group(3)!);
+      final mo = monthNames[key];
       if (d != null && mo != null && y != null) {
         final dt = tryDate(y, mo, d);
         if (dt != null) {
-          debugPrint('OCR bill date (word): $dt');
+          debugPrint('OCR bill date (DD MMM YYYY): $dt');
           return dt;
         }
       }
@@ -551,13 +668,6 @@ class _BillScanningProgressScreenState
                 label: 'Shop',
                 value: _extractedShop ?? 'Not detected',
                 color: const Color(0xFF2563EB),
-              ),
-              const SizedBox(height: 6),
-              _OcrPreviewChip(
-                icon: Icons.tag_rounded,
-                label: 'Bill No',
-                value: _extractedBillNumber ?? 'Not detected',
-                color: const Color(0xFFE65100),
               ),
               const SizedBox(height: 6),
               _OcrPreviewChip(

@@ -56,18 +56,29 @@ async def _auto_create_user(db, identifier: str) -> dict:
     """
     Create a new user with a generated display name.
     The user can update their name later from the Profile screen.
+
+    IMPORTANT: We deliberately omit the phone/email field when the user
+    didn't provide it, rather than storing None/null.  MongoDB sparse
+    indexes only skip documents where the field is *absent* from the
+    document — documents with the field set to null or "" are still
+    indexed and would cause E11000 duplicate-key errors when a second
+    email-only (or phone-only) user registers.
     """
     count = await db.users.count_documents({})
     default_name = f"User{count + 1}"
 
-    user_doc = {
+    user_doc: dict = {
         "full_name": default_name,
-        "phone": identifier if not _is_email(identifier) else None,
-        "email": identifier if _is_email(identifier) else None,
         "is_verified": True,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
     }
+    # Only set the credential that was actually provided.
+    if _is_email(identifier):
+        user_doc["email"] = identifier
+    else:
+        user_doc["phone"] = identifier
+
     result = await db.users.insert_one(user_doc)
     user_doc["_id"] = result.inserted_id
     return user_doc

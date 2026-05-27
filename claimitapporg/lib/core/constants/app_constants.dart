@@ -4,6 +4,7 @@ class AppConstants {
 
   // 🌐 Production (Vercel)
   static const String baseUrl = 'https://claimitorgbackend.vercel.app';
+  // static const String baseUrl = 'https://10.102.0.40:8001';
 
   // 💻 Local dev — comment out above and uncomment below when testing locally
   // static const String baseUrl = 'http://10.103.197.67:8001';

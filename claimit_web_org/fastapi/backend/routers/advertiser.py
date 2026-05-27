@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from database import (
     ads_collection, transactions_collection,
-    app_deals_collection, app_reels_collection,
+    app_deals_collection, app_reels_collection, app_banners_collection,
 )
 from utils.dependencies import get_current_user
 from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional
-import os, json
+import base64, os, json
 
 router = APIRouter()
 
@@ -106,25 +106,33 @@ async def create_ad(
     end_date = pub_date + timedelta(days=7)
     ad_status = "active" if publish_today else "scheduled"
 
-    # ── Save uploaded files ───────────────────────────────────────────────────
+    # ── Save uploaded files + encode as base64 for app ───────────────────────
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True)
 
-    web_base = os.getenv("WEB_BASE_URL", "http://localhost:8000")
+    web_base = os.getenv("WEB_BASE_URL", "")
 
-    creative_url = None
+    creative_url  = ""
+    creative_b64  = ""   # raw base64 — what the Flutter app uses
     if creative and creative.filename:
-        safe = f"{user_id}_{int(pub_date.timestamp())}_{creative.filename}"
-        with open(os.path.join(upload_dir, safe), "wb") as f:
-            f.write(await creative.read())
-        creative_url = f"{web_base}/uploads/{safe}"
+        content = await creative.read()
+        creative_b64 = base64.b64encode(content).decode("utf-8")
+        if web_base:
+            safe = f"{user_id}_{int(pub_date.timestamp())}_{creative.filename}"
+            with open(os.path.join(upload_dir, safe), "wb") as f:
+                f.write(content)
+            creative_url = f"{web_base}/uploads/{safe}"
 
-    thumbnail_url = None
+    thumbnail_url = ""
+    thumbnail_b64 = ""
     if thumbnail and thumbnail.filename:
-        safe = f"{user_id}_{int(pub_date.timestamp())}_thumb_{thumbnail.filename}"
-        with open(os.path.join(upload_dir, safe), "wb") as f:
-            f.write(await thumbnail.read())
-        thumbnail_url = f"{web_base}/uploads/{safe}"
+        content = await thumbnail.read()
+        thumbnail_b64 = base64.b64encode(content).decode("utf-8")
+        if web_base:
+            safe = f"{user_id}_{int(pub_date.timestamp())}_thumb_{thumbnail.filename}"
+            with open(os.path.join(upload_dir, safe), "wb") as f:
+                f.write(content)
+            thumbnail_url = f"{web_base}/uploads/{safe}"
 
     # ── Parse tags ────────────────────────────────────────────────────────────
     parsed_tags: list = []
@@ -152,11 +160,12 @@ async def create_ad(
 
     if ad_type == "home_banner":
         ad_doc.update({
-            "headline":  headline or title or "",
-            "sub":       sub or description or "",
-            "cta_link":  cta_link or "",
-            "image_url": creative_url or "",
-            "title":     headline or title or "",
+            "headline":   headline or title or "",
+            "sub":        sub or description or "",
+            "cta_link":   cta_link or "",
+            "image_url":  creative_url,
+            "image_data": creative_b64,
+            "title":      headline or title or "",
         })
 
     elif ad_type == "promo_reelz":
@@ -167,8 +176,9 @@ async def create_ad(
             "caption":       caption or "",
             "offer":         offer or "",
             "tag":           tag or "",
-            "video_url":     creative_url or "",
-            "thumbnail_url": thumbnail_url or "",
+            "video_url":     creative_url,
+            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
+            "thumbnail_url": thumbnail_url,
             "title":         shop_name or "",
         })
 
@@ -185,7 +195,8 @@ async def create_ad(
             "cashback":    cashback or "1% Cashback",
             "distance":    distance or "",
             "tags":        parsed_tags,
-            "image_url":   creative_url or "",
+            "image_url":   creative_url,
+            "image_data":  creative_b64,
             "rating":      4.0,
             "reviews":     0,
             "deal_group":  "brand" if ad_type == "brand_deals" else "nearby",
@@ -200,9 +211,24 @@ async def create_ad(
     # Mirror into the app-facing claimit_db collections so the Flutter app
     # shows the ad without any manual seeding.
     # ─────────────────────────────────────────────────────────────────────────
-    if ad_type in ("brand_deals", "nearby_deals"):
+    if ad_type == "home_banner":
+        banner_doc = {
+            "web_ad_id":  ad_id,
+            "headline":   headline or title or "",
+            "sub":        sub or description or "",
+            "cta_link":   cta_link or "",
+            "image_url":  creative_url,
+            "image_data": creative_b64,
+            "pincode":    pincode,
+            "status":     ad_status,
+            "end_date":   end_date.strftime("%d/%m/%Y"),
+            "created_at": datetime.utcnow(),
+        }
+        await app_banners_collection.insert_one(banner_doc)
+
+    elif ad_type in ("brand_deals", "nearby_deals"):
         deal_doc = {
-            "web_ad_id":    ad_id,          # reference back to web ad
+            "web_ad_id":    ad_id,
             "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
             "name":         name or "",
             "location":     location or "",
@@ -210,8 +236,9 @@ async def create_ad(
             "cashback":     cashback or "1% Cashback",
             "distance":     distance or "",
             "type":         type or "",
-            "category":     type or "",     # app filters by "category" field
-            "image_url":    creative_url or "",
+            "category":     type or "",
+            "image_url":    creative_url,
+            "image_data":   creative_b64,   # raw base64 — Flutter renders this directly
             "description":  description or "",
             "address":      address or "",
             "phone":        phone or "",
@@ -234,8 +261,9 @@ async def create_ad(
             "shop_category": shop_category or "",
             "caption":       caption or "",
             "offer":         offer or "",
-            "video_url":     creative_url or "",
-            "thumbnail_url": thumbnail_url or "",
+            "video_url":     creative_url,
+            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
+            "thumbnail_url": thumbnail_url,
             "like_count":    0,
             "view_count":    0,
             "tag":           tag or "",

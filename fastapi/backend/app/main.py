@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import connect_db, disconnect_db
-from .routes import auth, users, claims, notifications, dashboard, policies, locations, deals, shops, rewards, redeem, reels, classifieds, admin, bill
+from .routes import auth, users, claims, notifications, dashboard, policies, locations, deals, shops, rewards, redeem, reels, classifieds, admin, bill, banners
 
 
 @asynccontextmanager
@@ -62,6 +62,7 @@ app.include_router(reels.router)
 app.include_router(classifieds.router)
 app.include_router(admin.router)
 app.include_router(bill.router)
+app.include_router(banners.router)
 
 
 @app.get("/")

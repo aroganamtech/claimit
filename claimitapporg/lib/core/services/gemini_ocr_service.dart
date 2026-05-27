@@ -43,13 +43,13 @@ class GeminiOcrService {
 
   static const _prompt = '''
 You are a bill/receipt OCR assistant. Carefully analyze the receipt image and extract:
-1. shop_name: The business name at the very top of the receipt (e.g., "DMart", "Big Bazaar")
-2. total_amount: The FINAL grand total amount the customer paid — look for labels like "Grand Total", "Net Total", "Total Amount", "Amount Payable", "Total". Return only the number (no ₹ sign or commas).
-3. bill_date: The date printed on the receipt in DD/MM/YYYY format
-4. bill_number: The invoice/bill/receipt number (e.g., "INV-001", "45871")
+1. shop_name: The business/store name at the very top of the receipt (before any address, phone, or date). Example: "The Daily Grind Cafe", "DMart".
+2. total_amount: The FINAL amount the customer paid (after tax). Look for "TOTAL AMOUNT", "GRAND TOTAL", "NET TOTAL", "AMOUNT PAYABLE". NEVER use subtotal or individual item prices. Return only the numeric value (no ₹ sign or commas).
+3. bill_date: The date on the receipt. Always return in DD/MM/YYYY format. For example, if the receipt shows "May 23, 2026" return "23/05/2026".
+4. bill_number: The receipt/invoice/bill number (e.g., "98432", "INV-001"). Strip any leading # symbol.
 
-Return ONLY a single valid JSON object. No markdown, no explanation. Example:
-{"shop_name":"DMart","total_amount":1250.50,"bill_date":"25/05/2026","bill_number":"INV001234"}
+Return ONLY a single valid JSON object with no markdown or explanation. Example:
+{"shop_name":"The Daily Grind Cafe","total_amount":2008.80,"bill_date":"23/05/2026","bill_number":"98432"}
 
 If a field cannot be confidently read, set it to null.
 ''';
@@ -58,7 +58,11 @@ If a field cannot be confidently read, set it to null.
   /// Returns null if the API key is not configured or the call fails.
   Future<GeminiOcrResult?> extractFromImage(String imagePath) async {
     final key = AppConstants.geminiApiKey;
-    if (key == 'AIzaSyCOkuVpM_RgP3Bj5oryK1xzgU77PWInDr4' || key.isEmpty) {
+    // Skip if key is empty or still a placeholder value
+    if (key.isEmpty ||
+        key.startsWith('YOUR_') ||
+        key == 'YOUR_GEMINI_API_KEY_HERE' ||
+        key == 'AIzaSyCOkuVpM_RgP3Bj5oryK1xzgU77PWInDr4') {
       debugPrint('GeminiOcrService: API key not configured — skipping Gemini');
       return null;
     }
@@ -164,16 +168,60 @@ If a field cannot be confidently read, set it to null.
   DateTime? _date(dynamic v) {
     if (v == null) return null;
     final raw = v.toString();
-    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    final m = RegExp(r'(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2,4})')
-        .firstMatch(raw);
-    if (m == null) return null;
-    final d  = int.tryParse(m.group(1)!);
-    final mo = int.tryParse(m.group(2)!);
-    var   y  = int.tryParse(m.group(3)!) ?? 0;
-    if (d == null || mo == null) return null;
-    if (y < 100) y += 2000;
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-    try { return DateTime(y, mo, d); } catch (_) { return null; }
+
+    DateTime? tryBuild(int y, int mo, int d) {
+      final year = y < 100 ? 2000 + y : y;
+      if (year < 2000 || year > 2100) return null;
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      try { return DateTime(year, mo, d); } catch (_) { return null; }
+    }
+
+    // Pattern 1: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    final m1 = RegExp(r'(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2,4})').firstMatch(raw);
+    if (m1 != null) {
+      final d  = int.tryParse(m1.group(1)!);
+      final mo = int.tryParse(m1.group(2)!);
+      final y  = int.tryParse(m1.group(3)!);
+      if (d != null && mo != null && y != null) {
+        final dt = tryBuild(y, mo, d);
+        if (dt != null) return dt;
+      }
+    }
+
+    // Pattern 2: "May 23, 2026" or "May 23 2026" (American: MMM DD YYYY)
+    const monthNames = {
+      'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+      'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    };
+    final m2 = RegExp(
+      r'([a-zA-Z]{3,9})\s+(\d{1,2}),?\s+(\d{2,4})',
+    ).firstMatch(raw);
+    if (m2 != null) {
+      final monthStr = m2.group(1)!.toLowerCase().substring(0, 3);
+      final d  = int.tryParse(m2.group(2)!);
+      final y  = int.tryParse(m2.group(3)!);
+      final mo = monthNames[monthStr];
+      if (d != null && mo != null && y != null) {
+        final dt = tryBuild(y, mo, d);
+        if (dt != null) return dt;
+      }
+    }
+
+    // Pattern 3: "23 May 2026" (DD MMM YYYY)
+    final m3 = RegExp(
+      r'(\d{1,2})\s+([a-zA-Z]{3,9})\s+(\d{2,4})',
+    ).firstMatch(raw);
+    if (m3 != null) {
+      final d  = int.tryParse(m3.group(1)!);
+      final monthStr = m3.group(2)!.toLowerCase().substring(0, 3);
+      final y  = int.tryParse(m3.group(3)!);
+      final mo = monthNames[monthStr];
+      if (d != null && mo != null && y != null) {
+        final dt = tryBuild(y, mo, d);
+        if (dt != null) return dt;
+      }
+    }
+
+    return null;
   }
 }

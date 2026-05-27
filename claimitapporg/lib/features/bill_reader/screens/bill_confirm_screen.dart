@@ -198,7 +198,6 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     final extractedTotal = provider.pendingTotal;
     final ocrText        = provider.pendingOcrText ?? '';
     final billDate       = provider.pendingBillDate;
-    final billNumber     = provider.pendingBillNumber;
     final now            = DateTime.now();
     // OCR fully succeeded only when at least the amount was extracted
     final ocrSuccess = extractedTotal != null;
@@ -319,18 +318,6 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
               ),
               child: Column(
                 children: [
-                  // Bill number — strongest duplicate-check field
-                  _InfoRow(
-                    icon: Icons.tag_rounded,
-                    label: 'Bill Number',
-                    value: billNumber?.isNotEmpty == true
-                        ? billNumber!
-                        : 'Not detected',
-                    valueColor: billNumber?.isNotEmpty == true
-                        ? const Color(0xFF374151)
-                        : const Color(0xFFF57C00),
-                  ),
-                  const Divider(height: 16),
                   _InfoRow(
                     icon: Icons.calendar_today_rounded,
                     label: 'Bill Date (from receipt)',
