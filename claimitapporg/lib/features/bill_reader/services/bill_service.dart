@@ -27,6 +27,7 @@ class BillService {
     String? shopName,
     String? billNumber,
     DateTime? billDate,
+    String? billTime,   // "HH:MM" from receipt OCR
   }) async {
     // Encode image only when small enough to avoid timeout
     String? imageBase64;
@@ -47,6 +48,7 @@ class BillService {
       'total_amount': totalAmount,
       if (shopName?.isNotEmpty   == true) 'shop_name':   shopName,
       if (billNumber?.isNotEmpty == true) 'bill_number': billNumber,
+      if (billTime?.isNotEmpty   == true) 'bill_time':   billTime,
       if (billDate != null)
         'bill_date':
             '${billDate.year}-${billDate.month.toString().padLeft(2, '0')}'

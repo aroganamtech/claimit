@@ -10,9 +10,10 @@ Business rules (must stay in sync with BillRewardProvider in Flutter):
   • 1 % cashback  (earned_cashback  = total * 0.01)
   • 10 % points   (earned_points    = total * 0.10, rounded)
   • New users get NEW_USER_BONUS = 1 000 free welcome points on wallet creation
-  • Duplicate detection: fingerprint = "bn|shop|date|amount" (with bill_no)
-                        or           "shop|date|amount"     (without)
-    → matches the duplicateKey built in BillRewardProvider.isDuplicate()
+  • Duplicate detection: fingerprint = "shop|date|HH:MM|amount" (with time)
+                        or           "shop|date|amount"         (without time)
+    → matches the duplicateKey built in BillRewardEntry.duplicateKey (Flutter)
+  • bill_scans documents auto-expire after 24 h (TTL index on scanned_at)
 """
 
 from datetime import datetime, timezone
@@ -57,18 +58,28 @@ class BillScanRequest(BaseModel):
     shop_name:     Optional[str]  = None
     bill_number:   Optional[str]  = None
     bill_date:     Optional[str]  = None   # YYYY-MM-DD from OCR
+    bill_time:     Optional[str]  = None   # HH:MM from OCR (24-h) — used in dup key
     image_base64:  Optional[str]  = None   # stored for audit, not processed
     user_id:       Optional[str]  = None   # fallback when Bearer unavailable
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-def _dup_key(shop: str, bill_no: Optional[str], bill_date: str, amount: float) -> str:
-    """Duplicate fingerprint — identical to BillRewardProvider.duplicateKey in Flutter."""
+def _dup_key(shop: str, bill_date: str, amount: float,
+             bill_time: Optional[str] = None) -> str:
+    """
+    Duplicate fingerprint — must match BillRewardEntry.duplicateKey in Flutter.
+
+    With time:    "shop|YYYY-M-D|HH:MM|amount"
+    Without time: "shop|YYYY-M-D|amount"
+
+    Two purchases at the same shop on the same day for the same price but at
+    different times produce different keys and are both allowed.
+    """
     s   = shop.lower().strip()
     amt = f"{amount:.0f}"
-    if bill_no and bill_no.strip():
-        bn = bill_no.lower().replace(" ", "")
-        return f"{bn}|{s}|{bill_date}|{amt}"
+    t   = (bill_time or "").strip()
+    if t:
+        return f"{s}|{bill_date}|{t}|{amt}"
     return f"{s}|{bill_date}|{amt}"
 
 
@@ -106,10 +117,10 @@ async def scan_bill(data: BillScanRequest, request: Request):
     # ── Duplicate check ───────────────────────────────────────────────────────
     bill_date = data.bill_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     key = _dup_key(
-        shop     = data.shop_name or "",
-        bill_no  = data.bill_number,
-        bill_date= bill_date,
-        amount   = total,
+        shop      = data.shop_name or "",
+        bill_date = bill_date,
+        amount    = total,
+        bill_time = data.bill_time,
     )
     if await db.bill_scans.find_one({"user_id": uid, "dup_key": key}):
         raise HTTPException(status_code=409, detail="Bill already scanned")
@@ -146,6 +157,7 @@ async def scan_bill(data: BillScanRequest, request: Request):
         "earned_points":   earned_pts,
         "bill_number":     data.bill_number,
         "bill_date":       bill_date,
+        "bill_time":       data.bill_time,
         "scanned_at":      datetime.now(timezone.utc),
     }
     res = await db.bill_scans.insert_one(scan_doc)
@@ -205,6 +217,7 @@ async def bill_history(
             "earned_points":   s.get("earned_points", 0),
             "bill_number":     s.get("bill_number"),
             "bill_date":       s.get("bill_date"),
+            "bill_time":       s.get("bill_time"),
             "scanned_at":      s["scanned_at"].isoformat() if s.get("scanned_at") else "",
         }
         for s in scans

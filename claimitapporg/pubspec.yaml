@@ -118,3 +118,5 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - assets/icons/category_icon/
+    - assets/icons/home_page_icons/

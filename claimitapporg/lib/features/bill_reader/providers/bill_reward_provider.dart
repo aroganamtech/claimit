@@ -38,6 +38,7 @@ class BillRewardProvider extends ChangeNotifier {
   String?   _pendingShopName;
   DateTime? _pendingBillDate;
   String?   _pendingBillNumber;
+  String?   _pendingBillTime;   // "HH:MM" from OCR receipt
 
   double?   get pendingTotal      => _pendingTotal;
   String?   get pendingImagePath  => _pendingImagePath;
@@ -45,6 +46,7 @@ class BillRewardProvider extends ChangeNotifier {
   String?   get pendingShopName   => _pendingShopName;
   DateTime? get pendingBillDate   => _pendingBillDate;
   String?   get pendingBillNumber => _pendingBillNumber;
+  String?   get pendingBillTime   => _pendingBillTime;
 
   // ── History ────────────────────────────────────────────────────────────────
   final List<BillRewardEntry> _history = [];
@@ -182,6 +184,7 @@ class BillRewardProvider extends ChangeNotifier {
     String?   shopName,
     DateTime? billDate,
     String?   billNumber,
+    String?   billTime,
   }) {
     _pendingTotal      = totalAmount;
     _pendingImagePath  = imagePath;
@@ -189,6 +192,7 @@ class BillRewardProvider extends ChangeNotifier {
     _pendingShopName   = shopName;
     _pendingBillDate   = billDate;
     _pendingBillNumber = billNumber;
+    _pendingBillTime   = billTime;
     notifyListeners();
   }
 
@@ -209,19 +213,18 @@ class BillRewardProvider extends ChangeNotifier {
     required String   shopName,
     required double   amount,
     required DateTime billDate,
-    String?           billNumber,
+    String?           billNumber,   // kept for API compat — no longer used in key
+    String?           billTime,     // "HH:MM" from receipt; makes same-shop same-day valid
   }) {
     final shop    = shopName.toLowerCase().trim();
     final amt     = amount.toStringAsFixed(0);
     final dateStr = '${billDate.year}-${billDate.month}-${billDate.day}';
 
-    final String key;
-    if (billNumber != null && billNumber.trim().isNotEmpty) {
-      final bn = billNumber.toLowerCase().replaceAll(RegExp(r'\s+'), '');
-      key = '$bn|$shop|$dateStr|$amt';
-    } else {
-      key = '$shop|$dateStr|$amt';
-    }
+    final t = billTime?.trim();
+    final String key = (t != null && t.isNotEmpty)
+        ? '$shop|$dateStr|$t|$amt'
+        : '$shop|$dateStr|$amt';
+
     return _history.any((e) => e.duplicateKey == key);
   }
 
@@ -248,6 +251,7 @@ class BillRewardProvider extends ChangeNotifier {
         shopName:    shopName,
         billNumber:  _pendingBillNumber,
         billDate:    _pendingBillDate,
+        billTime:    _pendingBillTime,
       );
 
       serverSuccess = true;
@@ -289,6 +293,7 @@ class BillRewardProvider extends ChangeNotifier {
       date:         scanNow,
       billDate:     _pendingBillDate,
       billNumber:   _pendingBillNumber,
+      billTime:     _pendingBillTime,
     );
     _history.insert(0, entry);
 
@@ -297,6 +302,7 @@ class BillRewardProvider extends ChangeNotifier {
     _pendingShopName   = null;
     _pendingBillDate   = null;
     _pendingBillNumber = null;
+    _pendingBillTime   = null;
 
     notifyListeners();
 
@@ -360,6 +366,7 @@ class BillRewardProvider extends ChangeNotifier {
       date:         scannedAt,
       billDate:     billDate,
       billNumber:   m['bill_number'] as String?,
+      billTime:     m['bill_time']   as String?,
     );
   }
 
@@ -371,6 +378,7 @@ class BillRewardProvider extends ChangeNotifier {
     'earned_cashback': e.cashback,
     'earned_points':   e.rewardPoints,
     'bill_number':     e.billNumber,
+    'bill_time':       e.billTime,
     'bill_date':       e.billDate?.toIso8601String(),
     'scanned_at':      e.date.toIso8601String(),
   };

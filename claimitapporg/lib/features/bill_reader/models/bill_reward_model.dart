@@ -11,6 +11,7 @@ class BillRewardEntry {
   final DateTime date;      // scan date/time (when the user scanned)
   final DateTime? billDate; // date printed on the bill (from OCR)
   final String? billNumber; // bill/invoice/receipt number from OCR
+  final String? billTime;   // time printed on the bill e.g. "14:30" (from OCR)
 
   const BillRewardEntry({
     required this.id,
@@ -23,6 +24,7 @@ class BillRewardEntry {
     double? cashback,
     this.billDate,
     this.billNumber,
+    this.billTime,
   }) : cashback = cashback ?? totalBill * 0.01;
 
   /// 10% of bill as redeem points (e.g. Rs.5000 -> 500 pts)
@@ -36,22 +38,23 @@ class BillRewardEntry {
 
   /// Unique fingerprint used for duplicate detection.
   ///
-  /// SECURITY KEY: Bill Number + Shop + Date + Amount
-  /// When a bill number is present it becomes the primary key.
-  /// The same bill_no cannot appear twice for the same shop on the same date.
-  /// Without a bill number we fall back to shop + date + amount.
+  /// Key: shop + date + time + amount
+  ///   • When time is available: "shop|YYYY-M-D|HH:MM|amount"
+  ///   • Without time:           "shop|YYYY-M-D|amount"  (backward-compat)
+  ///
+  /// Two purchases at the same shop on the same day for the same amount but
+  /// at DIFFERENT times are treated as distinct, valid transactions.
   String get duplicateKey {
     final d = billDate ?? date;
     final dateStr = '${d.year}-${d.month}-${d.day}';
     final shop = shopName.toLowerCase().trim();
     final amt = totalBill.toStringAsFixed(0);
 
-    if (billNumber != null && billNumber!.trim().isNotEmpty) {
-      // Primary key: bill_no + shop + date + amount
-      final bn = billNumber!.toLowerCase().replaceAll(RegExp(r'\s+'), '');
-      return '$bn|$shop|$dateStr|$amt';
+    final t = billTime?.trim();
+    if (t != null && t.isNotEmpty) {
+      return '$shop|$dateStr|$t|$amt';
     }
-    // Fallback key (no bill number detected): shop + date + amount
+    // No time on receipt — fall back to shop + date + amount
     return '$shop|$dateStr|$amt';
   }
 }

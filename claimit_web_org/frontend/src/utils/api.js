@@ -18,7 +18,12 @@
 // ─────────────────────────────────────────────────────────────────
 import axios from 'axios'
 
-const http = axios.create({ baseURL: '/api' })
+// In production, set VITE_API_URL to your deployed Vercel backend URL.
+// e.g. VITE_API_URL=https://claimit-web-backend.vercel.app/api
+// Locally the Vite proxy handles /api → localhost:8000, so no change needed.
+const BASE_URL = import.meta.env.VITE_API_URL || '/api'
+
+const http = axios.create({ baseURL: BASE_URL })
 
 // Attach JWT (user or admin) to every request
 http.interceptors.request.use((config) => {

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/bill_reward_provider.dart';
 import '../models/bill_reward_model.dart';
+import '../../dashboard/screens/dashboard_screen.dart' show showReelzAdIfReady;
 
 class BillRewardSuccessScreen extends StatefulWidget {
   const BillRewardSuccessScreen({super.key});
@@ -65,6 +66,10 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
         provider.dismissBonusPopup();
       });
     }
+    // Show a reelz ad ~3 s after the success animation (respects 5-min cooldown)
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) showReelzAdIfReady(context);
+    });
   }
 
   void _showBonusDialog(int pts) {

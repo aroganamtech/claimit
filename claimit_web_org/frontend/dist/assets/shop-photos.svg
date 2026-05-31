@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 280">
+  <rect width="380" height="280" rx="16" fill="#F8F9FA"/>
+  <!-- camera body -->
+  <g transform="translate(80 70)">
+    <rect x="0" y="20" width="220" height="140" rx="14" fill="#1565C0"/>
+    <rect x="60" y="0" width="100" height="30" rx="6" fill="#1565C0"/>
+    <circle cx="110" cy="90" r="48" fill="#0D47A1"/>
+    <circle cx="110" cy="90" r="36" fill="#1565C0"/>
+    <circle cx="110" cy="90" r="20" fill="#fff"/>
+    <circle cx="110" cy="90" r="12" fill="#1565C0"/>
+    <circle cx="190" cy="50" r="6" fill="#F5A623"/>
+  </g>
+  <!-- photo frames in background -->
+  <g opacity=".55">
+    <rect x="22" y="40" width="50" height="40" rx="4" fill="#fff" stroke="#1565C0"/>
+    <rect x="320" y="50" width="50" height="40" rx="4" fill="#fff" stroke="#1565C0"/>
+    <rect x="40" y="220" width="50" height="40" rx="4" fill="#fff" stroke="#1565C0"/>
+  </g>
+</svg>

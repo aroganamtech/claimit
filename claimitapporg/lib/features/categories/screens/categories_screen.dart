@@ -130,7 +130,14 @@ class CategoriesScreen extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Icon(cat.icon, size: 32, color: cat.color),
+                      Image.asset(
+                        'assets/icons/category_icon/icon${index + 1}.png',
+                        width: 46,
+                        height: 46,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            Icon(cat.icon, size: 32, color: cat.color),
+                      ),
                       if (cat.isNew)
                         Positioned(
                           top: 4,

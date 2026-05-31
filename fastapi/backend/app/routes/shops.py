@@ -36,6 +36,24 @@ def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
     result = serialize_doc(doc)
     if distance_km is not None:
         result["distance"] = f"{distance_km:.1f} km"
+
+    # Derive has_rewards / has_redeem from shop_type if not already set,
+    # so the Flutter client always receives explicit boolean flags.
+    shop_type = result.get("shop_type", "")
+    if shop_type == "reward":
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  False)
+    elif shop_type == "redeem":
+        result.setdefault("has_rewards", False)
+        result.setdefault("has_redeem",  True)
+    elif shop_type == "both":
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  True)
+    else:
+        # Any other shop_type (grocery, salon, etc.) or missing → default both True
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  True)
+
     return result
 
 

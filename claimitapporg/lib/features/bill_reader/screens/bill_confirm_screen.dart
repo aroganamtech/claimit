@@ -75,13 +75,15 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     final provider   = context.read<BillRewardProvider>();
     final billDate   = provider.pendingBillDate ?? DateTime.now();
     final billNumber = provider.pendingBillNumber;
+    final billTime   = provider.pendingBillTime;
 
-    // ── Duplicate check (Bill No + Shop + Date + Amount) ─────────────────────
+    // ── Duplicate check (Shop + Date + Time + Amount) ────────────────────────
     final alreadyScanned = provider.isDuplicate(
       shopName:   shopName,
       amount:     amount,
       billDate:   billDate,
       billNumber: billNumber,
+      billTime:   billTime,
     );
 
     if (alreadyScanned) {

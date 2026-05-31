@@ -45,7 +45,10 @@ class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
       ),
       body: Consumer<BillRewardProvider>(
         builder: (context, provider, _) {
-          return Column(
+          return RefreshIndicator(
+            onRefresh: () => provider.loadAll(),
+            color: _blue,
+            child: Column(
             children: [
               // ── Blue summary card ─────────────────────────────────────────
               Container(
@@ -135,15 +138,22 @@ class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
               // ── History list ──────────────────────────────────────────────
               Expanded(
                 child: provider.history.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No rewards yet.\nScan a bill to get started!',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Colors.grey, fontSize: 15, height: 1.6),
-                        ),
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 60),
+                          Center(
+                            child: Text(
+                              'No rewards yet.\nScan a bill to get started!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: Colors.grey, fontSize: 15, height: 1.6),
+                            ),
+                          ),
+                        ],
                       )
                     : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         itemCount: provider.history.length,
                         itemBuilder: (ctx, i) =>
@@ -151,8 +161,9 @@ class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
                       ),
               ),
             ],
-          );
-        },
+          ),    // closes Column (child: parameter of RefreshIndicator)
+        );      // closes RefreshIndicator
+        },      // closes Consumer builder
       ),
 
       // ── Scan another bill FAB ──────────────────────────────────────────────

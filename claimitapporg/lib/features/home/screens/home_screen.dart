@@ -557,6 +557,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: 'Home',
                     isSelected: sel == 0,
                     onTap: () => context.go('/home'),
+                    assetIcon: 'assets/icons/home_page_icons/icon1.png',
+                    assetActiveIcon: 'assets/icons/home_page_icons/icon5.png',
                   ),
                   _NavItem(
                     icon: Icons.video_library_outlined,
@@ -564,6 +566,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: 'Reels',
                     isSelected: sel == 1,
                     onTap: () => context.go('/reelz'),
+                    assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                    assetActiveIcon: 'assets/icons/home_page_icons/icon6.png',
                   ),
                 ],
               ),
@@ -581,6 +585,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: 'Scan Bill',
                     isSelected: false,
                     onTap: () => context.push('/bill-reader'),
+                    assetIcon: 'assets/icons/home_page_icons/icon3.png',
+                    assetActiveIcon: 'assets/icons/home_page_icons/icon7.png',
                   ),
                   _NavItem(
                     icon: Icons.person_outline_rounded,
@@ -588,6 +594,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: 'Profile',
                     isSelected: sel == 3,
                     onTap: () => context.go('/profile'),
+                    assetIcon: 'assets/icons/home_page_icons/icon4.png',
+                    assetActiveIcon: 'assets/icons/home_page_icons/icon8.png',
                   ),
                 ],
               ),
@@ -703,9 +711,9 @@ class _FeaturedZonesSheet extends StatelessWidget {
             crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 2,
+            mainAxisSpacing: 8,
             crossAxisSpacing: 8,
-            childAspectRatio: 1.15,
+            childAspectRatio: 0.95,
             children: _zones
                 .map((z) => _ZoneTile(
                       zone: z,
@@ -766,6 +774,7 @@ class _ZoneTile extends StatelessWidget {
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Stack(
             clipBehavior: Clip.none,
@@ -777,7 +786,7 @@ class _ZoneTile extends StatelessWidget {
                   child: zone.icon is String
                       ? Image.asset(
                           zone.icon,
-                          width: 56, 
+                          width: 56,
                           height: 56,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => const Icon(
@@ -846,6 +855,9 @@ class _NavItem extends StatefulWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  // Optional asset paths from home_page_icons (normal / active)
+  final String? assetIcon;
+  final String? assetActiveIcon;
 
   const _NavItem({
     required this.icon,
@@ -853,6 +865,8 @@ class _NavItem extends StatefulWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.assetIcon,
+    this.assetActiveIcon,
   });
 
   @override
@@ -864,15 +878,19 @@ class _NavItemState extends State<_NavItem> {
 
   @override
   Widget build(BuildContext context) {
-    Color color;
-
+    final Color color;
     if (widget.isSelected) {
-      color = const Color.fromARGB(255, 238, 255, 0); // selected color
+      color = const Color.fromARGB(255, 238, 255, 0); // selected yellow
     } else if (isHovered) {
-      color = Colors.yellow; // hover color
+      color = Colors.yellow;
     } else {
-      color = const Color.fromARGB(255, 255, 255, 255); // default color
+      color = Colors.white;
     }
+
+    // Choose asset path when available
+    final assetPath = widget.isSelected
+        ? (widget.assetActiveIcon ?? widget.assetIcon)
+        : widget.assetIcon;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -881,19 +899,31 @@ class _NavItemState extends State<_NavItem> {
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
-        // Use ConstrainedBox so the tap target is never too narrow on small phones.
         child: ConstrainedBox(
           constraints: const BoxConstraints(minWidth: 56, maxWidth: 90),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                widget.isSelected
-                    ? widget.activeIcon
-                    : widget.icon,
-                color: color,
-                size: 28,
-              ),
+              if (assetPath != null)
+                Image.asset(
+                  assetPath,
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.contain,
+                  color: color,
+                  colorBlendMode: BlendMode.srcIn,
+                  errorBuilder: (_, __, ___) => Icon(
+                    widget.isSelected ? widget.activeIcon : widget.icon,
+                    color: color,
+                    size: 28,
+                  ),
+                )
+              else
+                Icon(
+                  widget.isSelected ? widget.activeIcon : widget.icon,
+                  color: color,
+                  size: 28,
+                ),
 
               const SizedBox(height: 3),
 
@@ -903,9 +933,8 @@ class _NavItemState extends State<_NavItem> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: widget.isSelected
-                      ? FontWeight.w700
-                      : FontWeight.w500,
+                  fontWeight:
+                      widget.isSelected ? FontWeight.w700 : FontWeight.w500,
                   color: color,
                 ),
               ),

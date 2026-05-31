@@ -91,6 +91,7 @@ class _BillScanningProgressScreenState
     double?   total;
     String?   shopName;
     DateTime? billDate;
+    String?   billTime;
     String    rawText = '';
     String?   billNumber;
 
@@ -132,6 +133,9 @@ class _BillScanningProgressScreenState
         debugPrint('ML Kit OCR error: $e');
       }
     }
+
+    // ── Extract bill time from OCR text (both Gemini & ML Kit path) ──────────
+    billTime = _extractBillTime(rawText);
 
     // Minimum animation time so progress steps are visible
     await Future.delayed(const Duration(milliseconds: 3800));
@@ -189,6 +193,7 @@ class _BillScanningProgressScreenState
       shopName:    shopName,
       billDate:    billDate,
       billNumber:  billNumber,
+      billTime:    billTime,
     );
 
     context.pushReplacement('/bill-reader/confirm');
@@ -552,6 +557,58 @@ class _BillScanningProgressScreenState
     }
 
     debugPrint('OCR: no bill date found');
+    return null;
+  }
+
+  // ── Extract: Bill time ──────────────────────────────────────────────────────
+  // Returns "HH:MM" (24-h) string, or null if no time found.
+  // Recognises:
+  //   HH:MM:SS  / HH:MM  (24-h, e.g. 14:30, 09:05:22)
+  //   H:MM AM/PM         (12-h, e.g. 2:30 PM, 9:05 am)
+  // Preceded by optional label: TIME:, TIME., AT, @
+  String? _extractBillTime(String rawText) {
+    // ── Pattern A: 12-h with AM/PM (most unambiguous) ───────────────────────
+    final amPmPattern = RegExp(
+      r'\b(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm|AM|PM)\b',
+    );
+    for (final m in amPmPattern.allMatches(rawText)) {
+      int hour   = int.parse(m.group(1)!);
+      final min  = int.parse(m.group(2)!);
+      final period = m.group(3)!.toLowerCase();
+      if (hour < 1 || hour > 12 || min > 59) continue;
+      if (period == 'pm' && hour != 12) hour += 12;
+      if (period == 'am' && hour == 12) hour = 0;
+      final t = '${hour.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
+      debugPrint('OCR bill time (12-h): $t');
+      return t;
+    }
+
+    // ── Pattern B: 24-h near time keyword ───────────────────────────────────
+    final labeledPattern = RegExp(
+      r'(?:time|TIME|Time)[:\.\s]+(\d{1,2}):(\d{2})(?::\d{2})?',
+    );
+    for (final m in labeledPattern.allMatches(rawText)) {
+      final h = int.parse(m.group(1)!);
+      final mi = int.parse(m.group(2)!);
+      if (h > 23 || mi > 59) continue;
+      final t = '${h.toString().padLeft(2, '0')}:${mi.toString().padLeft(2, '0')}';
+      debugPrint('OCR bill time (labeled 24-h): $t');
+      return t;
+    }
+
+    // ── Pattern C: bare HH:MM that looks like a time (08:00–23:59) ──────────
+    // Avoid matching dates like "27/05" which don't appear with : separator.
+    final barePattern = RegExp(r'\b([01]?\d|2[0-3]):([0-5]\d)(?::\d{2})?\b');
+    for (final m in barePattern.allMatches(rawText)) {
+      final h  = int.parse(m.group(1)!);
+      final mi = int.parse(m.group(2)!);
+      if (h > 23 || mi > 59) continue;
+      final t = '${h.toString().padLeft(2, '0')}:${mi.toString().padLeft(2, '0')}';
+      debugPrint('OCR bill time (bare 24-h): $t');
+      return t;
+    }
+
+    debugPrint('OCR: no bill time found');
     return null;
   }
 

@@ -127,6 +127,9 @@ async def connect_db():
         await _db.user_wallets.create_index("user_id", unique=True)
         await _db.bill_scans.create_index("user_id")
         await _db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
+        # Auto-delete bill scans after 24 hours — date validation already
+        # prevents scanning old bills, so no data needs to live longer.
+        await _db.bill_scans.create_index("scanned_at", expireAfterSeconds=86400)
 
     except Exception as exc:
         # Log but do NOT re-raise — a missing index is survivable.

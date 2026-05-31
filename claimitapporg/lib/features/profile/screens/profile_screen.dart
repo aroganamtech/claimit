@@ -146,21 +146,25 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(),
-      body: NestedScrollView(
-        headerSliverBuilder: (ctx, _) => [
-          SliverToBoxAdapter(child: _ProfileCard()),
-          SliverToBoxAdapter(child: _RewardsSection()),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TabBarDelegate(_tab),
-          ),
-        ],
-        body: TabBarView(
-          controller: _tab,
-          children: const [
-            _FavouritesTab(),
-            _HistoryTab(),
+      body: RefreshIndicator(
+        onRefresh: () => context.read<ProfileProvider>().fetchAll(),
+        color: AppTheme.primaryColor,
+        child: NestedScrollView(
+          headerSliverBuilder: (ctx, _) => [
+            SliverToBoxAdapter(child: _ProfileCard()),
+            SliverToBoxAdapter(child: _RewardsSection()),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabBarDelegate(_tab),
+            ),
           ],
+          body: TabBarView(
+            controller: _tab,
+            children: const [
+              _FavouritesTab(),
+              _HistoryTab(),
+            ],
+          ),
         ),
       ),
     );

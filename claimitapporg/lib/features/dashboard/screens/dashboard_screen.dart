@@ -1410,7 +1410,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Reelz ad overlay
   Timer? _reelzAdTimer;
-  bool _reelzAdShown = false;
 
   @override
   void initState() {
@@ -1431,20 +1430,30 @@ class _DashboardScreenState extends State<DashboardScreen>
     _scheduleReelzAd();
   }
 
-  /// Fetch reels then show one randomly after a random delay (5–12 s).
-  Future<void> _scheduleReelzAd() async {
-    final reels = await ReelService.instance.fetchReels();
-    if (!mounted || reels.isEmpty || _reelzAdShown) return;
+  /// Returns true if at least 5 minutes have passed since the last ad.
+  bool _canShowAd() {
+    if (_reelzAdLastShownAt == null) return true;
+    return DateTime.now().difference(_reelzAdLastShownAt!) >=
+        const Duration(minutes: 5);
+  }
 
-    // Random delay between 5 and 12 seconds
-    final delaySec = 5 + Random().nextInt(8); // 5..12
+  /// Fetch reels then show one randomly after a short delay —
+  /// but only if the 5-minute cooldown has expired.
+  Future<void> _scheduleReelzAd() async {
+    if (!_canShowAd()) return;
+    final reels = await ReelService.instance.fetchReels();
+    if (!mounted || reels.isEmpty) return;
+
+    // Short delay (5–12 s) so the user sees the home screen first
+    final delaySec = 5 + Random().nextInt(8);
     _reelzAdTimer = Timer(Duration(seconds: delaySec), () {
-      if (!mounted || _reelzAdShown) return;
-      _reelzAdShown = true;
+      if (!mounted || !_canShowAd()) return;
       final reel = reels[Random().nextInt(reels.length)];
+      _reelzAdLastShownAt = DateTime.now();
       _showReelzAd(reel);
     });
   }
+
 
   void _showReelzAd(ReelItem reel) {
     showGeneralDialog(
@@ -1553,6 +1562,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _bannerTimer?.cancel();
     _reelzAdTimer?.cancel();
     _bannerCtrl.dispose();
+    // Note: _reelzAdLastShownAt is static — intentionally kept alive across rebuilds
     super.dispose();
   }
 
@@ -1584,7 +1594,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               // ── Logo (home_main_logo has icon + "claimit" text built-in) ──
               Image.asset(
                 'assets/images/home_main_logo.png',
-                height: 38,
+                height: 30,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Row(
                   children: [
@@ -1659,12 +1669,17 @@ class _DashboardScreenState extends State<DashboardScreen>
               const SizedBox(width: 8),
 
               // ── Notification ───────────────────
-              GestureDetector(
-                onTap: () => context.push('/notifications'),
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  size: 30,
-                  color: Theme.of(context).colorScheme.primary,
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.notifications_none_rounded,
+                    size: 28,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  onPressed: () => context.push('/notifications'),
+                  padding: EdgeInsets.zero,
                 ),
               ),
             ],
@@ -1684,9 +1699,19 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       appBar: _buildAppBar(),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([
+            _loadDeals(),
+            _loadNearbyShopsFromGPS(),
+          ]);
+        },
+        color: const Color(0xFF1565C0),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Banner carousel ──────────────────────────────────────────
@@ -1834,7 +1859,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 90),
           ],
         ),
-      ),
+      ),       // closes SingleChildScrollView
+    ),         // closes RefreshIndicator
     );
   }
 }
@@ -1910,11 +1936,15 @@ class _CategoryRow extends StatelessWidget {
     required bool active,
     required VoidCallback onTap,
   }) {
+    // Asset icons: icon1.png … icon30.png (1-based index)
+    final assetPath = 'assets/icons/category_icon/icon${globalIndex + 1}.png';
+
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: 66,
@@ -1930,10 +1960,16 @@ class _CategoryRow extends StatelessWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  Icon(
-                    cat.icon,
-                    size: 32,
-                    color: active ? const Color(0xFF2563EB) : cat.color,
+                  Image.asset(
+                    assetPath,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      cat.icon,
+                      size: 32,
+                      color: active ? const Color(0xFF2563EB) : cat.color,
+                    ),
                   ),
                   if (cat.isNew)
                     Positioned(
@@ -2722,4 +2758,42 @@ class _ReelzAdDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared cooldown timestamp (top-level so it survives widget rebuilds)
+// ─────────────────────────────────────────────────────────────────────────────
+DateTime? _reelzAdLastShownAt;
+
+/// Show a reelz ad immediately — e.g. after a bill scan.
+/// Respects the same 5-minute cooldown as the dashboard auto-ad.
+Future<void> showReelzAdIfReady(BuildContext context) async {
+  if (_reelzAdLastShownAt != null &&
+      DateTime.now().difference(_reelzAdLastShownAt!) <
+          const Duration(minutes: 5)) return;
+
+  final reels = await ReelService.instance.fetchReels();
+  if (reels.isEmpty || !context.mounted) return;
+
+  _reelzAdLastShownAt = DateTime.now();
+  final reel = reels[Random().nextInt(reels.length)];
+
+  showGeneralDialog(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black,
+    transitionDuration: const Duration(milliseconds: 350),
+    transitionBuilder: (_, anim, __, child) => FadeTransition(
+      opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+      child: child,
+    ),
+    pageBuilder: (ctx, _, __) => _ReelzAdDialog(
+      reel: reel,
+      onClose: () => Navigator.of(ctx).pop(),
+      onWatch: () {
+        Navigator.of(ctx).pop();
+        context.push('/reelz');
+      },
+    ),
+  );
 }

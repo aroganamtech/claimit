@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "/var/task",
+    "MONGO_URL": "mongodb+srv://aroganamtech:ax1zJdu8KjCvFqnU@careerblitz.zkjrg.mongodb.net/",
+    "DB_NAME": "claimit_web",
+    "APP_DB_NAME": "claimit_db",
+    "SECRET_KEY": "your_super_secret_key_here_change_this",
+    "ALGORITHM": "HS256",
+    "ACCESS_TOKEN_EXPIRE_MINUTES": "1440",
+    "UNIVERSAL_OTP": "123456",
+    "ADMIN_USER": "admin",
+    "ADMIN_PASS": "admin123"
+  }
+}

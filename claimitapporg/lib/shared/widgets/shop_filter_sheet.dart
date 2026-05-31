@@ -295,7 +295,7 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
     return Column(
       children: [
         SizedBox(
-          height: 92,
+          height: 100,
           child: PageView.builder(
             controller: _catPageCtrl,
             itemCount: _catPageCount,
@@ -313,16 +313,20 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
                   }
                   final cat    = pageItems[i];
                   final active = _catId == cat.id;
+                  // Asset path: icon1.png … icon30.png (cat.id is 1-based)
+                  final assetPath =
+                      'assets/icons/category_icon/icon${cat.id}.png';
                   return Expanded(
                     child: GestureDetector(
                       onTap: () =>
                           setState(() => _catId = active ? null : cat.id),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Container(
-                            width: 52,
-                            height: 52,
+                            width: 54,
+                            height: 54,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: active
@@ -338,7 +342,17 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
-                                Icon(cat.icon, size: 22, color: cat.color),
+                                Image.asset(
+                                  assetPath,
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    cat.icon,
+                                    size: 22,
+                                    color: cat.color,
+                                  ),
+                                ),
                                 if (cat.isNew)
                                   Positioned(
                                     top: 3,

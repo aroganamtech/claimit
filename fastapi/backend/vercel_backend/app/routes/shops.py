@@ -36,6 +36,24 @@ def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
     result = serialize_doc(doc)
     if distance_km is not None:
         result["distance"] = f"{distance_km:.1f} km"
+
+    # Derive has_rewards / has_redeem from shop_type if not already set,
+    # so the Flutter client always receives explicit boolean flags.
+    shop_type = result.get("shop_type", "")
+    if shop_type == "reward":
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  False)
+    elif shop_type == "redeem":
+        result.setdefault("has_rewards", False)
+        result.setdefault("has_redeem",  True)
+    elif shop_type == "both":
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  True)
+    else:
+        # Any other shop_type (grocery, salon, etc.) or missing → default both True
+        result.setdefault("has_rewards", True)
+        result.setdefault("has_redeem",  True)
+
     return result
 
 
@@ -306,26 +324,4 @@ async def submit_review(
         "created_at": datetime.now(timezone.utc),
     }
 
-    # Upsert: one review per user per shop
-    await db.shop_reviews.update_one(
-        {"shop_id": shop_id, "user_id": user_id},
-        {"$set": review_doc},
-        upsert=True,
-    )
-
-    # Update cached avg_rating on the shop document
-    cursor = db.shop_reviews.find({"shop_id": shop_id})
-    all_reviews = await cursor.to_list(length=500)
-    total = len(all_reviews)
-    new_avg = round(sum(r.get("rating", 0) for r in all_reviews) / total, 1) if total else 0
-    await db.shops.update_one(
-        {"_id": oid},
-        {"$set": {"rating": new_avg, "review_count": total}},
-    )
-
-    return {
-        "success": True,
-        "message": "Review submitted successfully",
-        "review": serialize_doc(review_doc),
-        "new_avg_rating": new_avg,
-    }
+    # Upsert: o

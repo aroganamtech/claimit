@@ -296,7 +296,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     // Logo icon + text
                     Image.asset(
                     'assets/images/home_main_logo.png',
-                    height: 38,
+                    height: 30,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => Row(
                       children: [
@@ -569,15 +569,15 @@ class _NotifCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon container
+              // Icon container — circular to match design
               Container(
-                width: 46,
-                height: 46,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: notif.iconColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
+                  color: notif.iconColor.withOpacity(0.13),
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(notif.icon, color: notif.iconColor, size: 22),
+                child: Icon(notif.icon, color: notif.iconColor, size: 24),
               ),
               const SizedBox(width: 12),
               // Text content

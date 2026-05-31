@@ -4,12 +4,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/reel_model.dart';
 import '../services/reel_service.dart';
 import '../../shops/services/shop_service.dart';
 import '../../shops/screens/shop_list_screen.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class ReelzScreen extends StatefulWidget {
   const ReelzScreen({super.key});
@@ -27,7 +29,8 @@ class _ReelzScreenState extends State<ReelzScreen> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // Keep status bar visible — use edgeToEdge so the app bar renders normally
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _load();
   }
 
@@ -36,6 +39,148 @@ class _ReelzScreenState extends State<ReelzScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageCtrl.dispose();
     super.dispose();
+  }
+
+  // ── App bar (same structure as dashboard / notifications) ──────────────────
+  PreferredSizeWidget _buildAppBar() {
+    final location = context.select<AuthProvider, String>(
+      (a) => a.user?.location?.isNotEmpty == true
+          ? a.user!.location!
+          : 'Select Area',
+    );
+
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(112),
+      child: Container(
+        color: Colors.white,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Row 1: logo + location + bell ──────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Image.asset(
+                      'assets/images/home_main_logo.png',
+                      height: 30,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset('assets/icons/main_icon.png',
+                              width: 30, height: 30, fit: BoxFit.contain),
+                          const SizedBox(width: 6),
+                          const Text('claimit',
+                              style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1565C0))),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => context.push('/location'),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 140),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                location,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                            const Icon(Icons.keyboard_arrow_down_rounded,
+                                size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: IconButton(
+                        icon: const Icon(Icons.notifications_none_rounded,
+                            size: 28, color: Color(0xFF1565C0)),
+                        onPressed: () => context.push('/notifications'),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+
+              // ── Row 2: back + "Reelz Zone" + refresh ──────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/home');
+                        }
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Color(0xFF1565C0), size: 18),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'Reelz Zone',
+                      style: TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    // Refresh
+                    GestureDetector(
+                      onTap: () async {
+                        setState(() {
+                          _loading = true;
+                          _reels = [];
+                        });
+                        await _load();
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.refresh_rounded,
+                            size: 20, color: Color(0xFF1565C0)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -57,81 +202,43 @@ class _ReelzScreenState extends State<ReelzScreen> {
         }
       },
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : _reels.isEmpty
-              ? const Center(
-                  child: Text('No reels yet',
-                      style: TextStyle(color: Colors.white70, fontSize: 16)),
-                )
-              : Stack(
-                  children: [
-                    PageView.builder(
-                      controller: _pageCtrl,
-                      scrollDirection: Axis.vertical,
-                      physics: const PageScrollPhysics(),
-                      itemCount: _reels.length,
-                      onPageChanged: (i) => setState(() => _currentPage = i),
-                      itemBuilder: (context, index) => _ReelPage(
-                        reel: _reels[index],
-                        isActive: index == _currentPage,
-                      ),
-                    ),
-                    // Back button
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          child: Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  if (context.canPop()) {
-                                    context.pop();
-                                  } else {
-                                    context.go('/home');
-                                  }
-                                },
-                                child: Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.black38,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_back_ios_new_rounded,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                ),
-                              ),
-                              const Spacer(),
-                              const Text(
-                                'Promo Reelz',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 17,
-                                  shadows: [
-                                    Shadow(color: Colors.black54, blurRadius: 6),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              const SizedBox(width: 38), // balance
-                            ],
+        backgroundColor: Colors.black,
+        appBar: _buildAppBar(),
+        body: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: Colors.white))
+            : _reels.isEmpty
+                ? RefreshIndicator(
+                    onRefresh: _load,
+                    color: Colors.white,
+                    backgroundColor: Colors.black54,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 300),
+                        Center(
+                          child: Text(
+                            'No reels yet. Pull down to refresh.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 16),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  )
+                : PageView.builder(
+                    controller: _pageCtrl,
+                    scrollDirection: Axis.vertical,
+                    physics: const PageScrollPhysics(),
+                    itemCount: _reels.length,
+                    onPageChanged: (i) =>
+                        setState(() => _currentPage = i),
+                    itemBuilder: (context, index) => _ReelPage(
+                      reel: _reels[index],
+                      isActive: index == _currentPage,
+                    ),
+                  ),
       ),
     );
   }

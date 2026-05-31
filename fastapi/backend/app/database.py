@@ -31,6 +31,31 @@ async def _ensure_phone_index_sparse(database) -> None:
         print("✅ phone_1 index created (unique, sparse)")
 
 
+async def _ensure_email_index(database) -> None:
+    """
+    Guarantee that the email_1 index is both unique=True and sparse=True.
+
+    The existing index was created without unique=True, so MongoDB rejects
+    create_index() with an IndexKeySpecsConflict error.  We inspect options
+    directly and drop-then-recreate when the index doesn't match what we need.
+    """
+    indexes = await database.users.index_information()
+    email_idx = indexes.get("email_1")
+
+    needs_recreate = email_idx is not None and (
+        not email_idx.get("unique", False) or not email_idx.get("sparse", False)
+    )
+
+    if needs_recreate:
+        print("⚠️  Dropping non-unique/non-sparse email_1 index and recreating…")
+        await database.users.drop_index("email_1")
+        email_idx = None
+
+    if email_idx is None:
+        await database.users.create_index("email", unique=True, sparse=True)
+        print("✅ email_1 index created (unique, sparse)")
+
+
 async def _clean_legacy_empty_credentials(database) -> None:
     """
     Remove phone: "" / email: "" fields left by old code.
@@ -71,8 +96,8 @@ async def connect_db():
 
     # ── Users: ensure phone index is sparse (fix legacy non-sparse index) ─────
     await _ensure_phone_index_sparse(db)
-    # ── Users: also ensure email index is sparse ──────────────────────────────
-    await db.users.create_index("email", unique=True, sparse=True)
+    # ── Users: ensure email index is unique+sparse (fix legacy non-unique) ────
+    await _ensure_email_index(db)
     # ── Clean up any legacy phone/email: "" fields that break uniqueness ──────
     await _clean_legacy_empty_credentials(db)
 
@@ -98,6 +123,12 @@ async def connect_db():
     await db.redeem.create_index("user_id")
     await db.redeem.create_index("reward_id")
     await db.redeem.create_index([("user_id", 1), ("reward_id", 1)])
+    # Bill scan / wallet
+    await db.user_wallets.create_index("user_id", unique=True)
+    await db.bill_scans.create_index("user_id")
+    await db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
+    # Auto-delete bill scans after 24 hours
+    await db.bill_scans.create_index("scanned_at", expireAfterSeconds=86400)
     print("✅ Connected to MongoDB")
 
 
