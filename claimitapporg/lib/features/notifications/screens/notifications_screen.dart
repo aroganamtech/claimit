@@ -279,8 +279,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           : 'Select Area',
     );
 
+    final topPad = MediaQuery.of(context).padding.top;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(112),
+      preferredSize: Size.fromHeight(112 + topPad),
       child: Container(
         color: Colors.white,
         child: SafeArea(

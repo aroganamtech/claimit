@@ -309,8 +309,9 @@ class _SearchScreenState extends State<SearchScreen> {
           : 'Select Area',
     );
 
+    final topPad = MediaQuery.of(context).padding.top;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(116),
+      preferredSize: Size.fromHeight(116 + topPad),
       child: Container(
         color: Colors.white,
         child: SafeArea(

@@ -8,6 +8,7 @@ class DealData {
   final String distance;
   final String type;        // display category badge (e.g. "Electronics", "Gym")
   final String imageUrl;
+  final String imageData;   // raw base64 fallback when imageUrl is empty
   final Color fallbackColor;
   final IconData fallbackIcon;
   final String description;
@@ -25,6 +26,7 @@ class DealData {
     required this.distance,
     required this.type,
     required this.imageUrl,
+    this.imageData = '',
     required this.fallbackColor,
     required this.fallbackIcon,
     this.description = '',

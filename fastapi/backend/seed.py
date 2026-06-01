@@ -38,40 +38,47 @@ IMAGE_DIR = os.path.join(os.path.dirname(__file__), "uploads", "shop_images")
 # Helper: read an image file → base64 string
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _image_to_base64(image_name: str) -> str:
+def _image_to_base64(image_name: str, max_size: tuple = (480, 360), quality: int = 65) -> str:
     """
-    Read uploads/shop_images/<image_name> and return base64 string.
-    If the file doesn't exist, generate a small colored placeholder PNG.
+    Read uploads/shop_images/<image_name>, resize to max_size, compress to JPEG,
+    and return base64 string.  Keeps each image under ~40 KB so MongoDB stays fast.
+    If the file doesn't exist, generate a small colored placeholder.
     """
+    from PIL import Image
+    import io
+
     path = os.path.join(IMAGE_DIR, image_name)
 
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
-
-    # Auto-generate a placeholder if file is missing
     try:
-        from PIL import Image, ImageDraw
-        import io
+        if os.path.exists(path):
+            img = Image.open(path).convert("RGB")
+        else:
+            # Auto-generate a colored placeholder
+            idx = int("".join(filter(str.isdigit, image_name)) or "1")
+            palette = [
+                (76, 175, 80), (33, 150, 243), (255, 152, 0), (244, 67, 54),
+                (156, 39, 176), (0, 188, 212), (255, 193, 7), (96, 125, 139),
+                (121, 85, 72), (63, 81, 181), (0, 150, 136), (233, 30, 99),
+                (205, 220, 57), (255, 87, 34), (103, 58, 183), (3, 169, 244),
+                (139, 195, 74), (255, 235, 59), (121, 134, 203), (129, 199, 132),
+            ]
+            color = palette[(idx - 1) % len(palette)]
+            img = Image.new("RGB", (400, 300), color=color)
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([20, 110, 380, 190], fill=(255, 255, 255))
 
-        idx = int("".join(filter(str.isdigit, image_name)) or "1")
-        palette = [
-            (76, 175, 80), (33, 150, 243), (255, 152, 0), (244, 67, 54),
-            (156, 39, 176), (0, 188, 212), (255, 193, 7), (96, 125, 139),
-            (121, 85, 72), (63, 81, 181), (0, 150, 136), (233, 30, 99),
-            (205, 220, 57), (255, 87, 34), (103, 58, 183), (3, 169, 244),
-            (139, 195, 74), (255, 235, 59), (121, 134, 203), (129, 199, 132),
-        ]
-        color = palette[(idx - 1) % len(palette)]
-        img = Image.new("RGB", (400, 300), color=color)
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([20, 110, 380, 190], fill=(255, 255, 255))
-        draw.text((200, 150), image_name, fill=(50, 50, 50), anchor="mm")
+        # Resize keeping aspect ratio — never upscale
+        img.thumbnail(max_size, Image.LANCZOS)
+
         buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=85)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-    except ImportError:
-        # Pillow not available — return empty string
+        img.save(buf, "JPEG", quality=quality, optimize=True)
+        encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+        size_kb = len(buf.getvalue()) / 1024
+        return encoded
+
+    except Exception as e:
+        print(f"     ⚠️  Image error ({image_name}): {e}")
         return ""
 
 
@@ -952,12 +959,13 @@ async def seed():
         image_name = shop.get("image_name", "")
         image_names = shop.get("image_names", [image_name] if image_name else [])
 
-        print(f"   📷 Encoding images for '{shop['name']}' …", end=" ")
+        print(f"   📷 Encoding '{shop['name']}' …", end=" ", flush=True)
         # Primary image (backward compat for shop list cards)
         image_b64 = _image_to_base64(image_name) if image_name else ""
         # All 3 images for the detail page carousel
         image_data_list = [_image_to_base64(n) for n in image_names]
-        print("✅" if image_b64 else "⚠️  (no image)")
+        kb = round(len(image_b64) * 3 / 4 / 1024)
+        print(f"✅ (~{kb} KB)" if image_b64 else "⚠️  (no image)")
 
         doc = {
             **shop,

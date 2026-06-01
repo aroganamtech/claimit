@@ -6,6 +6,7 @@ import '../models/deal_model.dart';
 import '../services/deal_service.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart'; // filterCats
 import '../../profile/providers/profile_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DealListScreen
@@ -149,81 +150,139 @@ class _DealListScreenState extends State<DealListScreen> {
 
   // ── AppBar ────────────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
+    final location = context.select<AuthProvider, String>(
+      (a) => a.user?.location?.isNotEmpty == true ? a.user!.location! : 'Select Area',
+    );
+    final topPad = MediaQuery.of(context).padding.top;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(56),
-      child: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0.5,
-        shadowColor: Colors.black12,
-        surfaceTintColor: Colors.transparent,
-        leading: GestureDetector(
-          onTap: () => context.pop(),
-          child: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Color(0xFF2563EB), size: 20),
+      preferredSize: Size.fromHeight(112 + topPad),
+      child: Container(
+        color: Colors.white,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Row 1: logo + location + bell
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Image.asset('assets/images/home_main_logo.png',
+                        height: 30, fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Text('claimit',
+                            style: TextStyle(fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1565C0)))),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => context.push('/location'),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 140),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(child: Text(location, maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black))),
+                            const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    SizedBox(width: 44, height: 44,
+                      child: IconButton(
+                        icon: const Icon(Icons.notifications_none_rounded,
+                            size: 28, color: Color(0xFF1565C0)),
+                        onPressed: () => context.go('/notifications'),
+                        padding: EdgeInsets.zero,
+                      )),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+              // Row 2: back + title + filter + search
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 8, 10),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => context.pop(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Color(0xFF2563EB), size: 18),
+                      ),
+                    ),
+                    Expanded(
+                      child: _showSearch
+                          ? TextField(
+                              controller: _searchCtrl,
+                              autofocus: true,
+                              onChanged: (v) => setState(() => _searchQuery = v),
+                              decoration: InputDecoration(
+                                hintText: 'Search ${widget.title}…',
+                                hintStyle: const TextStyle(
+                                    fontSize: 14, color: Color(0xFF9CA3AF)),
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                              style: const TextStyle(fontSize: 16),
+                            )
+                          : Text(widget.title,
+                              style: const TextStyle(
+                                color: Color(0xFF2563EB),
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              )),
+                    ),
+                    GestureDetector(
+                      onTap: _openFilter,
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.tune_rounded,
+                                size: 20, color: Color(0xFF374151)),
+                            SizedBox(width: 4),
+                            Text('Filter',
+                                style: TextStyle(
+                                    fontSize: 13, color: Color(0xFF374151))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _showSearch ? Icons.close_rounded : Icons.search_rounded,
+                        color: const Color(0xFF1E3A8A), size: 24,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showSearch = !_showSearch;
+                          if (!_showSearch) {
+                            _searchCtrl.clear();
+                            _searchQuery = '';
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        title: _showSearch
-            ? TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                onChanged: (v) => setState(() => _searchQuery = v),
-                decoration: InputDecoration(
-                  hintText: 'Search ${widget.title}…',
-                  hintStyle: const TextStyle(
-                      fontSize: 14, color: Color(0xFF9CA3AF)),
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                style: const TextStyle(fontSize: 16),
-              )
-            : Text(
-                widget.title,
-                style: const TextStyle(
-                  color: Color(0xFF2563EB),
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-        actions: [
-          // Filter badge button
-          GestureDetector(
-            onTap: _openFilter,
-            child: Container(
-              margin: const EdgeInsets.only(right: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.tune_rounded, size: 26, color: Color(0xFF374151)),
-                  SizedBox(width: 4),
-                  Text('Filter',
-                      style: TextStyle(
-                          fontSize: 13, color: Color(0xFF374151))),
-                ],
-              ),
-            ),
-          ),
-          // Search toggle
-          IconButton(
-            icon: Icon(
-              _showSearch ? Icons.close_rounded : Icons.search_rounded,
-              color: const Color(0xFF1E3A8A),
-              size: 24,
-            ),
-            onPressed: () {
-              setState(() {
-                _showSearch = !_showSearch;
-                if (!_showSearch) {
-                  _searchCtrl.clear();
-                  _searchQuery = '';
-                }
-              });
-            },
-          ),
-        ],
       ),
     );
   }
@@ -249,7 +308,7 @@ class _DealListScreenState extends State<DealListScreen> {
   // ── Category scroll row (Nearby only) ─────────────────────────────────────
   Widget _buildCategoryRow() {
     return SizedBox(
-      height: 92,
+      height: 96,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -279,6 +338,7 @@ class _DealListScreenState extends State<DealListScreen> {
               color: cat.color,
               active: active,
               isNew: cat.isNew,
+              catId: cat.id, // maps to category_icon/icon{id}.png
             ),
           );
         },
@@ -294,6 +354,58 @@ class _DealListScreenState extends State<DealListScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: _buildAppBar(),
+      floatingActionButton: SizedBox(
+        width: 68, height: 68,
+        child: FloatingActionButton(
+          backgroundColor: const Color(0xFFEAB308),
+          elevation: 6,
+          shape: const CircleBorder(),
+          onPressed: () => context.go('/home'),
+          child: Image.asset('assets/icons/main_icon.png',
+              width: 54, height: 54, fit: BoxFit.contain),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: BottomAppBar(
+        notchMargin: 10.0,
+        shape: const CircularNotchedRectangle(),
+        color: const Color.fromARGB(255, 20, 143, 208),
+        elevation: 8,
+        padding: EdgeInsets.zero,
+        height: kBottomNavigationBarHeight + 6,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              Expanded(child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _DealBottomBarItem(icon: Icons.home_rounded, label: 'Home',
+                      assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                      onTap: () => context.go('/home')),
+                  _DealBottomBarItem(icon: Icons.play_circle_rounded, label: 'Reels',
+                      onTap: () => context.go('/reelz')),
+                ],
+              )),
+              const SizedBox(width: 72),
+              Expanded(child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _DealBottomBarItem(icon: Icons.qr_code_scanner_rounded,
+                      label: 'Scan Bill',
+                      assetIcon: 'assets/icons/home_page_icons/icon5.png',
+                      isScanProfile: true,
+                      onTap: () => context.push('/bill-reader')),
+                  _DealBottomBarItem(icon: Icons.person_rounded, label: 'Profile',
+                      assetIcon: 'assets/icons/home_page_icons/icon7.png',
+                      isScanProfile: true,
+                      onTap: () => context.go('/profile')),
+                ],
+              )),
+            ],
+          ),
+        ),
+      ),
       body: Column(
         children: [
           // Category scroll — only for Nearby Deals
@@ -391,6 +503,8 @@ class _CatIcon extends StatelessWidget {
   final Color color;
   final bool active;
   final bool isNew;
+  // catId: 1-based index into category_icon assets (null = "All" button)
+  final int? catId;
 
   const _CatIcon({
     required this.icon,
@@ -398,10 +512,15 @@ class _CatIcon extends StatelessWidget {
     required this.color,
     required this.active,
     this.isNew = false,
+    this.catId,
   });
 
   @override
   Widget build(BuildContext context) {
+    final assetPath = catId != null
+        ? 'assets/icons/category_icon/icon$catId.png'
+        : null;
+
     return Container(
       width: 68,
       margin: const EdgeInsets.only(right: 4),
@@ -411,29 +530,18 @@ class _CatIcon extends StatelessWidget {
           Stack(
             alignment: Alignment.center,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: active
-                      ? color.withOpacity(0.15)
-                      : Colors.white,
-                  border: Border.all(
-                    color: active ? color : const Color(0xFFE5E7EB),
-                    width: active ? 2 : 1,
-                  ),
-                  boxShadow: active
-                      ? [
-                          BoxShadow(
-                              color: color.withOpacity(0.15),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2))
-                        ]
-                      : [],
-                ),
-                child: Icon(icon, size: 22, color: color),
+              // Icons already have circle built-in — no extra border needed
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: assetPath != null
+                    ? Image.asset(
+                        assetPath,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            Icon(icon, size: 24, color: color),
+                      )
+                    : Icon(icon, size: 24, color: color),
               ),
               if (isNew)
                 Positioned(
@@ -686,6 +794,63 @@ class _Badge extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w600,
             color: textColor),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom bar item for DealListScreen
+// ─────────────────────────────────────────────────────────────────────────────
+class _DealBottomBarItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final String? assetIcon;
+  final bool isScanProfile;
+  const _DealBottomBarItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.assetIcon,
+    this.isScanProfile = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final iconSize = isScanProfile
+        ? (screenW * 0.095).clamp(30.0, 38.0)
+        : (screenW * 0.075).clamp(24.0, 28.0);
+    final fontSize = (screenW * 0.025).clamp(9.0, 11.0);
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 60, maxWidth: 100),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: iconSize,
+              height: iconSize,
+              child: assetIcon != null
+                  ? Padding(
+                      padding: isScanProfile ? EdgeInsets.zero : const EdgeInsets.all(4),
+                      child: Image.asset(assetIcon!, fit: BoxFit.contain,
+                          color: Colors.white, colorBlendMode: BlendMode.srcIn,
+                          errorBuilder: (_, __, ___) =>
+                              Icon(icon, color: Colors.white, size: iconSize)),
+                    )
+                  : Icon(icon, color: Colors.white, size: iconSize),
+            ),
+            const SizedBox(height: 1),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: fontSize,
+                    fontWeight: FontWeight.w600, color: Colors.white)),
+          ],
+        ),
       ),
     );
   }

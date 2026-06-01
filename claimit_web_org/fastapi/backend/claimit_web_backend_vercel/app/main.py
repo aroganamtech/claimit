@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, advertiser, sales, shop, support, geo, admin
-from app.routers import deals, reels, banners, bill
+from app.routers import deals, reels, banners, bill, app_shops
 import os
 from dotenv import load_dotenv
 
@@ -35,6 +35,7 @@ app.include_router(deals.router,      prefix="/deals",          tags=["Deals"])
 app.include_router(reels.router,      prefix="/reels",          tags=["Reels"])
 app.include_router(banners.router,    prefix="/banners",        tags=["Banners"])
 app.include_router(bill.router,       prefix="/bill",           tags=["Bill"])
+app.include_router(app_shops.router,  prefix="/shops",          tags=["AppShops"])
 
 
 @app.get("/")

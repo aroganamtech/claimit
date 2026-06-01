@@ -113,8 +113,8 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.88,
-      maxChildSize: 0.96,
+      initialChildSize: 0.92,
+      maxChildSize: 0.97,
       minChildSize: 0.5,
       builder: (_, scrollCtrl) {
         return Container(
@@ -248,33 +248,53 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
       ('last_7_days', 'Last 7 Days'),
     ];
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: opts.map((o) {
-        final active = _sort == o.$1;
-        return GestureDetector(
-          onTap: () => setState(() => _sort = active ? null : o.$1),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFF2563EB) : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: active
-                    ? const Color(0xFF2563EB)
-                    : const Color(0xFFE5E7EB),
-              ),
-            ),
-            child: Text(
-              o.$2,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                color: active ? Colors.white : const Color(0xFF374151),
-              ),
-            ),
+    // 2 rows × 3 columns
+    final rows = [opts.sublist(0, 3), opts.sublist(3, 6)];
+    return Column(
+      children: rows.map((row) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: row.map((o) {
+              final active = _sort == o.$1;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _sort = active ? null : o.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: active ? const Color(0xFF2563EB) : Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: active
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFFD1D5DB),
+                          width: active ? 1.5 : 1,
+                        ),
+                        boxShadow: active
+                            ? [BoxShadow(
+                                color: const Color(0xFF2563EB).withOpacity(0.2),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2))]
+                            : [],
+                      ),
+                      child: Text(
+                        o.$2,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                          color: active ? Colors.white : const Color(0xFF374151),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         );
       }).toList(),
@@ -324,32 +344,20 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 54,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: active
-                                  ? cat.color.withOpacity(0.14)
-                                  : Colors.white,
-                              border: Border.all(
-                                color: active
-                                    ? cat.color
-                                    : const Color(0xFFE5E7EB),
-                                width: active ? 2 : 1,
-                              ),
-                            ),
+                          SizedBox(
+                            width: 58,
+                            height: 58,
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
                                 Image.asset(
                                   assetPath,
-                                  width: 36,
-                                  height: 36,
+                                  width: 58,
+                                  height: 58,
                                   fit: BoxFit.contain,
                                   errorBuilder: (_, __, ___) => Icon(
                                     cat.icon,
-                                    size: 22,
+                                    size: 30,
                                     color: cat.color,
                                   ),
                                 ),
@@ -435,17 +443,21 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
           onTap: () => setState(() => _rating = active ? null : r),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             decoration: BoxDecoration(
               color: active ? const Color(0xFFFEF3C7) : Colors.white,
               border: Border.all(
                 color: active
                     ? const Color(0xFFF59E0B)
                     : const Color(0xFFE5E7EB),
-                width: active ? 1.5 : 1,
+                width: active ? 2 : 1,
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: active
+                  ? [BoxShadow(
+                      color: const Color(0xFFF59E0B).withOpacity(0.2),
+                      blurRadius: 4, offset: const Offset(0, 2))]
+                  : [],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -454,20 +466,18 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
                   '${r.toInt()}.0',
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        active ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: FontWeight.w700,
                     color: active
                         ? const Color(0xFFB45309)
                         : const Color(0xFF374151),
                   ),
                 ),
                 const SizedBox(width: 3),
-                Icon(
+                // Stars always yellow — matches design
+                const Icon(
                   Icons.star_rounded,
-                  size: 26,
-                  color: active
-                      ? const Color(0xFFF59E0B)
-                      : const Color(0xFFD1D5DB),
+                  size: 22,
+                  color: Color(0xFFF59E0B),
                 ),
               ],
             ),

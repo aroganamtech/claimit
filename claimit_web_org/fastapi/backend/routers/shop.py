@@ -82,15 +82,53 @@ def _strip_b64_prefix(data_url: str | None) -> str:
     return match.group(1) if match else data_url
 
 
+def _compress_b64_image(b64_raw: str, max_kb: int = 150) -> str:
+    """
+    Compress a raw base64 image to stay under max_kb.
+    Progressively lowers JPEG quality until small enough.
+    Returns the compressed raw base64 string (no prefix).
+    Falls back to original if PIL not available or decoding fails.
+    """
+    if not b64_raw:
+        return ""
+    try:
+        import io, base64
+        from PIL import Image
+
+        img_bytes = base64.b64decode(b64_raw + "==")  # pad safely
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+        # Resize if very large — max 800px on longest side
+        max_side = 800
+        w, h = img.size
+        if max(w, h) > max_side:
+            scale = max_side / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+        # Progressive quality reduction
+        for quality in [75, 60, 45, 30]:
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            compressed = buf.getvalue()
+            if len(compressed) <= max_kb * 1024:
+                return base64.b64encode(compressed).decode()
+
+        # Last resort — lowest quality
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=20, optimize=True)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    except Exception:
+        # PIL not installed or decode failed — return as-is
+        return b64_raw
+
+
 async def _sync_shop_to_app(user_id: str) -> None:
     """
-    Add / refresh app-friendly field aliases directly on the existing
-    claimit_db.shops document so the Flutter app can read them without
-    a separate 'sync' document being created.
-
-    Previously this upserted a second document keyed by web_shop_id,
-    which caused duplicate docs in the collection — one with web fields
-    only and one with app fields only.  Now we update in-place.
+    Sync web shop data → app-facing fields on the same document.
+    Key fix: compresses images and removes the raw cover_photo_b64 / gallery_photos
+    blobs after syncing so the document doesn't store images twice and stays
+    well under MongoDB's 16 MB document limit.
     """
     shop = await shops_collection.find_one({"user_id": user_id})
     if not shop:
@@ -100,7 +138,10 @@ async def _sync_shop_to_app(user_id: str) -> None:
     gallery     = shop.get("gallery_photos", []) or []
     gallery_raw = [_strip_b64_prefix(p) for p in gallery if p]
 
-    # App-friendly aliases written directly onto the same document
+    # Compress images to prevent document size blowup
+    cover_compressed   = _compress_b64_image(cover_raw)
+    gallery_compressed = [_compress_b64_image(g) for g in gallery_raw]
+
     app_fields = {
         "name":            shop.get("shop_name", ""),
         "location":        shop.get("location", ""),
@@ -118,14 +159,17 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "phone":           shop.get("phone", ""),
         "lat":             shop.get("lat"),
         "lng":             shop.get("lng"),
-        "image_data":      cover_raw,
-        "image_data_list": gallery_raw,
+        "image_data":      cover_compressed,
+        "image_data_list": gallery_compressed,
     }
 
-    # Update the original document in-place — no new doc created
+    # $set app fields, $unset raw blobs — images now stored only once (compressed)
     await shops_collection.update_one(
         {"_id": shop["_id"]},
-        {"$set": app_fields},
+        {
+            "$set": app_fields,
+            "$unset": {"cover_photo_b64": "", "gallery_photos": ""},
+        },
     )
 
 router = APIRouter()

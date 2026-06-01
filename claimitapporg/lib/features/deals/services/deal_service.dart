@@ -24,6 +24,7 @@ class DealDto {
   final String distance;
   final String type;
   final String imageUrl;
+  final String imageData;
   final String description;
   final String address;
   final String phone;
@@ -42,6 +43,7 @@ class DealDto {
     required this.distance,
     required this.type,
     required this.imageUrl,
+    this.imageData = '',
     required this.description,
     required this.address,
     required this.phone,
@@ -61,6 +63,7 @@ class DealDto {
         distance: j['distance'] as String? ?? '',
         type: j['type'] as String? ?? '',
         imageUrl: j['image_url'] as String? ?? '',
+        imageData: j['image_data'] as String? ?? '',
         description: j['description'] as String? ?? '',
         address: j['address'] as String? ?? '',
         phone: j['phone'] as String? ?? '',

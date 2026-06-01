@@ -264,7 +264,7 @@ import 'dart:convert';
 //     // Auto-scroll banner every 4 seconds
 //     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
 //       if (!_bannerCtrl.hasClients) return;
-//       final next = (_currentBanner + 1) % _banners.length;
+//       final next = (_currentBanner + 1) % _activeBanners.length;
 //       _bannerCtrl.animateToPage(
 //         next,
 //         duration: const Duration(milliseconds: 500),
@@ -1113,6 +1113,7 @@ import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/network/api_client.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../deals/models/deal_model.dart';
 import '../../deals/services/deal_service.dart';
@@ -1351,11 +1352,13 @@ final _brandDeals = [
 
 class _BannerData {
   final String imageUrl;
+  final String imageData;   // raw base64 fallback
   final LinearGradient gradient;
   final String headline;
   final String sub;
   const _BannerData({
     required this.imageUrl,
+    this.imageData = '',
     required this.gradient,
     required this.headline,
     required this.sub,
@@ -1401,6 +1404,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<DealData> _brandDealsList = [];
   bool _loadingDeals = true;
 
+  // API-loaded banners (replaces static _banners list)
+  List<_BannerData> _apiBanners = [];
+
   // GPS-based nearby shops (within 4 km)
   List<ShopItem> _nearbyShops = [];
   bool _loadingNearbyShops = false;
@@ -1418,7 +1424,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Auto-scroll banner every 4 seconds
     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!_bannerCtrl.hasClients) return;
-      final next = (_currentBanner + 1) % _banners.length;
+      final next = (_currentBanner + 1) % _activeBanners.length;
       _bannerCtrl.animateToPage(
         next,
         duration: const Duration(milliseconds: 500),
@@ -1427,7 +1433,38 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
     _loadDeals();
     _loadNearbyShopsFromGPS();
+    _loadBanners();
     _scheduleReelzAd();
+  }
+
+  List<_BannerData> get _activeBanners =>
+      _apiBanners.isNotEmpty ? _apiBanners : _banners;
+
+  /// Fetch banners from /banners API; fall back to static if empty/error.
+  Future<void> _loadBanners() async {
+    try {
+      final resp = await ApiClient().get('/banners');
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final list = resp.data['banners'] as List? ?? [];
+        final parsed = list.map((b) {
+          final imageUrl = (b['image_url'] as String? ?? '').trim();
+          final imageData = (b['image_data'] as String? ?? '').trim();
+          return _BannerData(
+            imageUrl: imageUrl,
+            imageData: imageData,
+            gradient: const LinearGradient(
+                colors: [Color(0xFF1565C0), Color(0xFF2563EB)]),
+            headline: b['headline'] as String? ?? '',
+            sub: b['sub'] as String? ?? '',
+          );
+        }).toList();
+        if (mounted && parsed.isNotEmpty) {
+          setState(() => _apiBanners = parsed);
+        }
+      }
+    } catch (e) {
+      debugPrint('_loadBanners error: $e');
+    }
   }
 
   /// Returns true if at least 5 minutes have passed since the last ad.
@@ -1546,6 +1583,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         distance: d.distance,
         type: d.type,
         imageUrl: d.imageUrl,
+        imageData: d.imageData,
         fallbackColor: const Color(0xFFEEEEEE),
         fallbackIcon: Icons.store_rounded,
         description: d.description,
@@ -1579,7 +1617,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   return PreferredSize(
     // kToolbarHeight = 56 dp (Material standard). Using that + small padding
     // keeps the bar proportional on any screen density or display-zoom level.
-    preferredSize: const Size.fromHeight(kToolbarHeight + 12),
+    preferredSize: const Size.fromHeight(kToolbarHeight + 2),
     child: Container(
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
@@ -1587,7 +1625,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: 12,
-            vertical: 8,
+            vertical: 2,
           ),
           child: Row(
             children: [
@@ -1714,79 +1752,91 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Banner carousel ──────────────────────────────────────────
+            // ── Banner carousel with dots overlaid ──────────────────────
             AspectRatio(
               aspectRatio: 16 / 9,
-              child: PageView.builder(
-                controller: _bannerCtrl,
-                onPageChanged: (i) => setState(() => _currentBanner = i),
-                itemCount: _banners.length,
-                itemBuilder: (ctx, i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: GestureDetector(
-                      onTap: () => context.push('/national-ads'),
-                      child: _BannerSlide(data: _banners[i]),
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: _bannerCtrl,
+                    onPageChanged: (i) => setState(() => _currentBanner = i),
+                    itemCount: _activeBanners.length,
+                    itemBuilder: (ctx, i) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: GestureDetector(
+                          onTap: () => context.push('/national-ads'),
+                          child: _BannerSlide(data: _activeBanners[i]),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // ── Dots overlaid at bottom of banner ─────────────────
+                  Positioned(
+                    bottom: 10,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: SmoothPageIndicator(
+                        controller: _bannerCtrl,
+                        count: _activeBanners.length,
+                        effect: const ColorTransitionEffect(
+                          dotHeight: 8,
+                          dotWidth: 8,
+                          activeDotColor: Color(0xFF2563EB),
+                          dotColor: Color(0xFFD1D5DB),
+                          spacing: 6,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: 4),
-
-            // ── Dots ────────────────────────────────────────────────────
-            Center(
-              child: SmoothPageIndicator(
-                controller: _bannerCtrl,
-                count: _banners.length,
-                effect: const WormEffect(
-                  dotHeight: 8,
-                  dotWidth: 8,
-                  activeDotColor: Color(0xFF2563EB),
-                  dotColor: Color(0xFFD1D5DB),
-                  spacing: 6,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 4),
 
             // ── Category row ─────────────────────────────────────────────
-            _CategoryRow(
-              selected: _selectedCategory,
-              onSelect: (i) => setState(() => _selectedCategory = i),
-            ),
-
-            const SizedBox(height: 4),
-
-            // ── Nearby / Brand toggle ─────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _DealsToggle(
-                isNearby: _isNearby,
-                onToggle: (v) => setState(() => _isNearby = v),
+            Transform.translate(
+              offset: const Offset(0, -12),
+              child: _CategoryRow(
+                selected: _selectedCategory,
+                onSelect: (i) => setState(() => _selectedCategory = i),
               ),
             ),
 
-            const SizedBox(height: 16),
+            // ── Nearby / Brand toggle + Deal cards (shifted up) ──────────
+            Transform.translate(
+              offset: const Offset(0, -28),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _DealsToggle(
+                      isNearby: _isNearby,
+                      onToggle: (v) => setState(() => _isNearby = v),
+                    ),
+                  ),
 
-            // ── Deal cards (from API) ─────────────────────────────────────
-            if (_loadingDeals)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                    child: CircularProgressIndicator(
-                        color: Color(0xFF2563EB))),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: deals.map((d) => _DealCard(deal: d)).toList(),
-                ),
+                  const SizedBox(height: 8),
+
+                  // ── Deal cards (from API) ───────────────────────────────
+                  if (_loadingDeals)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                          child: CircularProgressIndicator(
+                              color: Color(0xFF2563EB))),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        children: deals.map((d) => _DealCard(deal: d)).toList(),
+                      ),
+                    ),
+                ],
               ),
+            ),
 
             // ── GPS Nearby Shops (within 4 km) ────────────────────────────
             if (_isNearby) ...[
@@ -1902,6 +1952,16 @@ class _BannerSlide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use base64 image if no URL available
+    if (data.imageUrl.isEmpty && data.imageData.isNotEmpty) {
+      try {
+        return Image.memory(base64Decode(data.imageData),
+            fit: BoxFit.cover, width: double.infinity,
+            errorBuilder: (_, __, ___) => _fallback());
+      } catch (_) {
+        return _fallback();
+      }
+    }
     return CachedNetworkImage(
       imageUrl: data.imageUrl,
       fit: BoxFit.cover,
@@ -1925,9 +1985,9 @@ class _CategoryRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  // 3 pages of 4 slots; last page has 3 real icons + "Show All" button
+  // 3 pages of 5 slots; last page has 4 real icons + "Show All" button
   static const int _pages = 3;
-  static const int _perPage = 4;
+  static const int _perPage = 5;
 
   Widget _buildIcon({
     required BuildContext context,
@@ -1939,6 +1999,9 @@ class _CategoryRow extends StatelessWidget {
     // Asset icons: icon1.png … icon30.png (1-based index)
     final assetPath = 'assets/icons/category_icon/icon${globalIndex + 1}.png';
 
+    // Use screen width for responsive icon size: ~13% of width, clamped 48–60
+    final iconSize = (MediaQuery.of(context).size.width * 0.11).clamp(40.0, 52.0);
+
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -1946,28 +2009,21 @@ class _CategoryRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 66,
-              height: 66,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Theme.of(context).colorScheme.surface,
-                border: Border.all(
-                  color: active ? const Color(0xFF2563EB) : const Color.fromARGB(255, 210, 186, 6),
-                  width: active ? 2 : 1,
-                ),
-              ),
+            // No outer border — icon images already have a circle built in
+            SizedBox(
+              width: iconSize,
+              height: iconSize,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
                   Image.asset(
                     assetPath,
-                    width: 44,
-                    height: 44,
+                    width: iconSize,
+                    height: iconSize,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => Icon(
                       cat.icon,
-                      size: 32,
+                      size: iconSize * 0.55,
                       color: active ? const Color(0xFF2563EB) : cat.color,
                     ),
                   ),
@@ -1978,18 +2034,18 @@ class _CategoryRow extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF4B400),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'New',
-                          style: TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
+                        // decoration: BoxDecoration(
+                        //   color: const Color(0xFFF4B400),
+                        //   borderRadius: BorderRadius.circular(6),
+                        // ),
+                        // child: const Text(
+                        //   'New',
+                        //   style: TextStyle(
+                        //     fontSize: 8,
+                        //     fontWeight: FontWeight.bold,
+                        //     color: Colors.black,
+                        //   ),
+                        // ),
                       ),
                     ),
                 ],
@@ -2001,7 +2057,7 @@ class _CategoryRow extends StatelessWidget {
               maxLines: 2,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 10,
                 height: 1.2,
                 color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
@@ -2021,8 +2077,8 @@ class _CategoryRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 66,
-              height: 66,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Theme.of(context).brightness == Brightness.dark
@@ -2032,7 +2088,7 @@ class _CategoryRow extends StatelessWidget {
               ),
               child: const Icon(
                 Icons.apps_rounded,
-                size: 32,
+                size: 22,
                 color: Color(0xFF2563EB),
               ),
             ),
@@ -2122,7 +2178,7 @@ class _DealsToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 58,
+      height: 42,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -2174,7 +2230,7 @@ class _ToggleBtn extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: active ? Colors.white : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             ),
@@ -2207,7 +2263,7 @@ class _DealCardState extends State<_DealCard> {
     return GestureDetector(
       onTap: () => context.push('/deal-detail', extra: d),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
+        margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(14),
@@ -2219,7 +2275,9 @@ class _DealCardState extends State<_DealCard> {
             ),
           ],
         ),
-        child: IntrinsicHeight(
+        child: SizedBox(
+          height: 110,
+          child: ClipRect(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2231,29 +2289,37 @@ class _DealCardState extends State<_DealCard> {
                 ),
                 child: SizedBox(
                   width: 120,
-                  child: CachedNetworkImage(
-                    imageUrl: d.imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: d.fallbackColor,
-                      child: Icon(d.fallbackIcon,
-                          color: const Color(0xFF9CA3AF), size: 44),
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      color: d.fallbackColor,
-                      child: Icon(d.fallbackIcon,
-                          color: const Color(0xFF9CA3AF), size: 44),
-                    ),
-                  ),
+                  child: d.imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: d.imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            color: d.fallbackColor,
+                            child: Icon(d.fallbackIcon,
+                                color: const Color(0xFF9CA3AF), size: 44),
+                          ),
+                          errorWidget: (_, __, ___) => d.imageData.isNotEmpty
+                              ? Image.memory(base64Decode(d.imageData), fit: BoxFit.cover)
+                              : Container(color: d.fallbackColor,
+                                  child: Icon(d.fallbackIcon, color: const Color(0xFF9CA3AF), size: 44)),
+                        )
+                      : d.imageData.isNotEmpty
+                          ? Image.memory(base64Decode(d.imageData), fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: d.fallbackColor,
+                                  child: Icon(d.fallbackIcon, color: const Color(0xFF9CA3AF), size: 44)))
+                          : Container(color: d.fallbackColor,
+                              child: Icon(d.fallbackIcon, color: const Color(0xFF9CA3AF), size: 44)),
                 ),
               ),
 
               // ── Right content ───────────────────────────────────────────
               Expanded(
+                child: ClipRect(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                  padding: const EdgeInsets.fromLTRB(14, 8, 12, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       // Name + heart
                       Row(
@@ -2343,8 +2409,10 @@ class _DealCardState extends State<_DealCard> {
                     ],
                   ),
                 ),
+                ),
               ),
             ],
+          ),
           ),
         ),
       ),

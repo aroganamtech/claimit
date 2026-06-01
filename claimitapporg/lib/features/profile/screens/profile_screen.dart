@@ -104,23 +104,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
 
                   // ── Search ────────────────────────────────────────────────
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.search,
-                        size: 28,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      onPressed: () => context.push('/search'),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
+                  // Container(
+                  //   width: 38,
+                  //   height: 38,
+                  //   decoration: BoxDecoration(
+                  //     shape: BoxShape.circle,
+                  //     border: Border.all(color: const Color(0xFFE5E7EB)),
+                  //   ),
+                  //   child: IconButton(
+                  //     icon: Icon(
+                  //       Icons.search,
+                  //       size: 28,
+                  //       color: Theme.of(context).colorScheme.primary,
+                  //     ),
+                  //     onPressed: () => context.push('/search'),
+                  //     padding: EdgeInsets.zero,
+                  //   ),
+                  // ),
 
                   const SizedBox(width: 8),
 
@@ -373,12 +373,19 @@ class _RewardsSection extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _RewardCard(
-                  symbol: '₹',
-                  value: bill.cashbackWallet.toStringAsFixed(0),
-                  label: 'Cashback Wallet',
-                  labelColor: const Color(0xFF2563EB),
-                  accentColor: const Color(0xFF2563EB),
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _CashbackWalletPage(bill: bill),
+                    ),
+                  ),
+                  child: _RewardCard(
+                    symbol: '₹',
+                    value: bill.cashbackWallet.toStringAsFixed(0),
+                    label: 'Cashback Wallet',
+                    labelColor: const Color(0xFF2563EB),
+                    accentColor: const Color(0xFF2563EB),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -403,60 +410,27 @@ class _RewardsSection extends StatelessWidget {
               color: const Color(0xFFEFF6FF),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.receipt_long_rounded,
-                    size: 18, color: Color(0xFF2563EB)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Lifetime Cashback Earned: ₹${bill.lifetimeCashback.toStringAsFixed(0)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2563EB),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            // child: Row(
+            //   children: [
+            //     const Icon(Icons.receipt_long_rounded,
+            //         size: 18, color: Color(0xFF2563EB)),
+            //     const SizedBox(width: 8),
+            //     Expanded(
+            //       child: Text(
+            //         'Lifetime Cashback Earned: ₹${bill.lifetimeCashback.toStringAsFixed(0)}',
+            //         maxLines: 1,
+            //         overflow: TextOverflow.ellipsis,
+            //         style: const TextStyle(
+            //           fontSize: 13,
+            //           fontWeight: FontWeight.w600,
+            //           color: Color(0xFF2563EB),
+            //         ),
+            //       ),
+            //     ),
+            //   ],
+            // ),
           ),
 
-          const SizedBox(height: 10),
-
-          // ── Transfer to Bank button (min ₹100) ───────────────────────────
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: ElevatedButton.icon(
-              onPressed: bill.cashbackWallet >= 100
-                  ? () => _showTransferSheet(context, bill)
-                  : null,
-              icon: const Icon(Icons.account_balance_rounded, size: 18),
-              label: Text(
-                bill.cashbackWallet >= 100
-                    ? 'Transfer ₹${bill.cashbackWallet.toStringAsFixed(0)} to Bank'
-                    : bill.cashbackWallet > 0
-                        ? 'Need ₹${(100 - bill.cashbackWallet).toStringAsFixed(0)} more to Transfer'
-                        : 'No Cashback to Transfer',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFFD1D5DB),
-                disabledForegroundColor: const Color(0xFF9CA3AF),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1122,5 +1096,325 @@ class _HistoryTab extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return months[m];
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Cashback Wallet Detail Page
+// ─────────────────────────────────────────────────────────────────────────────
+class _CashbackWalletPage extends StatelessWidget {
+  final BillRewardProvider bill;
+  const _CashbackWalletPage({required this.bill});
+
+  @override
+  Widget build(BuildContext context) {
+    final history = bill.history;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9FAFB),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF1565C0), size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Cashback Wallet',
+          style: TextStyle(
+            color: Color(0xFF111827),
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ── Balance card ──────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1565C0), Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2563EB).withOpacity(0.3),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Available Balance',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '₹${bill.cashbackWallet.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Divider(color: Colors.white24),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _WalletStat(
+                      label: 'Lifetime Earned',
+                      value: '₹${bill.lifetimeCashback.toStringAsFixed(2)}',
+                    ),
+                    _WalletStat(
+                      label: 'Total Scans',
+                      value: '${history.length}',
+                    ),
+                    _WalletStat(
+                      label: 'Reward Points',
+                      value: '${bill.currentPoints} ★',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Transfer to bank ──────────────────────────────────────────────
+          if (bill.cashbackWallet >= 100)
+            ElevatedButton.icon(
+              onPressed: () {
+                // Show transfer sheet (reuse existing logic)
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.white,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  builder: (_) => _TransferToBank(
+                    availableBalance: bill.cashbackWallet,
+                    provider: bill,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.account_balance_rounded, size: 18),
+              label: Text(
+                  'Transfer ₹${bill.cashbackWallet.toStringAsFixed(0)} to Bank'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            )
+          else if (bill.cashbackWallet > 0)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      color: Color(0xFFD97706), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Need ₹${(100 - bill.cashbackWallet).toStringAsFixed(0)} more to transfer to bank',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF92400E),
+                          fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 24),
+
+          // ── Transactions header ───────────────────────────────────────────
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_rounded,
+                  size: 20, color: Color(0xFF1565C0)),
+              const SizedBox(width: 8),
+              const Text(
+                'Transactions',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${history.length} bills',
+                style: const TextStyle(
+                    fontSize: 12, color: Color(0xFF9CA3AF)),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Transaction list ──────────────────────────────────────────────
+          if (history.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(
+                  'No transactions yet.\nScan a bill to earn cashback!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 14, color: Color(0xFF9CA3AF), height: 1.6),
+                ),
+              ),
+            )
+          else
+            ...history.map((entry) => _TransactionTile(entry: entry)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Small stat widget inside the wallet card ──────────────────────────────────
+class _WalletStat extends StatelessWidget {
+  final String label;
+  final String value;
+  const _WalletStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label,
+            style:
+                const TextStyle(color: Colors.white60, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+// ── Single transaction row ────────────────────────────────────────────────────
+class _TransactionTile extends StatelessWidget {
+  final dynamic entry; // BillRewardEntry
+  const _TransactionTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = entry.date as DateTime;
+    final months = [
+      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final dateStr =
+        '${date.day} ${months[date.month]} ${date.year}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Icon
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.receipt_rounded,
+                color: Color(0xFF2563EB), size: 22),
+          ),
+          const SizedBox(width: 12),
+          // Shop + date
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.shopName as String,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  dateStr,
+                  style: const TextStyle(
+                      fontSize: 12, color: Color(0xFF9CA3AF)),
+                ),
+              ],
+            ),
+          ),
+          // Cashback + bill amount
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '+₹${(entry.cashback as double).toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF059669),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Bill: ₹${(entry.totalBill as double).toStringAsFixed(0)}',
+                style: const TextStyle(
+                    fontSize: 11, color: Color(0xFF9CA3AF)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

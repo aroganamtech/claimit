@@ -112,31 +112,19 @@ class CategoriesScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(
+                SizedBox(
                   width: 68,
                   height: 68,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white,
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       Image.asset(
                         'assets/icons/category_icon/icon${index + 1}.png',
-                        width: 46,
-                        height: 46,
+                        width: 68,
+                        height: 68,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) =>
-                            Icon(cat.icon, size: 32, color: cat.color),
+                            Icon(cat.icon, size: 36, color: cat.color),
                       ),
                       if (cat.isNew)
                         Positioned(

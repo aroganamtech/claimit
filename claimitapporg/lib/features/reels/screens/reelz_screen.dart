@@ -22,9 +22,15 @@ class ReelzScreen extends StatefulWidget {
 
 class _ReelzScreenState extends State<ReelzScreen> {
   List<ReelItem> _reels = [];
+  List<ReelItem> _filtered = [];
   bool _loading = true;
   final PageController _pageCtrl = PageController();
   int _currentPage = 0;
+
+  // Search
+  bool _showSearch = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -38,7 +44,21 @@ class _ReelzScreenState extends State<ReelzScreen> {
   void dispose() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String q) {
+    setState(() {
+      _searchQuery = q.toLowerCase().trim();
+      _filtered = _searchQuery.isEmpty
+          ? _reels
+          : _reels
+              .where((r) => r.shopName.toLowerCase().contains(_searchQuery))
+              .toList();
+      _currentPage = 0;
+    });
+    if (_pageCtrl.hasClients) _pageCtrl.jumpToPage(0);
   }
 
   // ── App bar (same structure as dashboard / notifications) ──────────────────
@@ -49,8 +69,11 @@ class _ReelzScreenState extends State<ReelzScreen> {
           : 'Select Area',
     );
 
+    final topPad = MediaQuery.of(context).padding.top;
+    // Extra 52dp when search bar is visible
+    final extraH = _showSearch ? 52.0 : 0.0;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(112),
+      preferredSize: Size.fromHeight(112 + topPad + extraH),
       child: Container(
         color: Colors.white,
         child: SafeArea(
@@ -114,7 +137,7 @@ class _ReelzScreenState extends State<ReelzScreen> {
                       child: IconButton(
                         icon: const Icon(Icons.notifications_none_rounded,
                             size: 28, color: Color(0xFF1565C0)),
-                        onPressed: () => context.push('/notifications'),
+                        onPressed: () => context.go('/notifications'),
                         padding: EdgeInsets.zero,
                       ),
                     ),
@@ -124,55 +147,96 @@ class _ReelzScreenState extends State<ReelzScreen> {
 
               const Divider(height: 1, color: Color(0xFFF3F4F6)),
 
-              // ── Row 2: back + "Reelz Zone" + refresh ──────────────────
+              // ── Row 2: back + "Reelz Zone" + search ───────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (context.canPop()) {
-                          context.pop();
-                        } else {
-                          context.go('/home');
-                        }
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Color(0xFF1565C0), size: 18),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Text(
-                      'Reelz Zone',
-                      style: TextStyle(
-                        color: Color(0xFF111827),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    // Refresh
-                    GestureDetector(
-                      onTap: () async {
-                        setState(() {
-                          _loading = true;
-                          _reels = [];
-                        });
-                        await _load();
-                      },
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F4F6),
-                          shape: BoxShape.circle,
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go('/home');
+                            }
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.arrow_back_ios_new_rounded,
+                                color: Color(0xFF1565C0), size: 18),
+                          ),
                         ),
-                        child: const Icon(Icons.refresh_rounded,
-                            size: 20, color: Color(0xFF1565C0)),
-                      ),
+                        const SizedBox(width: 2),
+                        const Text(
+                          'Reelz Zone',
+                          style: TextStyle(
+                            color: Color(0xFF111827),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Search icon toggle
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _showSearch = !_showSearch;
+                              if (!_showSearch) {
+                                _searchCtrl.clear();
+                                _onSearchChanged('');
+                              }
+                            });
+                          },
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: _showSearch
+                                  ? const Color(0xFF1565C0)
+                                  : const Color(0xFFF3F4F6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _showSearch
+                                  ? Icons.close_rounded
+                                  : Icons.search_rounded,
+                              size: 20,
+                              color: _showSearch
+                                  ? Colors.white
+                                  : const Color(0xFF1565C0),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    // Search bar — visible when _showSearch is true
+                    if (_showSearch)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, bottom: 2),
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: _onSearchChanged,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            hintText: 'Search by shop name…',
+                            hintStyle: const TextStyle(
+                                fontSize: 14, color: Color(0xFF9CA3AF)),
+                            prefixIcon: const Icon(Icons.search_rounded,
+                                size: 20, color: Color(0xFF9CA3AF)),
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            filled: true,
+                            fillColor: const Color(0xFFF3F4F6),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -183,9 +247,64 @@ class _ReelzScreenState extends State<ReelzScreen> {
     );
   }
 
+  // ── Bottom navigation bar ──────────────────────────────────────────────────
+  Widget _buildBottomBar() {
+    return BottomAppBar(
+      notchMargin: 10.0,
+      shape: const CircularNotchedRectangle(),
+      color: const Color.fromARGB(255, 20, 143, 208),
+      elevation: 8,
+      padding: EdgeInsets.zero,
+      height: kBottomNavigationBarHeight + 6,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _BarItem(icon: Icons.home_rounded, label: 'Home',
+                      assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                      onTap: () => context.go('/home')),
+                  _BarItem(icon: Icons.play_circle_rounded, label: 'Reels',
+                      selected: true,
+                      onTap: () {}),
+                ],
+              ),
+            ),
+            const SizedBox(width: 72), // FAB gap
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _BarItem(icon: Icons.qr_code_scanner_rounded,
+                      label: 'Scan Bill',
+                      assetIcon: 'assets/icons/home_page_icons/icon5.png',
+                      isScanProfile: true,
+                      onTap: () => context.push('/bill-reader')),
+                  _BarItem(icon: Icons.person_rounded, label: 'Profile',
+                      assetIcon: 'assets/icons/home_page_icons/icon7.png',
+                      isScanProfile: true,
+                      onTap: () => context.go('/profile')),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _load() async {
     final reels = await ReelService.instance.fetchReels();
-    if (mounted) setState(() { _reels = reels; _loading = false; });
+    if (mounted) {
+      setState(() {
+        _reels = reels;
+        _filtered = reels;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -204,38 +323,47 @@ class _ReelzScreenState extends State<ReelzScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: _buildAppBar(),
+        bottomNavigationBar: _buildBottomBar(),
+        floatingActionButton: SizedBox(
+          width: 68,
+          height: 68,
+          child: FloatingActionButton(
+            backgroundColor: const Color(0xFFEAB308),
+            elevation: 6,
+            shape: const CircleBorder(),
+            onPressed: () => context.go('/home'),
+            child: Image.asset(
+              'assets/icons/main_icon.png',
+              width: 54,
+              height: 54,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         body: _loading
             ? const Center(
                 child: CircularProgressIndicator(color: Colors.white))
-            : _reels.isEmpty
-                ? RefreshIndicator(
-                    onRefresh: _load,
-                    color: Colors.white,
-                    backgroundColor: Colors.black54,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 300),
-                        Center(
-                          child: Text(
-                            'No reels yet. Pull down to refresh.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 16),
-                          ),
-                        ),
-                      ],
+            : _filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty
+                          ? 'No reels found for "$_searchQuery"'
+                          : 'No reels yet. Pull down to refresh.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 16),
                     ),
                   )
                 : PageView.builder(
                     controller: _pageCtrl,
                     scrollDirection: Axis.vertical,
                     physics: const PageScrollPhysics(),
-                    itemCount: _reels.length,
+                    itemCount: _filtered.length,
                     onPageChanged: (i) =>
                         setState(() => _currentPage = i),
                     itemBuilder: (context, index) => _ReelPage(
-                      reel: _reels[index],
+                      reel: _filtered[index],
                       isActive: index == _currentPage,
                     ),
                   ),
@@ -722,6 +850,72 @@ class _ActionBtn extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simple bottom bar item for the Reelz screen
+// ─────────────────────────────────────────────────────────────────────────────
+class _BarItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+  final String? assetIcon;
+  final bool isScanProfile;
+  const _BarItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+    this.assetIcon,
+    this.isScanProfile = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected
+        ? const Color.fromARGB(255, 238, 255, 0)
+        : Colors.white;
+    final screenW = MediaQuery.of(context).size.width;
+    final iconSize = isScanProfile
+        ? (screenW * 0.095).clamp(30.0, 38.0)
+        : (screenW * 0.075).clamp(24.0, 28.0);
+    final fontSize = (screenW * 0.025).clamp(9.0, 11.0);
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 60, maxWidth: 100),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: iconSize,
+              height: iconSize,
+              child: assetIcon != null
+                  ? Padding(
+                      padding: isScanProfile ? EdgeInsets.zero : const EdgeInsets.all(4),
+                      child: Image.asset(assetIcon!, fit: BoxFit.contain,
+                          color: color, colorBlendMode: BlendMode.srcIn,
+                          errorBuilder: (_, __, ___) =>
+                              Icon(icon, color: color, size: iconSize)),
+                    )
+                  : Icon(icon, color: color, size: iconSize),
+            ),
+            const SizedBox(height: 1),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: color)),
+          ],
+        ),
       ),
     );
   }
