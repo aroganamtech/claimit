@@ -17,6 +17,27 @@ class AppConstants {
   static const String login          = '/auth/login';
   static const String logout         = '/auth/logout';
   static const String refreshToken   = '/auth/refresh';
+  /// POST { provider: 'google'|'facebook', name, email?, provider_id? }
+  /// Returns { access_token, refresh_token, user }
+  static const String socialLogin    = '/auth/social/login';
+  /// POST { phone } — lets social-login users add a phone number
+  static const String updatePhone    = '/users/profile/phone';
+
+  // ── Social OAuth Keys ─────────────────────────────────────────────────────
+  // Pass real values via dart-define:
+  //   flutter run --dart-define=GOOGLE_CLIENT_ID=xxx --dart-define=FACEBOOK_APP_ID=yyy
+  // or replace the defaultValue strings below before release.
+  static const String googleClientId =
+      String.fromEnvironment('GOOGLE_CLIENT_ID',
+          defaultValue: 'DUMMY_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com');
+  static const String googleClientIdIos =
+      String.fromEnvironment('GOOGLE_CLIENT_ID_IOS',
+          defaultValue: 'DUMMY_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com');
+  static const String facebookAppId =
+      String.fromEnvironment('FACEBOOK_APP_ID', defaultValue: '000000000000000');
+  static const String facebookClientToken =
+      String.fromEnvironment('FACEBOOK_CLIENT_TOKEN',
+          defaultValue: 'DUMMY_FACEBOOK_CLIENT_TOKEN');
 
   // ── Users / Profile ───────────────────────────────────────────────────────
   static const String profile        = '/users/profile';

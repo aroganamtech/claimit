@@ -47,12 +47,15 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
   final _reviewCtrl = TextEditingController();
   bool _submitting = false;
 
-  // Effective image list: use imageDataList if available, else fall back to
-  // single imageData so the carousel always has at least 1 slide.
+  // Full shop fetched from detail endpoint (includes gallery)
+  ShopItem? _fullShop;
+
+  // Effective image list: prefer gallery from full shop, then cover
   List<String> get _images {
-    final list = widget.shop.imageDataList;
+    final shop = _fullShop ?? widget.shop;
+    final list = shop.imageDataList.where((s) => s.isNotEmpty).toList();
     if (list.isNotEmpty) return list;
-    final single = widget.shop.imageData;
+    final single = shop.imageData;
     if (single != null && single.isNotEmpty) return [single];
     return [];
   }
@@ -64,6 +67,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
     _isFav = context.read<ProfileProvider>().isLiked(widget.shop.id);
     _loadReviews();
     _loadNearbyShops();
+    _fetchFullShop();
     // Auto-scroll images every 4 seconds (only when more than one image)
     if (_images.length > 1) {
       _imgTimer = Timer.periodic(const Duration(seconds: 4), (_) {
@@ -84,6 +88,27 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
     _imgPageCtrl.dispose();
     _reviewCtrl.dispose();
     super.dispose();
+  }
+
+  /// Re-fetch the full shop from /shops/{id} to get image_data_list (gallery).
+  /// The list screen only passes cover image; detail endpoint includes gallery.
+  Future<void> _fetchFullShop() async {
+    final full = await ShopService.instance.fetchShopById(widget.shop.id);
+    if (!mounted || full == null) return;
+    setState(() {
+      _fullShop = full;
+      // Restart auto-scroll timer if gallery has multiple images
+      _imgTimer?.cancel();
+      if (_images.length > 1) {
+        _imgTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+          if (!_imgPageCtrl.hasClients) return;
+          final next = (_currentImg + 1) % _images.length;
+          _imgPageCtrl.animateToPage(next,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut);
+        });
+      }
+    });
   }
 
   Future<void> _loadReviews() async {

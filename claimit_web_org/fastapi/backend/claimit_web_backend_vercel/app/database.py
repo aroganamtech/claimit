@@ -35,7 +35,9 @@ team_collection         = db["team_members"]
 APP_DB_NAME = os.getenv("APP_DB_NAME", "claimit_db")
 app_db      = client[APP_DB_NAME]
 
-app_deals_collection   = app_db["deals"]
-app_reels_collection   = app_db["reels"]
-app_shops_collection   = app_db["shops"]
-app_banners_collection = app_db["banners"]
+app_deals_collection        = app_db["deals"]
+app_reels_collection        = app_db["reels"]
+app_shops_collection        = app_db["shops"]
+app_banners_collection      = app_db["banners"]
+app_bill_reviews_collection = app_db["bill_manual_reviews"]
+app_notifications_collection = app_db["notifications"]

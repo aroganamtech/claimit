@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
 import '../models/user_model.dart';
@@ -17,12 +19,28 @@ class AuthProvider extends ChangeNotifier {
   String? _loginIdentifier;
   /// Becomes true right after a successful login; reset once popup is shown
   bool _accountLinkPopupPending = false;
+  /// 'phone' | 'email' | 'google' | 'facebook'
+  String? _loginMethod;
 
   UserModel? get user => _user;
+  /// Exposed so screens needing direct API calls (e.g. social complete-profile)
+  /// can reuse the authenticated ApiClient without duplicating interceptors.
+  ApiClient get apiClientForSocial => _apiClient;
   bool get isAuthenticated => _isAuthenticated;
   bool get isLoading => _isLoading;
   bool get isInitializing => _isInitializing;
   String? get error => _error;
+  String? get loginMethod => _loginMethod;
+
+  /// True after Facebook login when the user still hasn't provided phone or email.
+  /// The router forces them to /auth/complete-profile until both are set.
+  bool get needsProfileCompletion {
+    if (_loginMethod != 'facebook') return false;
+    if (_user == null) return false;
+    final noPhone = _user!.phone.isEmpty;
+    final noEmail = _user!.email == null || _user!.email!.isEmpty;
+    return noPhone || noEmail;
+  }
 
   /// True if the most recent login was via email address
   bool get loggedInViaEmail =>
@@ -154,7 +172,8 @@ class AuthProvider extends ChangeNotifier {
           userId: (userJson['id'] ?? userJson['_id'] ?? '').toString(),
         );
         _user = UserModel.fromJson(userJson);
-        _loginIdentifier = phone;          // remember how they logged in
+        _loginIdentifier = phone;
+        _loginMethod = phone.contains('@') ? 'email' : 'phone';
         _accountLinkPopupPending = true;   // show nudge popup once on next screen
         _setAuth(true);   // ← notifies router notifier
         _isLoading = false;
@@ -242,6 +261,175 @@ class AuthProvider extends ChangeNotifier {
       _setAuth(false);
     }
     notifyListeners();
+  }
+
+  // ── Social Login ─────────────────────────────────────────────────────────
+
+  final _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    // serverClientId is required on Android for backend token verification.
+    // Replace DUMMY value with the Web client ID from Google Cloud Console.
+    serverClientId: AppConstants.googleClientId,
+  );
+
+  /// Signs in with Google, sends name+email to the backend, and stores tokens.
+  /// Returns true on success. No OTP needed — email is the identifier.
+  Future<bool> loginWithGoogle() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      // Sign out first so the account picker always appears.
+      await _googleSignIn.signOut();
+      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      if (account == null) {
+        // User cancelled the picker
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final response = await _apiClient.post(
+        AppConstants.socialLogin,
+        data: {
+          'provider': 'google',
+          'name': account.displayName ?? '',
+          'email': account.email,
+          'provider_id': account.id,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data is Map) {
+        return _handleSocialSuccess(response.data as Map, loginMethod: 'google');
+      }
+
+      _error = _readDetail(response.data) ?? 'Google login failed';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = _extractError(e, 'Google login failed');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Signs in with Facebook and sends name+email (if available) to the backend.
+  /// Facebook may not return an email — in that case the user is sent to
+  /// /auth/complete-profile to add their phone + email manually.
+  Future<bool> loginWithFacebook() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      // Log out first to always show account picker
+      await FacebookAuth.instance.logOut();
+      final LoginResult result = await FacebookAuth.instance.login(
+        permissions: ['email', 'public_profile'],
+      );
+
+      if (result.status == LoginStatus.cancelled) {
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      if (result.status != LoginStatus.success) {
+        _error = result.message ?? 'Facebook login failed';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final userData = await FacebookAuth.instance.getUserData(
+        fields: 'id,name,email',
+      );
+
+      final name     = userData['name'] as String? ?? '';
+      final email    = userData['email'] as String?; // may be null
+      final fbId     = userData['id'] as String? ?? '';
+
+      final response = await _apiClient.post(
+        AppConstants.socialLogin,
+        data: {
+          'provider': 'facebook',
+          'name': name,
+          if (email != null && email.isNotEmpty) 'email': email,
+          'provider_id': fbId,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data is Map) {
+        return _handleSocialSuccess(response.data as Map, loginMethod: 'facebook');
+      }
+
+      _error = _readDetail(response.data) ?? 'Facebook login failed';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = _extractError(e, 'Facebook login failed');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Shared helper to parse a social login backend response and persist tokens.
+  Future<bool> _handleSocialSuccess(Map raw, {required String loginMethod}) async {
+    try {
+      final data = Map<String, dynamic>.from(raw);
+      final userJson =
+          Map<String, dynamic>.from(data['user'] as Map<dynamic, dynamic>);
+      await _apiClient.saveTokens(
+        accessToken:  data['access_token'] as String,
+        refreshToken: data['refresh_token'] as String,
+        userId: (userJson['id'] ?? userJson['_id'] ?? '').toString(),
+      );
+      _user = UserModel.fromJson(userJson);
+      _loginMethod = loginMethod;
+      _loginIdentifier = _user!.email ?? _user!.phone;
+      // For Google: use existing account-link nudge logic.
+      // For Facebook: needsProfileCompletion drives the mandatory flow instead.
+      _accountLinkPopupPending = loginMethod == 'google';
+      _setAuth(true);
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      _error = 'Failed to process login response';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Call after the social complete-profile screen saves phone + email so the
+  /// router stops redirecting to /auth/complete-profile.
+  void markProfileCompleted({required String phone, String? email}) {
+    if (_user != null) {
+      _user = UserModel(
+        id: _user!.id,
+        fullName: _user!.fullName,
+        phone: phone,
+        email: email ?? _user!.email,
+        avatarUrl: _user!.avatarUrl,
+        location: _user!.location,
+        dateOfBirth: _user!.dateOfBirth,
+        address: _user!.address,
+        city: _user!.city,
+        state: _user!.state,
+        pincode: _user!.pincode,
+        aadharNumber: _user!.aadharNumber,
+        panNumber: _user!.panNumber,
+        isVerified: _user!.isVerified,
+        createdAt: _user!.createdAt,
+      );
+      notifyListeners();
+    }
   }
 
   Future<void> logout() async {

@@ -163,13 +163,9 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "image_data_list": gallery_compressed,
     }
 
-    # $set app fields, $unset raw blobs — images now stored only once (compressed)
     await shops_collection.update_one(
         {"_id": shop["_id"]},
-        {
-            "$set": app_fields,
-            "$unset": {"cover_photo_b64": "", "gallery_photos": ""},
-        },
+        {"$set": app_fields},
     )
 
 router = APIRouter()

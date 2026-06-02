@@ -16,18 +16,13 @@ def serialize(doc):
     return doc
 
 
-# --- Helper: get all shops visible to a sales user ---
+# ── Helper: shops visible to a sales user ─────────────────────
 async def get_all_shops_for_user(user_id: str, user_email: str, status_filter: str = "all"):
-    """
-    Returns shops added by this sales agent PLUS shops registered through
-    the shop portal by any user sharing the same email address.
-    """
     q_sales = {"sales_agent_id": user_id}
     if status_filter != "all":
         q_sales["status"] = status_filter
     sales_shops = await shops_collection.find(q_sales).to_list(200)
 
-    # Find shop-portal users with the same email
     email_shops = []
     if user_email:
         shop_users = await users_collection.find(
@@ -40,9 +35,7 @@ async def get_all_shops_for_user(user_id: str, user_email: str, status_filter: s
                 q_email["status"] = status_filter
             email_shops = await shops_collection.find(q_email).to_list(200)
 
-    # Deduplicate by shop _id
-    seen = set()
-    merged = []
+    seen, merged = set(), []
     for s in sales_shops + email_shops:
         sid = str(s["_id"])
         if sid not in seen:
@@ -51,60 +44,73 @@ async def get_all_shops_for_user(user_id: str, user_email: str, status_filter: s
     return merged
 
 
-# --- Dashboard ---
+# ── Dashboard ─────────────────────────────────────────────────
 @router.get("/dashboard")
 async def get_dashboard(
     email: Optional[str] = Query(None),
     current_user=Depends(get_current_user)
 ):
-    user_id = str(current_user["_id"])
-    # Use email from query param if sent by frontend, otherwise fall back to DB value
+    user_id   = str(current_user["_id"])
     user_email = email or current_user.get("email", "")
-    shops = await get_all_shops_for_user(user_id, user_email)
-    total_members = await team_collection.count_documents({"sales_agent_id": user_id})
+    shops      = await get_all_shops_for_user(user_id, user_email)
 
-    # Revenue = sum of bill amounts for txns at all visible shops
+    # If Sales Head → also count executives under them
+    unique_id    = current_user.get("unique_id", "")
+    sub_role     = current_user.get("sub_role", "")
+    team_count   = 0
+    if sub_role == "sales_head" and unique_id:
+        team_count = await users_collection.count_documents(
+            {"referred_by": unique_id, "role": "sales"}
+        )
+    else:
+        team_count = await team_collection.count_documents({"sales_agent_id": user_id})
+
     shop_ids = [str(s["_id"]) for s in shops]
-    revenue = 0.0
+    revenue  = 0.0
     if shop_ids:
         async for t in transactions_collection.find({"shop_id": {"$in": shop_ids}}):
             revenue += float(t.get("bill_amount", 0))
 
     return {
-        "total_shops": len(shops),
+        "total_shops":   len(shops),
         "total_revenue": revenue,
-        "total_members": total_members,
+        "total_members": team_count,
+        "unique_id":     unique_id,
+        "sub_role":      sub_role,
         "shops": [serialize(s) for s in shops],
     }
 
 
-# --- Shops list ---
+# ── Shops list ────────────────────────────────────────────────
 @router.get("/shops")
 async def list_shops(
     status: str = "all",
     email: Optional[str] = Query(None),
     current_user=Depends(get_current_user)
 ):
-    user_id = str(current_user["_id"])
+    user_id    = str(current_user["_id"])
     user_email = email or current_user.get("email", "")
-    shops = await get_all_shops_for_user(user_id, user_email, status)
+    shops      = await get_all_shops_for_user(user_id, user_email, status)
     return [serialize(s) for s in shops]
 
 
 @router.post("/shops/add")
 async def add_shop(payload: SalesShopAdd, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop_doc = {
-        "sales_agent_id": user_id,
-        "shop_name": payload.shop_name,
-        "shop_address": payload.shop_address,
-        "category": payload.category,
-        "pincode": payload.pincode or "",
-        "lat": payload.lat,
-        "lng": payload.lng,
-        "status": "pending",
+    user_id   = str(current_user["_id"])
+    unique_id = current_user.get("unique_id", "")
+    shop_doc  = {
+        "sales_agent_id":  user_id,
+        "sales_unique_id": unique_id,          # employee unique ID for tracking
+        "sales_sub_role":  current_user.get("sub_role", ""),
+        "shop_name":       payload.shop_name,
+        "shop_address":    payload.shop_address,
+        "category":        payload.category,
+        "pincode":         payload.pincode or "",
+        "lat":             payload.lat,
+        "lng":             payload.lng,
+        "status":          "pending",
         "discount_percentage": 0,
-        "created_at": datetime.utcnow(),
+        "created_at":      datetime.utcnow(),
     }
     res = await shops_collection.insert_one(shop_doc)
     shop_doc["id"] = str(res.inserted_id)
@@ -112,9 +118,37 @@ async def add_shop(payload: SalesShopAdd, current_user=Depends(get_current_user)
     return shop_doc
 
 
-# --- Team ---
+# ── Team ──────────────────────────────────────────────────────
 @router.get("/team")
 async def get_team(current_user=Depends(get_current_user)):
+    """
+    Sales Head sees executives registered under their unique_id.
+    Others see their invited team members.
+    """
+    unique_id = current_user.get("unique_id", "")
+    sub_role  = current_user.get("sub_role", "")
+
+    if sub_role == "sales_head" and unique_id:
+        # All executives who gave this head's ID during registration
+        members = await users_collection.find(
+            {"referred_by": unique_id, "role": "sales"}
+        ).to_list(200)
+        return [
+            {
+                "id":        str(m["_id"]),
+                "name":      m.get("name", ""),
+                "phone":     m.get("phone", ""),
+                "email":     m.get("email", ""),
+                "unique_id": m.get("unique_id", ""),
+                "sub_role":  m.get("sub_role", ""),
+                "created_at": str(m.get("created_at", "")),
+                "total_shops": await shops_collection.count_documents(
+                    {"sales_agent_id": str(m["_id"])}
+                ),
+            }
+            for m in members
+        ]
+
     user_id = str(current_user["_id"])
     members = await team_collection.find({"sales_agent_id": user_id}).to_list(100)
     return [serialize(m) for m in members]
@@ -125,7 +159,7 @@ async def invite_team_member(name: str, email: str, phone: str, current_user=Dep
     user_id = str(current_user["_id"])
     doc = {
         "sales_agent_id": user_id,
-        "name": name,
+        "name":  name,
         "email": email,
         "phone": phone,
         "joined": False,
@@ -137,40 +171,64 @@ async def invite_team_member(name: str, email: str, phone: str, current_user=Dep
     return doc
 
 
-# --- Earnings ---
+# ── Earnings ──────────────────────────────────────────────────
 @router.get("/earnings")
 async def get_earnings(current_user=Depends(get_current_user)):
-    """1% of revenue from referred shops as commission."""
-    user_id = str(current_user["_id"])
+    user_id    = str(current_user["_id"])
     user_email = current_user.get("email", "")
-    shops = await get_all_shops_for_user(user_id, user_email)
-    shop_ids = [str(s["_id"]) for s in shops]
+    shops      = await get_all_shops_for_user(user_id, user_email)
+    shop_ids   = [str(s["_id"]) for s in shops]
 
     total_revenue = 0.0
     if shop_ids:
         async for t in transactions_collection.find({"shop_id": {"$in": shop_ids}}):
             total_revenue += float(t.get("bill_amount", 0))
 
-    earned = round(total_revenue * 0.01)
-    paid = round(earned * 0.5)
+    earned  = round(total_revenue * 0.01)
+    paid    = round(earned * 0.5)
     pending = earned - paid
 
     return {
         "total_earned": earned,
-        "pending": pending,
-        "paid": paid,
+        "pending":      pending,
+        "paid":         paid,
         "transactions": [],
     }
 
 
-# --- Profile ---
+# ── Profile ───────────────────────────────────────────────────
 @router.get("/profile")
 async def get_profile(current_user=Depends(get_current_user)):
     uid = str(current_user["_id"])
     return {
-        "id": uid,
-        "user_id": uid[-6:].upper(),
-        "name": current_user.get("name", ""),
-        "email": current_user.get("email", ""),
-        "phone": current_user.get("phone", ""),
+        "id":        uid,
+        "unique_id": current_user.get("unique_id") or uid[-6:].upper(),
+        "sub_role":  current_user.get("sub_role", ""),
+        "name":      current_user.get("name", ""),
+        "email":     current_user.get("email", ""),
+        "phone":     current_user.get("phone", ""),
+        "referred_by": current_user.get("referred_by", ""),
     }
+
+
+# ── Admin: list all sales employees (called by admin panel) ───
+@router.get("/all-employees")
+async def list_all_employees(current_user=Depends(get_current_user)):
+    """Super admin view — all sales employees with unique IDs."""
+    employees = await users_collection.find({"role": "sales"}).to_list(500)
+    result = []
+    for e in employees:
+        eid = str(e["_id"])
+        shop_count = await shops_collection.count_documents({"sales_agent_id": eid})
+        result.append({
+            "id":          eid,
+            "name":        e.get("name", ""),
+            "phone":       e.get("phone", ""),
+            "email":       e.get("email", ""),
+            "unique_id":   e.get("unique_id", ""),
+            "sub_role":    e.get("sub_role", ""),
+            "referred_by": e.get("referred_by", ""),
+            "created_at":  str(e.get("created_at", "")),
+            "total_shops": shop_count,
+        })
+    return result

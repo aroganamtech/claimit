@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from app.database import app_db
+from app.database import app_db, app_bill_reviews_collection, app_notifications_collection
 from app.utils.dependencies import get_current_user_optional
+from bson import ObjectId
 from datetime import datetime
 
 router = APIRouter()
@@ -172,6 +173,261 @@ async def get_history(current_user=Depends(get_current_user_optional)):
             "bill_number":     s.get("bill_number"),
             "bill_date":       s.get("bill_date"),
             "scanned_at":      s["scanned_at"].isoformat() if s.get("scanned_at") else "",
+            "type":            "auto",
+            "status":          "approved",
         }
         for s in scans
     ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MANUAL REVIEW FLOW
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ManualBillRequest(BaseModel):
+    total_amount:   float
+    shop_name:      Optional[str] = None
+    bill_number:    Optional[str] = None
+    bill_date:      Optional[str] = None
+    bill_time:      Optional[str] = None
+    image_base64:   str            # REQUIRED — bill image for admin to verify
+    manual_reason:  str = "missing_fields"  # missing_fields | wrong_data
+    user_id:        Optional[str] = None    # fallback when no JWT
+
+
+class AdminReviewAction(BaseModel):
+    action:         str    # approve | reject
+    reward_points:  Optional[int]   = None
+    cashback:       Optional[float] = None
+    admin_note:     Optional[str]   = None
+
+
+# ── POST /bill/manual-review ──────────────────────────────────────────────────
+@router.post("/manual-review")
+async def submit_manual_review(
+    body: ManualBillRequest,
+    current_user=Depends(get_current_user_optional),
+):
+    uid = _resolve_uid(current_user, body.user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if not body.image_base64 or len(body.image_base64) < 100:
+        raise HTTPException(status_code=400, detail="Bill image is required for manual review")
+
+    if body.total_amount <= 0:
+        raise HTTPException(status_code=400, detail="Bill amount must be positive")
+
+    doc = {
+        "user_id":       uid,
+        "shop_name":     (body.shop_name or "").strip(),
+        "total_amount":  body.total_amount,
+        "bill_number":   body.bill_number or "",
+        "bill_date":     body.bill_date or datetime.utcnow().strftime("%Y-%m-%d"),
+        "bill_time":     body.bill_time or "",
+        "image_base64":  body.image_base64,
+        "manual_reason": body.manual_reason,   # missing_fields | wrong_data
+        "status":        "pending",             # pending | approved | rejected
+        "reward_points": None,
+        "cashback":      None,
+        "admin_note":    None,
+        "submitted_at":  datetime.utcnow(),
+        "reviewed_at":   None,
+    }
+    res = await app_bill_reviews_collection.insert_one(doc)
+    return {
+        "ok":        True,
+        "review_id": str(res.inserted_id),
+        "status":    "pending",
+        "message":   "Submitted for review. Points and cashback will be added after our team verifies your bill.",
+    }
+
+
+# ── GET /bill/manual-reviews (admin) ─────────────────────────────────────────
+@router.get("/manual-reviews")
+async def list_manual_reviews(status: str = "pending"):
+    """Admin endpoint — lists manual bill review submissions."""
+    query = {}
+    if status != "all":
+        query["status"] = status
+    reviews = await app_bill_reviews_collection.find(query).sort("submitted_at", -1).to_list(200)
+    return [
+        {
+            "id":            str(r["_id"]),
+            "user_id":       r.get("user_id", ""),
+            "shop_name":     r.get("shop_name", ""),
+            "total_amount":  r.get("total_amount", 0),
+            "bill_number":   r.get("bill_number", ""),
+            "bill_date":     r.get("bill_date", ""),
+            "bill_time":     r.get("bill_time", ""),
+            "image_base64":  r.get("image_base64", ""),
+            "manual_reason": r.get("manual_reason", ""),
+            "status":        r.get("status", "pending"),
+            "reward_points": r.get("reward_points"),
+            "cashback":      r.get("cashback"),
+            "admin_note":    r.get("admin_note"),
+            "submitted_at":  r["submitted_at"].isoformat() if r.get("submitted_at") else "",
+            "reviewed_at":   r["reviewed_at"].isoformat() if r.get("reviewed_at") else "",
+        }
+        for r in reviews
+    ]
+
+
+# ── POST /bill/manual-reviews/{id}/action (admin approve/reject) ──────────────
+@router.post("/manual-reviews/{review_id}/action")
+async def review_action(review_id: str, body: AdminReviewAction):
+    """Admin approves or rejects a manual bill review."""
+    try:
+        oid = ObjectId(review_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid review ID")
+
+    review = await app_bill_reviews_collection.find_one({"_id": oid})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Review already processed")
+
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="action must be approve or reject")
+
+    now = datetime.utcnow()
+
+    if body.action == "approve":
+        pts = body.reward_points or round(review["total_amount"] * 0.10)
+        cb  = body.cashback      or round(review["total_amount"] * 0.01, 2)
+        uid = review["user_id"]
+
+        # Add to user wallet
+        wallet = await _get_or_create_wallet(uid)
+        await _wallets.update_one(
+            {"user_id": uid},
+            {"$set": {
+                "reward_points":    wallet["reward_points"]    + pts,
+                "cashback_wallet":  wallet["cashback_wallet"]  + cb,
+                "lifetime_cashback": wallet["lifetime_cashback"] + cb,
+                "updated_at":       now,
+            }},
+        )
+
+        # Update review record
+        await app_bill_reviews_collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                "status":        "approved",
+                "reward_points": pts,
+                "cashback":      cb,
+                "admin_note":    body.admin_note or "",
+                "reviewed_at":   now,
+            }},
+        )
+
+        # Push notification to user
+        await app_notifications_collection.insert_one({
+            "user_id":   uid,
+            "type":      "bill_review_approved",
+            "title":     "Bill Review Approved! 🎉",
+            "body":      f"Your bill from '{review['shop_name']}' has been verified. "
+                         f"You earned {pts} points and ₹{cb:.2f} cashback!",
+            "data": {
+                "review_id":     review_id,
+                "reward_points": pts,
+                "cashback":      cb,
+                "shop_name":     review.get("shop_name", ""),
+            },
+            "read":       False,
+            "created_at": now,
+        })
+
+        return {"ok": True, "action": "approved", "reward_points": pts, "cashback": cb}
+
+    else:
+        # Reject
+        await app_bill_reviews_collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                "status":      "rejected",
+                "admin_note":  body.admin_note or "",
+                "reviewed_at": now,
+            }},
+        )
+
+        # Notify user of rejection
+        await app_notifications_collection.insert_one({
+            "user_id":   review["user_id"],
+            "type":      "bill_review_rejected",
+            "title":     "Bill Review Update",
+            "body":      f"Your bill from '{review['shop_name']}' could not be verified. "
+                         + (f"Note: {body.admin_note}" if body.admin_note else "Please ensure the bill is clear and legible."),
+            "data":      {"review_id": review_id},
+            "read":      False,
+            "created_at": now,
+        })
+
+        return {"ok": True, "action": "rejected"}
+
+
+# ── GET /bill/my-reviews (user — check status of submitted reviews) ───────────
+@router.get("/my-reviews")
+async def my_reviews(current_user=Depends(get_current_user_optional)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid     = str(current_user["_id"])
+    reviews = await app_bill_reviews_collection.find({"user_id": uid}).sort("submitted_at", -1).to_list(50)
+    return [
+        {
+            "id":            str(r["_id"]),
+            "shop_name":     r.get("shop_name", ""),
+            "total_amount":  r.get("total_amount", 0),
+            "status":        r.get("status", "pending"),
+            "reward_points": r.get("reward_points"),
+            "cashback":      r.get("cashback"),
+            "admin_note":    r.get("admin_note"),
+            "submitted_at":  r["submitted_at"].isoformat() if r.get("submitted_at") else "",
+            "reviewed_at":   r["reviewed_at"].isoformat() if r.get("reviewed_at") else "",
+            "type":          "manual",
+        }
+        for r in reviews
+    ]
+
+
+# ── GET /bill/notifications (user — bill-related notifications) ──────────────
+@router.get("/notifications")
+async def get_bill_notifications(current_user=Depends(get_current_user_optional)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid   = str(current_user["_id"])
+    notifs = await app_notifications_collection.find(
+        {"user_id": uid}
+    ).sort("created_at", -1).to_list(50)
+    return [
+        {
+            "id":         str(n["_id"]),
+            "type":       n.get("type", ""),
+            "title":      n.get("title", ""),
+            "body":       n.get("body", ""),
+            "data":       n.get("data", {}),
+            "read":       n.get("read", False),
+            "created_at": n["created_at"].isoformat() if n.get("created_at") else "",
+        }
+        for n in notifs
+    ]
+
+
+# ── POST /bill/notifications/{id}/read ───────────────────────────────────────
+@router.post("/notifications/{notif_id}/read")
+async def mark_notification_read(
+    notif_id: str,
+    current_user=Depends(get_current_user_optional),
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        oid = ObjectId(notif_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notification ID")
+    await app_notifications_collection.update_one(
+        {"_id": oid, "user_id": str(current_user["_id"])},
+        {"$set": {"read": True}},
+    )
+    return {"ok": True}

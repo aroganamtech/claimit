@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/bill_reward_model.dart';
 import '../providers/bill_reward_provider.dart';
+import '../services/bill_service.dart';
 
 class BillRewardWalletScreen extends StatefulWidget {
   const BillRewardWalletScreen({super.key});
@@ -14,14 +15,24 @@ class BillRewardWalletScreen extends StatefulWidget {
 
 class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
   static const _blue = Color(0xFF1565C0);
+  List<Map<String, dynamic>> _myReviews = [];
+  List<Map<String, dynamic>> _notifications = [];
 
   @override
   void initState() {
     super.initState();
-    // Refresh wallet + history from server every time the screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BillRewardProvider>().loadAll();
+      _loadExtras();
     });
+  }
+
+  Future<void> _loadExtras() async {
+    try {
+      final reviews = await BillService.instance.fetchMyReviews();
+      final notifs  = await BillService.instance.fetchBillNotifications();
+      if (mounted) setState(() { _myReviews = reviews; _notifications = notifs; });
+    } catch (_) {}
   }
 
   @override
@@ -119,13 +130,72 @@ class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
                 ),
               ),
 
+              // ── Notifications banner ──────────────────────────────────────
+              if (_notifications.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Recent Updates',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                      const SizedBox(height: 8),
+                      ..._notifications.take(3).map((n) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: n['type'] == 'bill_review_approved'
+                              ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: n['type'] == 'bill_review_approved'
+                                ? const Color(0xFF4CAF50) : const Color(0xFFFF9800),
+                          ),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            n['type'] == 'bill_review_approved'
+                                ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                            color: n['type'] == 'bill_review_approved'
+                                ? const Color(0xFF2E7D32) : const Color(0xFFF57C00),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(n['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              Text(n['body'] ?? '', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)), maxLines: 2),
+                            ],
+                          )),
+                        ]),
+                      )),
+                    ],
+                  ),
+                ),
+
+              // ── Manual reviews section ────────────────────────────────────
+              if (_myReviews.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Bills Under Review',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                      const SizedBox(height: 8),
+                      ..._myReviews.map((r) => _ReviewTile(review: r)),
+                    ],
+                  ),
+                ),
+
               // ── History header ────────────────────────────────────────────
               const Padding(
                 padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Reward history',
+                    'Auto-scanned Bills',
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
@@ -363,6 +433,91 @@ class _HistoryTile extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Manual review tile ────────────────────────────────────────────────────────
+class _ReviewTile extends StatelessWidget {
+  final Map<String, dynamic> review;
+  const _ReviewTile({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    final status    = review['status'] as String? ?? 'pending';
+    final shopName  = review['shop_name'] as String? ?? 'Bill';
+    final amount    = (review['total_amount'] as num?)?.toDouble() ?? 0;
+    final pts       = review['reward_points'];
+    final cb        = review['cashback'];
+    final note      = review['admin_note'] as String? ?? '';
+
+    Color statusColor;
+    IconData statusIcon;
+    String statusLabel;
+    Color bgColor;
+    switch (status) {
+      case 'approved':
+        statusColor = const Color(0xFF2E7D32);
+        statusIcon  = Icons.check_circle_rounded;
+        statusLabel = 'Approved';
+        bgColor     = const Color(0xFFE8F5E9);
+        break;
+      case 'rejected':
+        statusColor = const Color(0xFFC62828);
+        statusIcon  = Icons.cancel_rounded;
+        statusLabel = 'Rejected';
+        bgColor     = const Color(0xFFFFEBEE);
+        break;
+      default:
+        statusColor = const Color(0xFFF57C00);
+        statusIcon  = Icons.pending_actions_rounded;
+        statusLabel = 'Under Review';
+        bgColor     = const Color(0xFFFFF3E0);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(statusIcon, color: statusColor, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(shopName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: statusColor.withOpacity(0.5)),
+              ),
+              child: Text(statusLabel,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: statusColor)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text('₹${amount.toStringAsFixed(0)}  •  Manual review',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+          if (status == 'approved' && pts != null) ...[
+            const SizedBox(height: 4),
+            Text('Earned: $pts pts  •  ₹${(cb as num).toStringAsFixed(2)} cashback',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: statusColor)),
+          ],
+          if (status == 'rejected' && note.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Note: $note', style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E))),
+          ],
         ],
       ),
     );

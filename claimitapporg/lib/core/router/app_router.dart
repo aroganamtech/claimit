@@ -7,6 +7,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/otp_screen.dart';
 import '../../features/auth/screens/success_screen.dart';
+import '../../features/auth/screens/social_complete_profile_screen.dart';
 import '../../features/location/screens/location_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/claims/screens/claims_list_screen.dart';
@@ -46,6 +47,7 @@ import '../../features/bill_reader/screens/bill_scanner_screen.dart';
 import '../../features/bill_reader/screens/bill_scanning_progress_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_success_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_wallet_screen.dart';
+import '../../features/bill_reader/screens/bill_review_pending_screen.dart';
 
 // ── Navigator keys ─────────────────────────────────────────────────────────────
 // Must be module-level finals so they are never recreated on rebuild.
@@ -71,13 +73,24 @@ class AppRouter {
 
         final isPostLoginFlow =
             state.matchedLocation == '/auth/success' ||
+            state.matchedLocation == '/auth/complete-profile' ||
             state.matchedLocation == '/location';
 
         if (!isLoggedIn && !isPreLoginPage && !isPostLoginFlow) {
           return '/auth/login';
         }
         if (isLoggedIn && isPreLoginPage) {
+          // Facebook login: force profile completion before entering the app
+          if (authProvider.needsProfileCompletion) {
+            return '/auth/complete-profile';
+          }
           return '/home';
+        }
+        // Prevent Facebook users from bypassing the complete-profile screen
+        if (isLoggedIn &&
+            authProvider.needsProfileCompletion &&
+            !isPostLoginFlow) {
+          return '/auth/complete-profile';
         }
         return null;
       },
@@ -112,6 +125,10 @@ class AppRouter {
         GoRoute(
           path: '/auth/success',
           builder: (context, state) => const SuccessScreen(),
+        ),
+        GoRoute(
+          path: '/auth/complete-profile',
+          builder: (context, state) => const SocialCompleteProfileScreen(),
         ),
         GoRoute(
           path: '/location',
@@ -260,6 +277,16 @@ class AppRouter {
           pageBuilder: (context, state) => CustomTransitionPage(
             key: const ValueKey('bill-reader-success'),
             child: const BillRewardSuccessScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
+        ),
+        GoRoute(
+          parentNavigatorKey: _rootNavKey,
+          path: '/bill-reader/review-pending',
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-review-pending'),
+            child: const BillReviewPendingScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
           ),

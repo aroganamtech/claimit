@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/bill_reward_provider.dart';
+import '../services/bill_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillConfirmScreen
@@ -28,8 +29,10 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
 
   late TextEditingController _amtCtrl;
   late TextEditingController _shopCtrl;
-  bool _claiming    = false;
-  bool _showOcrText = false;
+  bool _claiming         = false;
+  bool _showOcrText      = false;
+  bool _manualMode       = false;   // user chose to enter/fix manually
+  bool _submittingManual = false;
 
   @override
   void initState() {
@@ -171,6 +174,42 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   }
 
   void _rescan() => context.go('/bill-reader/scanner');
+
+  Future<void> _submitForReview() async {
+    final raw = _amtCtrl.text.trim();
+    if (raw.isEmpty || (double.tryParse(raw) ?? 0) <= 0) {
+      _snack('Please enter the bill amount before submitting');
+      return;
+    }
+    final provider  = context.read<BillRewardProvider>();
+    final imagePath = provider.pendingImagePath;
+    if (imagePath == null || imagePath.isEmpty) {
+      _snack('Bill image is required. Please retake the photo.');
+      return;
+    }
+
+    setState(() => _submittingManual = true);
+    try {
+      final amount   = double.parse(raw);
+      final shopName = _shopCtrl.text.trim();
+      final reason   = _manualMode ? 'wrong_data' : 'missing_fields';
+      await BillService.instance.submitManualReview(
+        totalAmount:  amount,
+        imagePath:    imagePath,
+        shopName:     shopName.isNotEmpty ? shopName : null,
+        billNumber:   provider.pendingBillNumber,
+        billDate:     provider.pendingBillDate,
+        billTime:     provider.pendingBillTime,
+        manualReason: reason,
+      );
+      if (!mounted) return;
+      context.pushReplacement('/bill-reader/review-pending');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _submittingManual = false);
+    }
+  }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -581,34 +620,173 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                 ),
               ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // ── Confirm button ────────────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _claiming ? null : _confirmAndClaim,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28)),
-                  elevation: 0,
+            // ── Missing fields warning ────────────────────────────────────────
+            Builder(builder: (ctx) {
+              final shopMissing = _shopCtrl.text.trim().isEmpty;
+              final amtMissing  = _amtCtrl.text.trim().isEmpty ||
+                  (double.tryParse(_amtCtrl.text.trim()) ?? 0) <= 0;
+              final hasMissing  = shopMissing || amtMissing;
+              if (!hasMissing && !_manualMode) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _manualMode
+                      ? const Color(0xFFF3E5F5)
+                      : const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _manualMode
+                        ? const Color(0xFFAB47BC)
+                        : const Color(0xFFFF9800),
+                  ),
                 ),
-                child: _claiming
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5),
-                      )
-                    : const Text('Yes, Claim Reward',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(
+                        _manualMode
+                            ? Icons.edit_note_rounded
+                            : Icons.warning_amber_rounded,
+                        color: _manualMode
+                            ? const Color(0xFF7B1FA2)
+                            : const Color(0xFFF57C00),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _manualMode
+                              ? 'Manual entry mode — fill in the correct details and submit for review.'
+                              : 'Some fields are missing. Fill them in and submit for team review.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _manualMode
+                                ? const Color(0xFF7B1FA2)
+                                : const Color(0xFFF57C00),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ]),
+                    if (!_manualMode && hasMissing) ...[
+                      const SizedBox(height: 8),
+                      if (shopMissing)
+                        const Text('• Shop name is missing',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF92400E))),
+                      if (amtMissing)
+                        const Text('• Bill amount is missing',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF92400E))),
+                    ],
+                  ],
+                ),
+              );
+            }),
+
+            // ── Manual mode toggle (when OCR succeeded) ───────────────────────
+            if (!_manualMode && _shopCtrl.text.trim().isNotEmpty &&
+                (_amtCtrl.text.trim().isNotEmpty))
+              GestureDetector(
+                onTap: () => setState(() => _manualMode = true),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3E5F5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFCE93D8)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.edit_note_rounded, color: Color(0xFF7B1FA2), size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'OCR data looks wrong? Tap to enter manually for review',
+                          style: TextStyle(fontSize: 13, color: Color(0xFF7B1FA2), fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: Color(0xFF7B1FA2)),
+                    ],
+                  ),
+                ),
               ),
-            ),
+
+            // ── Confirm button (normal OCR flow, not manual mode) ─────────────
+            if (!_manualMode)
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: (_claiming ||
+                      _shopCtrl.text.trim().isEmpty ||
+                      (_amtCtrl.text.trim().isEmpty))
+                      ? null
+                      : _confirmAndClaim,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28)),
+                    elevation: 0,
+                  ),
+                  child: _claiming
+                      ? const SizedBox(
+                          width: 24, height: 24,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))
+                      : const Text('Yes, Claim Reward',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+
+            const SizedBox(height: 12),
+
+            // ── Submit for review button (missing fields OR manual mode) ───────
+            if (_manualMode ||
+                _shopCtrl.text.trim().isEmpty ||
+                (_amtCtrl.text.trim().isEmpty))
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton.icon(
+                  onPressed: _submittingManual ? null : _submitForReview,
+                  icon: _submittingManual
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.send_rounded, size: 20),
+                  label: Text(
+                    _submittingManual
+                        ? 'Submitting...'
+                        : _manualMode
+                            ? 'Submit for Review'
+                            : 'Submit Incomplete Bill for Review',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7B1FA2),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+
+            if (_manualMode) ...[
+              const SizedBox(height: 10),
+              Center(
+                child: TextButton(
+                  onPressed: () => setState(() => _manualMode = false),
+                  child: const Text('Cancel — go back to OCR data',
+                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 12),
 
@@ -619,8 +797,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
               child: OutlinedButton.icon(
                 onPressed: _rescan,
                 icon: const Icon(Icons.qr_code_scanner_rounded, size: 28),
-                label: const Text('Scan Again',
-                    style: TextStyle(fontSize: 15)),
+                label: const Text('Scan Again', style: TextStyle(fontSize: 15)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _blue,
                   side: const BorderSide(color: _blue, width: 1.5),

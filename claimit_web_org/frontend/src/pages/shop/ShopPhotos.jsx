@@ -1,12 +1,35 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-// Convert a File object to a base64 data-URL string
+// Convert a File to a compressed base64 data-URL (max 800px, ~150KB)
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
     reader.onerror = reject
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        const MAX = 800
+        let { width, height } = img
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+          else { width = Math.round(width * MAX / height); height = MAX }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width; canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        let quality = 0.75
+        let result = canvas.toDataURL('image/jpeg', quality)
+        // Reduce quality until under ~150KB
+        while (result.length > 200000 && quality > 0.2) {
+          quality -= 0.1
+          result = canvas.toDataURL('image/jpeg', quality)
+        }
+        resolve(result)
+      }
+      img.src = e.target.result
+    }
     reader.readAsDataURL(file)
   })
 }

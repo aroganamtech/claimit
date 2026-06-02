@@ -11,6 +11,13 @@ class UserRole(str, Enum):
     SHOP = "shop"               # L3 - Shop owner portal
 
 
+class SalesSubRole(str, Enum):
+    SALES_HEAD          = "sales_head"
+    SALES_EXECUTIVE     = "sales_executive"
+    ADVERTISING_EXECUTIVE = "advertising_executive"
+    FREELANCER          = "freelancer"
+
+
 class ShopType(str, Enum):
     REWARD = "reward"
     REDEEM = "redeem"
@@ -28,6 +35,8 @@ class RegisterRequest(BaseModel):
     phone: str
     email: EmailStr
     role: UserRole
+    sub_role: Optional[str] = None      # sales sub-role
+    referred_by: Optional[str] = None   # Sales Head unique_id
 
 
 class OTPVerifyRequest(BaseModel):
@@ -46,6 +55,8 @@ class UserDetailsRequest(BaseModel):
     role: UserRole
     phone: str
     email: EmailStr
+    sub_role: Optional[str] = None
+    referred_by: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

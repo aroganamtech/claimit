@@ -7,6 +7,8 @@ const NAV = [
   { label: 'Shops',       icon: '🏪', path: '/admin/shops' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
+  { label: 'Sales Team',  icon: '🏅', path: '/admin/sales-team' },
+  { label: 'Bill Reviews',icon: '🧾', path: '/admin/bill-reviews' },
   { label: 'Project PDFs',icon: '📄', path: '/admin/pdfs' },
 ]
 

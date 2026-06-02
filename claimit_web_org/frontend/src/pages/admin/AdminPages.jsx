@@ -353,3 +353,395 @@ export function AdminPDFs() {
     </PageShell>
   )
 }
+
+// ─── Sales Team ──────────────────────────────────────────────
+const SUB_ROLE_LABEL = {
+  sales_head:             'Sales Head',
+  sales_executive:        'Sales Executive',
+  advertising_executive:  'Advertising Executive',
+  freelancer:             'Freelancer',
+}
+const SUB_ROLE_COLOR = {
+  sales_head:             { bg: '#FFF8E1', color: '#F57F17' },
+  sales_executive:        { bg: '#E8F5E9', color: '#2E7D32' },
+  advertising_executive:  { bg: '#E3F2FD', color: '#1565C0' },
+  freelancer:             { bg: '#F3E5F5', color: '#6A1B9A' },
+}
+
+export function AdminSalesTeam() {
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filter, setFilter]     = useState('all')
+  const [search, setSearch]     = useState('')
+
+  useEffect(() => {
+    api.sales.getAllEmployees()
+      .then(setEmployees)
+      .catch(() => setEmployees([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = employees.filter(e => {
+    if (filter !== 'all' && e.sub_role !== filter) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return e.name.toLowerCase().includes(q) ||
+        e.unique_id?.toLowerCase().includes(q) ||
+        e.phone?.includes(q) ||
+        e.email?.toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  const counts = {
+    all: employees.length,
+    sales_head: employees.filter(e => e.sub_role === 'sales_head').length,
+    sales_executive: employees.filter(e => e.sub_role === 'sales_executive').length,
+    advertising_executive: employees.filter(e => e.sub_role === 'advertising_executive').length,
+    freelancer: employees.filter(e => e.sub_role === 'freelancer').length,
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4 }}>Sales Team</h1>
+          <p style={{ color: '#666', fontSize: 13 }}>All registered sales employees with their unique IDs</p>
+        </div>
+        <div style={{ background: '#1565C0', color: '#fff', borderRadius: 10, padding: '10px 18px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{employees.length}</div>
+          <div style={{ fontSize: 11, opacity: 0.85 }}>Total Employees</div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { key: 'sales_head',             label: 'Sales Heads' },
+          { key: 'sales_executive',        label: 'Sales Executives' },
+          { key: 'advertising_executive',  label: 'Ad Executives' },
+          { key: 'freelancer',             label: 'Freelancers' },
+        ].map(r => {
+          const c = SUB_ROLE_COLOR[r.key] || { bg: '#f5f5f5', color: '#333' }
+          return (
+            <div key={r.key}
+              onClick={() => setFilter(filter === r.key ? 'all' : r.key)}
+              style={{
+                background: filter === r.key ? c.bg : '#fff',
+                border: `1.5px solid ${filter === r.key ? c.color : '#eee'}`,
+                borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: c.color }}>{counts[r.key]}</div>
+              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{r.label}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Search + table */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <input
+            placeholder="Search by name, ID, phone or email…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              flex: 1, padding: '9px 14px', border: '1px solid #ddd',
+              borderRadius: 8, fontSize: 13, fontFamily: 'Poppins', outline: 'none'
+            }}
+          />
+          {filter !== 'all' && (
+            <button onClick={() => setFilter('all')}
+              style={{ ...ghostBtn, fontSize: 12 }}>Clear filter ✕</button>
+          )}
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center', color: '#bbb' }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>👥</div>
+            <div style={{ fontWeight: 500 }}>No employees found</div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['Employee', 'Unique ID', 'Role', 'Phone', 'Referred By (Head ID)', 'Shops', 'Joined'].map(h => (
+                  <th key={h} style={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((e, i) => {
+                const c = SUB_ROLE_COLOR[e.sub_role] || { bg: '#f5f5f5', color: '#555' }
+                return (
+                  <tr key={e.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 600 }}>{e.name}</div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{e.email}</div>
+                    </td>
+                    <td style={td}>
+                      <span style={{
+                        background: '#EEF4FF', color: '#1565C0',
+                        fontWeight: 700, fontSize: 13, padding: '4px 10px',
+                        borderRadius: 6, fontFamily: 'monospace', letterSpacing: 0.5
+                      }}>
+                        {e.unique_id || '—'}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <span style={{
+                        background: c.bg, color: c.color,
+                        fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20
+                      }}>
+                        {SUB_ROLE_LABEL[e.sub_role] || e.sub_role || '—'}
+                      </span>
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{e.phone || '—'}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', color: '#1565C0', fontWeight: 600 }}>
+                      {e.referred_by || <span style={{ color: '#ccc', fontFamily: 'Poppins', fontWeight: 400 }}>—</span>}
+                    </td>
+                    <td style={td}>
+                      <span style={{ background: '#E8F5E9', color: '#2E7D32', fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 6 }}>
+                        {e.total_shops}
+                      </span>
+                    </td>
+                    <td style={{ ...td, color: '#888' }}>{e.created_at?.slice(0, 10) || '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Bill Reviews ─────────────────────────────────────────────
+export function AdminBillReviews() {
+  const [reviews, setReviews]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filter, setFilter]     = useState('pending')
+  const [selected, setSelected] = useState(null)   // review being actioned
+  const [pts, setPts]           = useState('')
+  const [cb, setCb]             = useState('')
+  const [note, setNote]         = useState('')
+  const [actioning, setActioning] = useState(false)
+
+  const load = (status = filter) => {
+    setLoading(true)
+    api.get(`/bill/manual-reviews?status=${status}`)
+      .then(r => setReviews(r.data))
+      .catch(() => setReviews([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [filter])
+
+  const handleAction = async (action) => {
+    if (!selected) return
+    setActioning(true)
+    try {
+      await api.post(`/bill/manual-reviews/${selected.id}/action`, {
+        action,
+        reward_points: pts ? parseInt(pts) : undefined,
+        cashback:      cb  ? parseFloat(cb) : undefined,
+        admin_note:    note || undefined,
+      })
+      setSelected(null); setPts(''); setCb(''); setNote('')
+      load()
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Action failed')
+    } finally { setActioning(false) }
+  }
+
+  const counts = { pending: 0, approved: 0, rejected: 0 }
+  reviews.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++ })
+
+  const REASON_LABEL = { missing_fields: 'Missing fields', wrong_data: 'Wrong OCR data' }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4 }}>Bill Reviews</h1>
+          <p style={{ color: '#666', fontSize: 13 }}>Manual bill submissions awaiting verification</p>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {[
+          { key: 'pending',  label: 'Pending',  color: '#F57C00' },
+          { key: 'approved', label: 'Approved', color: '#2E7D32' },
+          { key: 'rejected', label: 'Rejected', color: '#C62828' },
+          { key: 'all',      label: 'All',      color: '#555' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setFilter(t.key)}
+            style={{
+              padding: '8px 18px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Poppins', fontSize: 13,
+              fontWeight: filter === t.key ? 700 : 500,
+              background: filter === t.key ? t.color : '#f5f5f5',
+              color: filter === t.key ? '#fff' : '#555',
+              border: `1.5px solid ${filter === t.key ? t.color : '#e0e0e0'}`,
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Reviews table */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading...</div>
+        ) : reviews.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center', color: '#bbb' }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>🧾</div>
+            <div style={{ fontWeight: 500 }}>No {filter} reviews</div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['User ID', 'Shop', 'Amount', 'Reason', 'Date', 'Status', 'Actions'].map(h => (
+                  <th key={h} style={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {reviews.map((r, i) => {
+                const statusColor = r.status === 'approved' ? '#2E7D32' : r.status === 'rejected' ? '#C62828' : '#F57C00'
+                const statusBg    = r.status === 'approved' ? '#E8F5E9' : r.status === 'rejected' ? '#FFEBEE' : '#FFF3E0'
+                return (
+                  <tr key={r.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{r.user_id?.slice(-8) || '—'}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{r.shop_name || '—'}</td>
+                    <td style={{ ...td, fontWeight: 700, color: '#1565C0' }}>₹{r.total_amount}</td>
+                    <td style={td}>
+                      <span style={{ background: '#EEF4FF', color: '#1565C0', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>
+                        {REASON_LABEL[r.manual_reason] || r.manual_reason}
+                      </span>
+                    </td>
+                    <td style={{ ...td, color: '#888', fontSize: 12 }}>{r.submitted_at?.slice(0, 10)}</td>
+                    <td style={td}>
+                      <span style={{ background: statusBg, color: statusColor, fontSize: 11, padding: '3px 8px', borderRadius: 20, fontWeight: 700 }}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {/* View bill image */}
+                        <button onClick={() => setSelected({ ...r, _viewOnly: true })} style={{ ...ghostBtn }}>
+                          View Bill
+                        </button>
+                        {r.status === 'pending' && (
+                          <button onClick={() => { setSelected(r); setPts(Math.round(r.total_amount * 0.1).toString()); setCb((r.total_amount * 0.01).toFixed(2)) }}
+                            style={{ ...ghostBtn, borderColor: '#4CAF50', color: '#2E7D32' }}>
+                            Review
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Modal: view bill + approve/reject */}
+      {selected && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '90vh',
+            overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 18 }}>
+                {selected._viewOnly ? 'Bill Image' : 'Review Bill'}
+              </h3>
+              <button onClick={() => { setSelected(null); setPts(''); setCb(''); setNote('') }}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#666' }}>✕</button>
+            </div>
+
+            {/* Bill details */}
+            <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              {[
+                ['Shop', selected.shop_name || '—'],
+                ['Amount', `₹${selected.total_amount}`],
+                ['Bill Date', selected.bill_date || '—'],
+                ['Bill Number', selected.bill_number || '—'],
+                ['Reason', REASON_LABEL[selected.manual_reason] || selected.manual_reason],
+                ['User ID', selected.user_id],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #eee' }}>
+                  <span style={{ color: '#888', fontSize: 13 }}>{label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Bill image */}
+            {selected.image_base64 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, color: '#888', marginBottom: 8, fontWeight: 600 }}>BILL IMAGE</p>
+                <img
+                  src={`data:image/jpeg;base64,${selected.image_base64}`}
+                  alt="Bill"
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid #e0e0e0' }}
+                />
+              </div>
+            )}
+
+            {/* Approve/reject form */}
+            {!selected._viewOnly && selected.status === 'pending' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
+                      Reward Points
+                    </label>
+                    <input value={pts} onChange={e => setPts(e.target.value)} type="number"
+                      placeholder={`Default: ${Math.round(selected.total_amount * 0.1)}`}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
+                      Cashback (₹)
+                    </label>
+                    <input value={cb} onChange={e => setCb(e.target.value)} type="number" step="0.01"
+                      placeholder={`Default: ${(selected.total_amount * 0.01).toFixed(2)}`}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
+                    Admin Note (optional)
+                  </label>
+                  <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                    placeholder="Reason for approval or rejection…"
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => handleAction('approve')} disabled={actioning}
+                    style={{ flex: 1, padding: '12px', background: '#2E7D32', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'Poppins', opacity: actioning ? 0.6 : 1 }}>
+                    {actioning ? 'Processing…' : '✓ Approve & Add Rewards'}
+                  </button>
+                  <button onClick={() => handleAction('reject')} disabled={actioning}
+                    style={{ flex: 1, padding: '12px', background: '#C62828', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'Poppins', opacity: actioning ? 0.6 : 1 }}>
+                    {actioning ? 'Processing…' : '✕ Reject'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

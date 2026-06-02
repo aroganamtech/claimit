@@ -93,7 +93,8 @@ const advertiser = {
 const _salesEmail = () => localStorage.getItem('claimit_email') || undefined
 
 const sales = {
-  getDashboard: ()             => get('/sales/dashboard', { email: _salesEmail() }),
+  getDashboard:    ()             => get('/sales/dashboard', { email: _salesEmail() }),
+  getAllEmployees:  ()             => get('/sales/all-employees'),
   getShops:     (status='all') => get('/sales/shops', { status, email: _salesEmail() }),
   addShop:      (payload)      => post('/sales/shops/add', payload),
   getTeam:      ()             => get('/sales/team'),

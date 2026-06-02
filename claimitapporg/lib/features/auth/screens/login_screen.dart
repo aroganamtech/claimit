@@ -13,11 +13,55 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _controller = TextEditingController();
+  /// Tracks which social button is loading so we can show a spinner in the
+  /// right button while keeping the other one visually idle.
+  String? _socialLoading;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _signInWithGoogle(AuthProvider auth) async {
+    setState(() => _socialLoading = 'google');
+    final success = await auth.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _socialLoading = null);
+    if (success) {
+      // Router redirect fires automatically via authStateNotifier.
+      // If needsProfileCompletion (not expected for Google) the router will
+      // send them to /auth/complete-profile; otherwise to /home.
+      context.go('/auth/success');
+    } else if (auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _signInWithFacebook(AuthProvider auth) async {
+    setState(() => _socialLoading = 'facebook');
+    final success = await auth.loginWithFacebook();
+    if (!mounted) return;
+    setState(() => _socialLoading = null);
+    if (success) {
+      if (auth.needsProfileCompletion) {
+        context.go('/auth/complete-profile');
+      } else {
+        context.go('/auth/success');
+      }
+    } else if (auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _sendOtp() async {
@@ -213,30 +257,54 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 16),
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SocialButton(
-                        onTap: () {},
-                        child: const Text(
-                          'G',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF4285F4),
-                          ),
+                  Consumer<AuthProvider>(
+                    builder: (context, auth, _) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _SocialButton(
+                          onTap: auth.isLoading
+                              ? null
+                              : () => _signInWithGoogle(auth),
+                          child: (_socialLoading == 'google')
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF4285F4),
+                                  ),
+                                )
+                              : const Text(
+                                  'G',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF4285F4),
+                                  ),
+                                ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      _SocialButton(
-                        onTap: () {},
-                        child: const Icon(
-                          Icons.facebook,
-                          size: 28,
-                          color: Color(0xFF1877F2),
+                        const SizedBox(width: 16),
+                        _SocialButton(
+                          onTap: auth.isLoading
+                              ? null
+                              : () => _signInWithFacebook(auth),
+                          child: (_socialLoading == 'facebook')
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF1877F2),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.facebook,
+                                  size: 28,
+                                  color: Color(0xFF1877F2),
+                                ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 32),
@@ -283,7 +351,7 @@ class _HomeLogoWidget extends StatelessWidget {
 }
 
 class _SocialButton extends StatelessWidget {
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget child;
   const _SocialButton({required this.onTap, required this.child});
 
