@@ -257,54 +257,54 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 16),
 
-                  Consumer<AuthProvider>(
-                    builder: (context, auth, _) => Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _SocialButton(
-                          onTap: auth.isLoading
-                              ? null
-                              : () => _signInWithGoogle(auth),
-                          child: (_socialLoading == 'google')
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFF4285F4),
-                                  ),
-                                )
-                              : const Text(
-                                  'G',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF4285F4),
-                                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _SocialButton(
+                        onTap: _socialLoading != null
+                            ? null
+                            : () => _signInWithGoogle(
+                                context.read<AuthProvider>()),
+                        child: _socialLoading == 'google'
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF4285F4),
                                 ),
-                        ),
-                        const SizedBox(width: 16),
-                        _SocialButton(
-                          onTap: auth.isLoading
-                              ? null
-                              : () => _signInWithFacebook(auth),
-                          child: (_socialLoading == 'facebook')
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFF1877F2),
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.facebook,
-                                  size: 28,
+                              )
+                            : const Text(
+                                'G',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4285F4),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 16),
+                      _SocialButton(
+                        onTap: _socialLoading != null
+                            ? null
+                            : () => _signInWithFacebook(
+                                context.read<AuthProvider>()),
+                        child: _socialLoading == 'facebook'
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                   color: Color(0xFF1877F2),
                                 ),
-                        ),
-                      ],
-                    ),
+                              )
+                            : const Icon(
+                                Icons.facebook,
+                                size: 28,
+                                color: Color(0xFF1877F2),
+                              ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 32),

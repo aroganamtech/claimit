@@ -1,133 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+
 import '../../auth/providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
+import '../models/notification_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data model
+// Helpers — map notification type → icon + colour + tab
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _NotifTab { all, alert, offer, reminder }
 
-class _NotifItem {
-  final String id;
-  final String title;
-  final String subtitle;
-  final String time;
-  final _NotifTab tab; // alert | offer | reminder
+class _NotifMeta {
   final IconData icon;
-  final Color iconColor;
-  bool isRead;
-
-  _NotifItem({
-    required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.time,
-    required this.tab,
-    required this.icon,
-    required this.iconColor,
-    this.isRead = false,
-  });
+  final Color    iconColor;
+  final _NotifTab tab;
+  const _NotifMeta(this.icon, this.iconColor, this.tab);
 }
 
-List<_NotifItem> _buildDummyNotifs() => [
-      _NotifItem(
-        id: '1',
-        title: 'Flash Sale Alert 🔥',
-        subtitle: 'Reliance Trends is offering 50% OFF today only. Hurry — ends at midnight!',
-        time: '2 min ago',
-        tab: _NotifTab.offer,
-        icon: Icons.local_fire_department_rounded,
-        iconColor: const Color(0xFFEF4444),
-      ),
-      _NotifItem(
-        id: '2',
-        title: 'Reward Points Added',
-        subtitle: 'You earned 120 points from your last bill scan at Big Bazaar. Keep scanning!',
-        time: '18 min ago',
-        tab: _NotifTab.offer,
-        icon: Icons.stars_rounded,
-        iconColor: const Color(0xFFF59E0B),
-      ),
-      _NotifItem(
-        id: '3',
-        title: 'Scan Bill Reminder',
-        subtitle: 'Did you shop recently? Don\'t forget to scan your bill to earn reward points.',
-        time: '1 hr ago',
-        tab: _NotifTab.reminder,
-        icon: Icons.document_scanner_outlined,
-        iconColor: const Color(0xFF2563EB),
-      ),
-      _NotifItem(
-        id: '4',
-        title: 'New Shop Nearby',
-        subtitle: 'Sathya Agencies just joined claimit. Visit and earn rewards on every purchase!',
-        time: '3 hrs ago',
-        tab: _NotifTab.alert,
-        icon: Icons.store_rounded,
-        iconColor: const Color(0xFF10B981),
-      ),
-      _NotifItem(
-        id: '5',
-        title: 'Exclusive Offer for You',
-        subtitle: 'Lakme Salon is offering an exclusive 30% discount for claimit members this week.',
-        time: '5 hrs ago',
-        tab: _NotifTab.offer,
-        icon: Icons.local_offer_rounded,
-        iconColor: const Color(0xFF8B5CF6),
-        isRead: true,
-      ),
-      _NotifItem(
-        id: '6',
-        title: 'Points Expiring Soon',
-        subtitle: '200 reward points will expire in 3 days. Redeem them before they\'re gone!',
-        time: 'Yesterday',
-        tab: _NotifTab.reminder,
-        icon: Icons.hourglass_bottom_rounded,
-        iconColor: const Color(0xFFF97316),
-      ),
-      _NotifItem(
-        id: '7',
-        title: 'Friend Joined claimit',
-        subtitle: 'Your friend Priya joined claimit using your referral. You both earned 50 bonus points!',
-        time: 'Yesterday',
-        tab: _NotifTab.reminder,
-        icon: Icons.people_alt_rounded,
-        iconColor: const Color(0xFF2563EB),
-        isRead: true,
-      ),
-      _NotifItem(
-        id: '8',
-        title: 'App Update Available',
-        subtitle: 'A new version of claimit (v2.1) is available. Update now for the best experience.',
-        time: '2 days ago',
-        tab: _NotifTab.alert,
-        icon: Icons.system_update_alt_rounded,
-        iconColor: const Color(0xFF6B7280),
-        isRead: true,
-      ),
-      _NotifItem(
-        id: '9',
-        title: 'Delivery Update',
-        subtitle: 'Your redeemed item has been dispatched. Expected delivery: 2–3 business days.',
-        time: '3 days ago',
-        tab: _NotifTab.alert,
-        icon: Icons.local_shipping_rounded,
-        iconColor: const Color(0xFF2563EB),
-        isRead: true,
-      ),
-      _NotifItem(
-        id: '10',
-        title: 'Weekly Rewards Summary',
-        subtitle: 'This week you earned 340 points across 5 stores. You\'re on a great streak!',
-        time: '5 days ago',
-        tab: _NotifTab.offer,
-        icon: Icons.bar_chart_rounded,
-        iconColor: const Color(0xFF10B981),
-        isRead: true,
-      ),
-    ];
+_NotifMeta _metaFor(String type) {
+  switch (type) {
+    case 'bill_review_approved':
+      return const _NotifMeta(Icons.receipt_long_rounded,   Color(0xFF2E7D32), _NotifTab.offer);
+    case 'bill_review_rejected':
+      return const _NotifMeta(Icons.receipt_long_rounded,   Color(0xFFC62828), _NotifTab.alert);
+    case 'claim_approved':
+    case 'claim_update':
+      return const _NotifMeta(Icons.check_circle_rounded,   Color(0xFF2E7D32), _NotifTab.alert);
+    case 'claim_rejected':
+      return const _NotifMeta(Icons.cancel_rounded,         Color(0xFFC62828), _NotifTab.alert);
+    case 'reward':
+    case 'points':
+      return const _NotifMeta(Icons.stars_rounded,          Color(0xFFF59E0B), _NotifTab.offer);
+    case 'offer':
+    case 'deal':
+      return const _NotifMeta(Icons.local_offer_rounded,    Color(0xFF8B5CF6), _NotifTab.offer);
+    case 'shop':
+      return const _NotifMeta(Icons.store_rounded,          Color(0xFF10B981), _NotifTab.alert);
+    case 'reminder':
+      return const _NotifMeta(Icons.document_scanner_outlined, Color(0xFF2563EB), _NotifTab.reminder);
+    case 'expiry':
+      return const _NotifMeta(Icons.hourglass_bottom_rounded, Color(0xFFF97316), _NotifTab.reminder);
+    case 'referral':
+      return const _NotifMeta(Icons.people_alt_rounded,     Color(0xFF2563EB), _NotifTab.reminder);
+    case 'delivery':
+      return const _NotifMeta(Icons.local_shipping_rounded, Color(0xFF2563EB), _NotifTab.alert);
+    case 'system':
+    case 'update':
+      return const _NotifMeta(Icons.system_update_alt_rounded, Color(0xFF6B7280), _NotifTab.alert);
+    case 'flash_sale':
+      return const _NotifMeta(Icons.local_fire_department_rounded, Color(0xFFEF4444), _NotifTab.offer);
+    default:
+      return const _NotifMeta(Icons.notifications_rounded, Color(0xFF2563EB), _NotifTab.alert);
+  }
+}
+
+String _timeAgo(DateTime dt) {
+  final diff = DateTime.now().difference(dt);
+  if (diff.inSeconds < 60)  return 'Just now';
+  if (diff.inMinutes < 60)  return '${diff.inMinutes} min ago';
+  if (diff.inHours   < 24)  return '${diff.inHours} hr ago';
+  if (diff.inDays    < 7)   return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
+  return DateFormat('d MMM').format(dt);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -142,144 +79,123 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   _NotifTab _activeTab = _NotifTab.all;
-  final List<_NotifItem> _notifs = _buildDummyNotifs();
 
-  List<_NotifItem> get _filtered {
-    if (_activeTab == _NotifTab.all) return _notifs;
-    return _notifs.where((n) => n.tab == _activeTab).toList();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationProvider>().fetchNotifications();
+    });
   }
 
-  int get _unreadCount => _notifs.where((n) => !n.isRead).length;
+  List<NotificationModel> _filtered(List<NotificationModel> all) {
+    if (_activeTab == _NotifTab.all) return all;
+    return all.where((n) => _metaFor(n.type).tab == _activeTab).toList();
+  }
+
+  void _markRead(NotificationModel n) {
+    if (!n.isRead) {
+      context.read<NotificationProvider>().markAsRead(n.id);
+    }
+    // Navigate to wallet for bill review notifications
+    if (n.isBillReview) {
+      context.push('/bill-reader/wallet');
+    }
+  }
 
   void _markAllRead() {
-    setState(() {
-      for (final n in _notifs) {
-        n.isRead = true;
-      }
-    });
-  }
-
-  void _markRead(String id) {
-    setState(() {
-      final idx = _notifs.indexWhere((n) => n.id == id);
-      if (idx != -1) _notifs[idx].isRead = true;
-    });
-  }
-
-  void _dismiss(String id) {
-    setState(() {
-      _notifs.removeWhere((n) => n.id == id);
-    });
+    context.read<NotificationProvider>().markAllAsRead();
   }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          // ── Tab pills ──────────────────────────────────────────────────
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Row(
-              children: [
-                _TabBtn(
-                  label: 'All',
-                  active: _activeTab == _NotifTab.all,
-                  onTap: () => setState(() => _activeTab = _NotifTab.all),
-                ),
-                const SizedBox(width: 8),
-                _TabBtn(
-                  label: 'Alert',
-                  active: _activeTab == _NotifTab.alert,
-                  onTap: () => setState(() => _activeTab = _NotifTab.alert),
-                ),
-                const SizedBox(width: 8),
-                _TabBtn(
-                  label: 'Offer',
-                  active: _activeTab == _NotifTab.offer,
-                  onTap: () => setState(() => _activeTab = _NotifTab.offer),
-                ),
-                const SizedBox(width: 8),
-                _TabBtn(
-                  label: 'Reminder',
-                  active: _activeTab == _NotifTab.reminder,
-                  onTap: () => setState(() => _activeTab = _NotifTab.reminder),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Mark all read bar ──────────────────────────────────────────
-          if (_unreadCount > 0)
-            Container(
-              color: const Color(0xFFEFF6FF),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.mark_email_read_outlined,
-                      size: 28, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$_unreadCount unread notification${_unreadCount > 1 ? 's' : ''}',
-                    style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF2563EB),
-                        fontWeight: FontWeight.w500),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _markAllRead,
-                    child: const Text(
-                      'Mark all read',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF2563EB),
-                        fontWeight: FontWeight.w700,
-                        decoration: TextDecoration.underline,
-                        decorationColor: Color(0xFF2563EB),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // ── List ──────────────────────────────────────────────────────
-          Expanded(
-            child: filtered.isEmpty
-                ? _buildEmpty()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, i) {
-                      final notif = filtered[i];
-                      return _NotifCard(
-                        key: ValueKey(notif.id),
-                        notif: notif,
-                        onTap: () => _markRead(notif.id),
-                        onDismiss: () => _dismiss(notif.id),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  PreferredSizeWidget _buildAppBar() {
+    // Read location here (in build) so context.select is valid
     final location = context.select<AuthProvider, String>(
       (a) => a.user?.location?.isNotEmpty == true
           ? a.user!.location!
           : 'Select Area',
     );
 
+    return Consumer<NotificationProvider>(
+      builder: (context, provider, _) {
+        final allNotifs = provider.notifications;
+        final filtered  = _filtered(allNotifs);
+        final unread    = allNotifs.where((n) => !n.isRead).length;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF9FAFB),
+          appBar: _buildAppBar(unread, location),
+          body: Column(
+            children: [
+              // ── Tab pills ────────────────────────────────────────────────
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Row(
+                  children: [
+                    _TabBtn(label: 'All',      active: _activeTab == _NotifTab.all,      onTap: () => setState(() => _activeTab = _NotifTab.all)),
+                    const SizedBox(width: 8),
+                    _TabBtn(label: 'Alert',    active: _activeTab == _NotifTab.alert,    onTap: () => setState(() => _activeTab = _NotifTab.alert)),
+                    const SizedBox(width: 8),
+                    _TabBtn(label: 'Offer',    active: _activeTab == _NotifTab.offer,    onTap: () => setState(() => _activeTab = _NotifTab.offer)),
+                    const SizedBox(width: 8),
+                    _TabBtn(label: 'Reminder', active: _activeTab == _NotifTab.reminder, onTap: () => setState(() => _activeTab = _NotifTab.reminder)),
+                  ],
+                ),
+              ),
+
+              // ── Mark all read bar ────────────────────────────────────────
+              if (unread > 0)
+                Container(
+                  color: const Color(0xFFEFF6FF),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.mark_email_read_outlined, size: 28, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 6),
+                      Text('$unread unread notification${unread > 1 ? 's' : ''}',
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF2563EB), fontWeight: FontWeight.w500)),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: _markAllRead,
+                        child: const Text('Mark all read',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF2563EB), fontWeight: FontWeight.w700,
+                                decoration: TextDecoration.underline, decorationColor: Color(0xFF2563EB))),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // ── List ────────────────────────────────────────────────────
+              Expanded(
+                child: provider.isLoading
+                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+                    : filtered.isEmpty
+                        ? _buildEmpty()
+                        : RefreshIndicator(
+                            color: const Color(0xFF2563EB),
+                            onRefresh: provider.fetchNotifications,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, i) => _NotifCard(
+                                key: ValueKey(filtered[i].id),
+                                notif: filtered[i],
+                                onTap: () => _markRead(filtered[i]),
+                              ),
+                            ),
+                          ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(int unreadCount, String location) {
     final topPad = MediaQuery.of(context).padding.top;
+
     return PreferredSize(
       preferredSize: Size.fromHeight(112 + topPad),
       child: Container(
@@ -289,116 +205,56 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Row 1: same as home dashboard appbar ───────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
-                    // Logo icon + text
-                    Image.asset(
-                    'assets/images/home_main_logo.png',
-                    height: 30,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Row(
-                      children: [
-                        Image.asset('assets/icons/main_icon.png',
-                            width: 38, height: 38, fit: BoxFit.contain),
-                        const SizedBox(width: 6),
-                        const Text('claimit',
-                            style: TextStyle(fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1565C0))),
-                      ],
-                    ),
-                  ),
+                    Image.asset('assets/images/home_main_logo.png', height: 30, fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Row(children: [
+                          Image.asset('assets/icons/main_icon.png', width: 38, height: 38),
+                          const SizedBox(width: 6),
+                          const Text('claimit', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1565C0))),
+                        ])),
                     const Spacer(),
-                    // Location
                     GestureDetector(
                       onTap: () => context.push('/location'),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              location,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 26),
-                        ],
-                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Flexible(child: Text(location, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black))),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.keyboard_arrow_down_rounded, size: 26),
+                      ]),
                     ),
                     const Spacer(),
-                    // Search icon
                     GestureDetector(
                       onTap: () => context.push('/search'),
                       child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: const Icon(
-                          Icons.search,
-                          size: 28,
-                          color: Color(0xFF1565C0),
-                        ),
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFFE5E7EB))),
+                        child: const Icon(Icons.search, size: 28, color: Color(0xFF1565C0)),
                       ),
                     ),
                   ],
                 ),
               ),
-
               const Divider(height: 1, color: Color(0xFFF3F4F6)),
-
-              // ── Row 2: back + title ────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 16, 10),
                 child: Row(
                   children: [
                     GestureDetector(
                       onTap: () => context.go('/home'),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Color(0xFF1565C0), size: 18),
-                      ),
+                      child: const Padding(padding: EdgeInsets.all(8),
+                          child: Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1565C0), size: 18)),
                     ),
                     const SizedBox(width: 2),
-                    const Text(
-                      'Notifications',
-                      style: TextStyle(
-                        color: Color(0xFF111827),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    // Unread badge
-                    if (_unreadCount > 0) ...[
+                    const Text('Notifications', style: TextStyle(color: Color(0xFF111827), fontSize: 18, fontWeight: FontWeight.bold)),
+                    if (unreadCount > 0) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1565C0),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$_unreadCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(color: const Color(0xFF1565C0), borderRadius: BorderRadius.circular(12)),
+                        child: Text('$unreadCount', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ],
@@ -413,56 +269,31 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _buildEmpty() {
     final labels = {
-      _NotifTab.all: 'No notifications yet',
-      _NotifTab.alert: 'No alert notifications',
-      _NotifTab.offer: 'No offer notifications',
+      _NotifTab.all:      'No notifications yet',
+      _NotifTab.alert:    'No alert notifications',
+      _NotifTab.offer:    'No offer notifications',
       _NotifTab.reminder: 'No reminders',
     };
     final sublabels = {
-      _NotifTab.all: 'We\'ll notify you about offers, alerts and reminders.',
-      _NotifTab.alert: 'System and delivery alerts will appear here.',
-      _NotifTab.offer: 'Exclusive deals and cashback offers will appear here.',
+      _NotifTab.all:      'We\'ll notify you about offers, alerts and reminders.',
+      _NotifTab.alert:    'System and delivery alerts will appear here.',
+      _NotifTab.offer:    'Exclusive deals and cashback offers will appear here.',
       _NotifTab.reminder: 'Bill scan and reward reminders will appear here.',
     };
-
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.notifications_none_rounded,
-                size: 44, color: Color(0xFF2563EB)),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            labels[_activeTab]!,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              sublabels[_activeTab]!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF6B7280),
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(width: 88, height: 88,
+            decoration: const BoxDecoration(color: Color(0xFFEFF6FF), shape: BoxShape.circle),
+            child: const Icon(Icons.notifications_none_rounded, size: 44, color: Color(0xFF2563EB))),
+        const SizedBox(height: 18),
+        Text(labels[_activeTab]!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF111827))),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Text(sublabels[_activeTab]!, textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280), height: 1.5)),
+        ),
+      ]),
     );
   }
 }
@@ -488,14 +319,9 @@ class _TabBtn extends StatelessWidget {
           color: active ? const Color(0xFF2563EB) : const Color(0xFFF3F4F6),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: active ? Colors.white : const Color(0xFF6B7280),
-          ),
-        ),
+        child: Text(label,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                color: active ? Colors.white : const Color(0xFF6B7280))),
       ),
     );
   }
@@ -506,135 +332,150 @@ class _TabBtn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NotifCard extends StatelessWidget {
-  final _NotifItem notif;
+  final NotificationModel notif;
   final VoidCallback onTap;
-  final VoidCallback onDismiss;
-  const _NotifCard({
-    super.key,
-    required this.notif,
-    required this.onTap,
-    required this.onDismiss,
-  });
+  const _NotifCard({super.key, required this.notif, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Dismissible(
-      key: ValueKey(notif.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDismiss(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+    final meta = _metaFor(notif.type);
+
+    Color bgColor = notif.isRead ? Colors.white : const Color(0xFFEFF6FF);
+    Color borderColor = notif.isRead
+        ? const Color(0xFFE5E7EB)
+        : const Color(0xFF2563EB).withOpacity(0.25);
+    Color? accentBar;
+
+    if (notif.isBillReviewApproved) {
+      accentBar   = const Color(0xFF2E7D32);
+      borderColor = const Color(0xFF2E7D32).withOpacity(0.4);
+      bgColor     = notif.isRead ? Colors.white : const Color(0xFFE8F5E9);
+    } else if (notif.isBillReviewRejected) {
+      accentBar   = const Color(0xFFC62828);
+      borderColor = const Color(0xFFC62828).withOpacity(0.4);
+      bgColor     = notif.isRead ? Colors.white : const Color(0xFFFFEBEE);
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFEF4444),
+          color: bgColor,
           borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 24),
-            SizedBox(height: 3),
-            Text(
-              'Delete',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600),
+          border: Border.all(color: borderColor),  // uniform — valid with borderRadius
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-      ),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: notif.isRead ? Colors.white : const Color(0xFFEFF6FF),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: notif.isRead
-                  ? const Color(0xFFE5E7EB)
-                  : const Color(0xFF2563EB).withOpacity(0.25),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: Stack(
             children: [
-              // Icon container — circular to match design
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: notif.iconColor.withOpacity(0.13),
-                  shape: BoxShape.circle,
+              // Coloured left accent bar for bill review cards
+              if (accentBar != null)
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  child: Container(width: 4, color: accentBar),
                 ),
-                child: Icon(notif.icon, color: notif.iconColor, size: 24),
-              ),
-              const SizedBox(width: 12),
-              // Text content
-              Expanded(
-                child: Column(
+              // Card content
+              Padding(
+                padding: EdgeInsets.only(
+                  left: accentBar != null ? 18 : 14,
+                  right: 14,
+                  top: 14,
+                  bottom: 14,
+                ),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            notif.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: notif.isRead
-                                  ? FontWeight.w500
-                                  : FontWeight.bold,
-                              color: const Color(0xFF111827),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Unread blue dot
-                        if (!notif.isRead)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(top: 4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF2563EB),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      notif.subtitle,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF6B7280),
-                        height: 1.45,
+                    // Icon circle
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: meta.iconColor.withOpacity(0.13),
+                        shape: BoxShape.circle,
                       ),
+                      child: Icon(meta.icon, color: meta.iconColor, size: 24),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      notif.time,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF9CA3AF),
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(width: 12),
+                    // Text content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notif.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: notif.isRead
+                                        ? FontWeight.w500
+                                        : FontWeight.bold,
+                                    color: const Color(0xFF111827),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (!notif.isRead)
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  margin: const EdgeInsets.only(top: 4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF2563EB),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            notif.message,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Text(
+                                _timeAgo(notif.createdAt),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF9CA3AF),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (notif.isBillReview) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Tap to view wallet',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: meta.iconColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],

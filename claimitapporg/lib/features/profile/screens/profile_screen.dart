@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../bill_reader/providers/bill_reward_provider.dart';
+import '../../notifications/providers/notification_provider.dart';
 import '../providers/profile_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -124,14 +125,39 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                   const SizedBox(width: 8),
 
-                  // ── Notifications ─────────────────────────────────────────
-                  GestureDetector(
-                    onTap: () => context.push('/notifications'),
-                    child: Icon(
-                      Icons.notifications_none_rounded,
-                      size: 26,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                  // ── Notifications with unread dot ─────────────────────────
+                  Consumer<NotificationProvider>(
+                    builder: (context, notifProvider, _) {
+                      final unread = notifProvider.unreadCount;
+                      return GestureDetector(
+                        onTap: () => context.push('/notifications'),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(
+                              unread > 0
+                                  ? Icons.notifications_rounded
+                                  : Icons.notifications_none_rounded,
+                              size: 26,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            if (unread > 0)
+                              Positioned(
+                                top: -1,
+                                right: -1,
+                                child: Container(
+                                  width: 9,
+                                  height: 9,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFEF4444),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -796,10 +822,45 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// My Favourites tab
+// My Favourites tab  (with scroll-triggered refresh loading)
 // ─────────────────────────────────────────────────────────────────────────────
-class _FavouritesTab extends StatelessWidget {
+class _FavouritesTab extends StatefulWidget {
   const _FavouritesTab();
+  @override
+  State<_FavouritesTab> createState() => _FavouritesTabState();
+}
+
+class _FavouritesTabState extends State<_FavouritesTab> {
+  final _scrollCtrl = ScrollController();
+  bool _loadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_loadingMore) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 120) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore) return;
+    setState(() => _loadingMore = true);
+    await context.read<ProfileProvider>().fetchAll();
+    if (mounted) setState(() => _loadingMore = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -808,7 +869,7 @@ class _FavouritesTab extends StatelessWidget {
     final totalItems = provider.favourites.length + provider.dealFavourites.length;
 
     if (loading && totalItems == 0) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF1565C0)));
     }
 
     if (totalItems == 0) {
@@ -816,8 +877,7 @@ class _FavouritesTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.favorite_border_rounded,
-                size: 64, color: Colors.grey.shade300),
+            Icon(Icons.favorite_border_rounded, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 12),
             const Text('No favourites yet',
                 style: TextStyle(fontSize: 16, color: Color(0xFF6B7280))),
@@ -829,20 +889,25 @@ class _FavouritesTab extends StatelessWidget {
       );
     }
 
-    // Build a unified list: shops first, then deals
     final shopCount = provider.favourites.length;
     final dealCount = provider.dealFavourites.length;
-    final itemCount = shopCount + dealCount;
+    final itemCount = shopCount + dealCount + (_loadingMore ? 1 : 0);
 
     return ListView.separated(
+      controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: itemCount,
       separatorBuilder: (_, __) =>
           const Divider(height: 1, indent: 72, endIndent: 16),
       itemBuilder: (ctx, i) {
-        if (i < shopCount) {
-          return _FavShopTile(shop: provider.favourites[i]);
+        if (i == shopCount + dealCount) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: CircularProgressIndicator(
+                strokeWidth: 2, color: Color(0xFF1565C0))),
+          );
         }
+        if (i < shopCount) return _FavShopTile(shop: provider.favourites[i]);
         return _FavDealTile(deal: provider.dealFavourites[i - shopCount]);
       },
     );
@@ -994,41 +1059,88 @@ class _FavDealTile extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // My History tab (bill scan history from BillRewardProvider)
 // ─────────────────────────────────────────────────────────────────────────────
-class _HistoryTab extends StatelessWidget {
+class _HistoryTab extends StatefulWidget {
   const _HistoryTab();
+  @override
+  State<_HistoryTab> createState() => _HistoryTabState();
+}
+
+class _HistoryTabState extends State<_HistoryTab> {
+  final _scrollCtrl = ScrollController();
+  bool _loadingMore  = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_loadingMore) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 120) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore) return;
+    setState(() => _loadingMore = true);
+    // Refresh wallet + history from server
+    await context.read<BillRewardProvider>().loadAll();
+    if (mounted) setState(() => _loadingMore = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final history = context.watch<BillRewardProvider>().history;
+    final provider = context.watch<BillRewardProvider>();
+    final history  = provider.history;
+
+    if (!provider.walletLoaded && history.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF1565C0)));
+    }
 
     if (history.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long_outlined,
-                size: 64, color: Colors.grey.shade300),
+            Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 12),
-            const Text(
-              'No history yet',
-              style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
-            ),
+            const Text('No history yet',
+                style: TextStyle(fontSize: 16, color: Color(0xFF6B7280))),
             const SizedBox(height: 4),
-            const Text(
-              'Scan a bill to start earning rewards',
-              style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
-            ),
+            const Text('Scan a bill to start earning rewards',
+                style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
           ],
         ),
       );
     }
 
+    final itemCount = history.length + (_loadingMore ? 1 : 0);
+
     return ListView.separated(
+      controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: history.length,
+      itemCount: itemCount,
       separatorBuilder: (_, __) =>
           const Divider(height: 1, indent: 72, endIndent: 16),
       itemBuilder: (ctx, i) {
+        // Loading spinner at the bottom
+        if (i == history.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: CircularProgressIndicator(
+                strokeWidth: 2, color: Color(0xFF1565C0))),
+          );
+        }
         final entry = history[i];
         final dateStr =
             '${entry.date.day} ${_month(entry.date.month)} ${entry.date.year}';

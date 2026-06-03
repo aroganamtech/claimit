@@ -521,11 +521,12 @@ export function AdminSalesTeam() {
 }
 
 // ─── Bill Reviews ─────────────────────────────────────────────
+// ─── Bill Reviews ─────────────────────────────────────────────
 export function AdminBillReviews() {
   const [reviews, setReviews]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('pending')
-  const [selected, setSelected] = useState(null)   // review being actioned
+  const [selected, setSelected] = useState(null)
   const [pts, setPts]           = useState('')
   const [cb, setCb]             = useState('')
   const [note, setNote]         = useState('')
@@ -533,8 +534,8 @@ export function AdminBillReviews() {
 
   const load = (status = filter) => {
     setLoading(true)
-    api.get(`/bill/manual-reviews?status=${status}`)
-      .then(r => setReviews(r.data))
+    api.admin.listBillReviews(status)
+      .then(data => setReviews(Array.isArray(data) ? data : []))
       .catch(() => setReviews([]))
       .finally(() => setLoading(false))
   }
@@ -545,7 +546,7 @@ export function AdminBillReviews() {
     if (!selected) return
     setActioning(true)
     try {
-      await api.post(`/bill/manual-reviews/${selected.id}/action`, {
+      await api.admin.actionBillReview(selected.id, {
         action,
         reward_points: pts ? parseInt(pts) : undefined,
         cashback:      cb  ? parseFloat(cb) : undefined,
@@ -557,9 +558,6 @@ export function AdminBillReviews() {
       alert(e?.response?.data?.detail || 'Action failed')
     } finally { setActioning(false) }
   }
-
-  const counts = { pending: 0, approved: 0, rejected: 0 }
-  reviews.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++ })
 
   const REASON_LABEL = { missing_fields: 'Missing fields', wrong_data: 'Wrong OCR data' }
 
@@ -614,8 +612,8 @@ export function AdminBillReviews() {
                 const statusColor = r.status === 'approved' ? '#2E7D32' : r.status === 'rejected' ? '#C62828' : '#F57C00'
                 const statusBg    = r.status === 'approved' ? '#E8F5E9' : r.status === 'rejected' ? '#FFEBEE' : '#FFF3E0'
                 return (
-                  <tr key={r.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{r.user_id?.slice(-8) || '—'}</td>
+                  <tr key={r.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{(r.user_id || '').slice(-8) || '—'}</td>
                     <td style={{ ...td, fontWeight: 600 }}>{r.shop_name || '—'}</td>
                     <td style={{ ...td, fontWeight: 700, color: '#1565C0' }}>₹{r.total_amount}</td>
                     <td style={td}>
@@ -623,7 +621,7 @@ export function AdminBillReviews() {
                         {REASON_LABEL[r.manual_reason] || r.manual_reason}
                       </span>
                     </td>
-                    <td style={{ ...td, color: '#888', fontSize: 12 }}>{r.submitted_at?.slice(0, 10)}</td>
+                    <td style={{ ...td, color: '#888', fontSize: 12 }}>{(r.submitted_at || '').slice(0, 10)}</td>
                     <td style={td}>
                       <span style={{ background: statusBg, color: statusColor, fontSize: 11, padding: '3px 8px', borderRadius: 20, fontWeight: 700 }}>
                         {r.status}
@@ -631,10 +629,7 @@ export function AdminBillReviews() {
                     </td>
                     <td style={td}>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        {/* View bill image */}
-                        <button onClick={() => setSelected({ ...r, _viewOnly: true })} style={{ ...ghostBtn }}>
-                          View Bill
-                        </button>
+                        <button onClick={() => setSelected({ ...r, _viewOnly: true })} style={ghostBtn}>View Bill</button>
                         {r.status === 'pending' && (
                           <button onClick={() => { setSelected(r); setPts(Math.round(r.total_amount * 0.1).toString()); setCb((r.total_amount * 0.01).toFixed(2)) }}
                             style={{ ...ghostBtn, borderColor: '#4CAF50', color: '#2E7D32' }}>
@@ -653,18 +648,10 @@ export function AdminBillReviews() {
 
       {/* Modal: view bill + approve/reject */}
       {selected && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div style={{
-            background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '90vh',
-            overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ fontWeight: 700, fontSize: 18 }}>
-                {selected._viewOnly ? 'Bill Image' : 'Review Bill'}
-              </h3>
+              <h3 style={{ fontWeight: 700, fontSize: 18 }}>{selected._viewOnly ? 'Bill Image' : 'Review Bill'}</h3>
               <button onClick={() => { setSelected(null); setPts(''); setCb(''); setNote('') }}
                 style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#666' }}>✕</button>
             </div>
@@ -703,26 +690,20 @@ export function AdminBillReviews() {
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
-                      Reward Points
-                    </label>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Reward Points</label>
                     <input value={pts} onChange={e => setPts(e.target.value)} type="number"
                       placeholder={`Default: ${Math.round(selected.total_amount * 0.1)}`}
                       style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
-                      Cashback (₹)
-                    </label>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Cashback (₹)</label>
                     <input value={cb} onChange={e => setCb(e.target.value)} type="number" step="0.01"
                       placeholder={`Default: ${(selected.total_amount * 0.01).toFixed(2)}`}
                       style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
                   </div>
                 </div>
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
-                    Admin Note (optional)
-                  </label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Admin Note (optional)</label>
                   <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
                     placeholder="Reason for approval or rejection…"
                     style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', resize: 'vertical', boxSizing: 'border-box' }} />

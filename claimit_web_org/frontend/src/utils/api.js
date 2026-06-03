@@ -154,6 +154,9 @@ const admin = {
   // header is attached, then build an object URL for the iframe.
   listPdfs:     ()          => get('/admin/pdfs'),
   getPdfBlob:   (key)       => http.get(`/admin/pdfs/${key}`, { responseType: 'blob' }).then(r => r.data),
+  // Bill Reviews — reads claimit_db.bill_manual_reviews (same DB as Flutter app)
+  listBillReviews:   (status = 'pending') => get(`/admin/bill-reviews`, { status }),
+  actionBillReview:  (id, payload)        => post(`/admin/bill-reviews/${id}/action`, payload),
 }
 
 // Default export bundles everything. Pages migrated to the new style

@@ -35,15 +35,11 @@ class NotificationProvider extends ChangeNotifier {
       await _apiClient.patch('/notifications/$notificationId/read');
       final index = _notifications.indexWhere((n) => n.id == notificationId);
       if (index != -1) {
+        final n = _notifications[index];
         _notifications[index] = NotificationModel(
-          id: _notifications[index].id,
-          userId: _notifications[index].userId,
-          title: _notifications[index].title,
-          message: _notifications[index].message,
-          type: _notifications[index].type,
-          isRead: true,
-          claimId: _notifications[index].claimId,
-          createdAt: _notifications[index].createdAt,
+          id: n.id, userId: n.userId, title: n.title,
+          message: n.message, type: n.type, isRead: true,
+          claimId: n.claimId, reviewId: n.reviewId, createdAt: n.createdAt,
         );
         notifyListeners();
       }
@@ -54,14 +50,9 @@ class NotificationProvider extends ChangeNotifier {
     try {
       await _apiClient.patch(AppConstants.markAllRead);
       _notifications = _notifications.map((n) => NotificationModel(
-        id: n.id,
-        userId: n.userId,
-        title: n.title,
-        message: n.message,
-        type: n.type,
-        isRead: true,
-        claimId: n.claimId,
-        createdAt: n.createdAt,
+        id: n.id, userId: n.userId, title: n.title,
+        message: n.message, type: n.type, isRead: true,
+        claimId: n.claimId, reviewId: n.reviewId, createdAt: n.createdAt,
       )).toList();
       notifyListeners();
     } catch (_) {}

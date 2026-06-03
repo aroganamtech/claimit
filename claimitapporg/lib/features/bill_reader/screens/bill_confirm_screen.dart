@@ -99,7 +99,21 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     provider.updatePendingTotal(amount);
     provider.updatePendingShopName(shopName);
 
-    await provider.claimReward();
+    try {
+      await provider.claimReward();
+    } on BillAlreadyScannedException {
+      // Server confirmed this bill was already claimed (local cache may have
+      // been cold — e.g. app reinstalled or SharedPreferences cleared).
+      if (!mounted) return;
+      setState(() => _claiming = false);
+      _showAlreadyScannedDialog(shopName, amount, billDate);
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _claiming = false);
+      _snack('Failed to claim reward. Please try again.');
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _claiming = false);
@@ -407,45 +421,63 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
             const SizedBox(height: 20),
 
             // ── Shop name field ───────────────────────────────────────────────
-            const Text(
-              'Shop Name',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
-              ),
+            Row(
+              children: [
+                const Text(
+                  'Shop Name',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                if (!_manualMode) ...[
+                  const SizedBox(width: 6),
+                  const Text('(read-only)',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _shopCtrl,
+              readOnly: !_manualMode,
               textCapitalization: TextCapitalization.words,
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A)),
+                  color: _manualMode
+                      ? const Color(0xFF1A1A1A)
+                      : const Color(0xFF374151)),
               decoration: InputDecoration(
                 hintText: 'e.g. Big Bazaar, DMart…',
-                prefixIcon: const Icon(Icons.storefront_rounded,
-                    color: Color(0xFF2563EB), size: 22),
+                prefixIcon: Icon(Icons.storefront_rounded,
+                    color: _manualMode
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFF9CA3AF),
+                    size: 22),
                 hintStyle: const TextStyle(
                     color: Color(0xFFD1D5DB), fontSize: 14),
                 filled: true,
-                fillColor: const Color(0xFFF8FAFF),
+                fillColor: _manualMode
+                    ? const Color(0xFFF8FAFF)
+                    : const Color(0xFFF3F4F6),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: _blue, width: 2),
+                  borderSide: const BorderSide(color: _blue, width: 2),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: BorderSide(
+                    color: _manualMode
+                        ? const Color(0xFFE5E7EB)
+                        : const Color(0xFFE5E7EB),
+                  ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 16),
@@ -455,52 +487,63 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
             const SizedBox(height: 16),
 
             // ── Amount field ──────────────────────────────────────────────────
-            const Text(
-              'Total Bill Amount (₹)',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
-              ),
+            Row(
+              children: [
+                const Text(
+                  'Total Bill Amount (₹)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                if (!_manualMode) ...[
+                  const SizedBox(width: 6),
+                  const Text('(read-only)',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _amtCtrl,
+              readOnly: !_manualMode,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
               ],
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: _blue),
+                  color: _manualMode ? _blue : const Color(0xFF374151)),
               decoration: InputDecoration(
                 prefixText: '₹  ',
-                prefixStyle: const TextStyle(
+                prefixStyle: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF9CA3AF)),
+                    color: _manualMode
+                        ? const Color(0xFF9CA3AF)
+                        : const Color(0xFFBDBDBD)),
                 hintText: '0',
                 hintStyle: const TextStyle(
                     color: Color(0xFFD1D5DB), fontSize: 28),
                 filled: true,
-                fillColor: const Color(0xFFF8FAFF),
+                fillColor: _manualMode
+                    ? const Color(0xFFF8FAFF)
+                    : const Color(0xFFF3F4F6),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: _blue, width: 2),
+                  borderSide: const BorderSide(color: _blue, width: 2),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 18),
@@ -686,9 +729,8 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
               );
             }),
 
-            // ── Manual mode toggle (when OCR succeeded) ───────────────────────
-            if (!_manualMode && _shopCtrl.text.trim().isNotEmpty &&
-                (_amtCtrl.text.trim().isNotEmpty))
+            // ── Manual mode toggle — always visible after OCR ─────────────────
+            if (!_manualMode)
               GestureDetector(
                 onTap: () => setState(() => _manualMode = true),
                 child: Container(

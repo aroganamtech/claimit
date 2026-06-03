@@ -1115,6 +1115,7 @@ import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/network/api_client.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../notifications/providers/notification_provider.dart';
 import '../../deals/models/deal_model.dart';
 import '../../deals/services/deal_service.dart';
 import '../../shops/models/shop_category.dart';
@@ -1435,6 +1436,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     _loadNearbyShopsFromGPS();
     _loadBanners();
     _scheduleReelzAd();
+    // Fetch unread notification count for the bell badge
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationProvider>().fetchNotifications();
+    });
   }
 
   List<_BannerData> get _activeBanners =>
@@ -1706,19 +1711,44 @@ class _DashboardScreenState extends State<DashboardScreen>
 
               const SizedBox(width: 8),
 
-              // ── Notification ───────────────────
-              SizedBox(
-                width: 44,
-                height: 44,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.notifications_none_rounded,
-                    size: 28,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  onPressed: () => context.push('/notifications'),
-                  padding: EdgeInsets.zero,
-                ),
+              // ── Notification bell with unread dot ──────────────────
+              Consumer<NotificationProvider>(
+                builder: (context, notifProvider, _) {
+                  final unread = notifProvider.unreadCount;
+                  return SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            unread > 0
+                                ? Icons.notifications_rounded
+                                : Icons.notifications_none_rounded,
+                            size: 28,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          onPressed: () => context.push('/notifications'),
+                          padding: EdgeInsets.zero,
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              width: 9,
+                              height: 9,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFEF4444),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           ),

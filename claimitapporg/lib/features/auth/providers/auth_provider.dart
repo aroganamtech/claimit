@@ -267,24 +267,21 @@ class AuthProvider extends ChangeNotifier {
 
   final _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
-    // serverClientId is required on Android for backend token verification.
-    // Replace DUMMY value with the Web client ID from Google Cloud Console.
     serverClientId: AppConstants.googleClientId,
   );
 
-  /// Signs in with Google, sends name+email to the backend, and stores tokens.
-  /// Returns true on success. No OTP needed — email is the identifier.
+  /// Signs in with Google → calls backend → stores tokens.
+  /// Works for both new users (registration) and existing users (login).
+  /// No OTP needed — the Google-verified email is the identifier.
   Future<bool> loginWithGoogle() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Sign out first so the account picker always appears.
-      await _googleSignIn.signOut();
+      await _googleSignIn.signOut(); // always show account picker
       final GoogleSignInAccount? account = await _googleSignIn.signIn();
       if (account == null) {
-        // User cancelled the picker
         _isLoading = false;
         notifyListeners();
         return false;
@@ -300,7 +297,8 @@ class AuthProvider extends ChangeNotifier {
         },
       );
 
-      if (response.statusCode == 200 && response.data is Map) {
+      final status = response.statusCode ?? 0;
+      if ((status == 200 || status == 201) && response.data is Map) {
         return _handleSocialSuccess(response.data as Map, loginMethod: 'google');
       }
 
@@ -316,17 +314,18 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Signs in with Facebook and sends name+email (if available) to the backend.
-  /// Facebook may not return an email — in that case the user is sent to
-  /// /auth/complete-profile to add their phone + email manually.
+  /// Signs in with Facebook → calls backend → stores tokens.
+  /// Works for both new and existing users.
+  /// If Facebook does not return an email, the user is redirected to
+  /// /auth/complete-profile to add phone + email so they can log in
+  /// via OTP next time.
   Future<bool> loginWithFacebook() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Log out first to always show account picker
-      await FacebookAuth.instance.logOut();
+      await FacebookAuth.instance.logOut(); // always show account picker
       final LoginResult result = await FacebookAuth.instance.login(
         permissions: ['email', 'public_profile'],
       );
@@ -348,9 +347,9 @@ class AuthProvider extends ChangeNotifier {
         fields: 'id,name,email',
       );
 
-      final name     = userData['name'] as String? ?? '';
-      final email    = userData['email'] as String?; // may be null
-      final fbId     = userData['id'] as String? ?? '';
+      final String name  = userData['name'] as String? ?? '';
+      final String? email = userData['email'] as String?;
+      final String fbId  = userData['id'] as String? ?? '';
 
       final response = await _apiClient.post(
         AppConstants.socialLogin,
@@ -362,7 +361,8 @@ class AuthProvider extends ChangeNotifier {
         },
       );
 
-      if (response.statusCode == 200 && response.data is Map) {
+      final status = response.statusCode ?? 0;
+      if ((status == 200 || status == 201) && response.data is Map) {
         return _handleSocialSuccess(response.data as Map, loginMethod: 'facebook');
       }
 
