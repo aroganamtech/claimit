@@ -674,11 +674,11 @@ export function AdminBillReviews() {
             </div>
 
             {/* Bill image */}
-            {selected.image_base64 && (
+            {selected.image_url && (
               <div style={{ marginBottom: 16 }}>
                 <p style={{ fontSize: 12, color: '#888', marginBottom: 8, fontWeight: 600 }}>BILL IMAGE</p>
                 <img
-                  src={`data:image/jpeg;base64,${selected.image_base64}`}
+                  src={selected.image_url}
                   alt="Bill"
                   style={{ width: '100%', borderRadius: 10, border: '1px solid #e0e0e0' }}
                 />

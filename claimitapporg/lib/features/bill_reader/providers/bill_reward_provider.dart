@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bill_reward_model.dart';
 import '../services/bill_service.dart';
+import '../../../core/utils/error_handler.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillRewardProvider
@@ -148,7 +149,7 @@ class BillRewardProvider extends ChangeNotifier {
       notifyListeners();
       await _saveToCache();
     } catch (e) {
-      debugPrint('BillRewardProvider.loadWallet error: $e');
+      AppError.friendly(e, '', context: 'BillWallet');
       // Cache already shown from _restoreFromCache — nothing more to do
     }
   }
@@ -163,7 +164,7 @@ class BillRewardProvider extends ChangeNotifier {
       notifyListeners();
       await _saveToCache();
     } catch (e) {
-      debugPrint('BillRewardProvider.loadHistory error: $e');
+      AppError.friendly(e, '', context: 'BillHistory');
       // Cache already shown — nothing more to do
     }
   }
@@ -271,7 +272,7 @@ class BillRewardProvider extends ChangeNotifier {
       }
     } catch (e) {
       if (e is BillAlreadyScannedException) rethrow;
-      debugPrint('Bill sync error: $e — applying locally');
+      AppError.friendly(e, '', context: 'BillSync');
       // Fallback: apply locally so the user still sees the reward this session
       _currentPoints    += localPts;
       _cashbackWallet   += localCb;

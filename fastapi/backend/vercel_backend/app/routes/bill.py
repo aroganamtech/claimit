@@ -31,6 +31,7 @@ from bson import ObjectId
 from ..database import get_db
 from ..utils.auth import get_current_user, decode_token
 from ..utils.helpers import serialize_doc
+from ..utils.s3 import upload_base64, generate_presigned_url
 
 
 def _require_admin(x_admin_key: Optional[str] = Header(None)):
@@ -283,7 +284,8 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
         "bill_time":     (data.bill_time or "").strip() or None,
         "manual_reason": data.manual_reason or "missing_fields",
         "has_image":     bool(data.image_base64),
-        "image_base64":  data.image_base64,
+        "image_s3_key":  (await upload_base64(data.image_base64, "bill-reviews")
+                  if data.image_base64 else None),
         "status":        "pending",
         "created_at":    datetime.now(timezone.utc),
         "reviewed_at":   None,
@@ -306,7 +308,7 @@ async def my_reviews(current_user: dict = Depends(get_current_user)):
     db  = get_db()
     uid = str(current_user["_id"])
     cursor = db.bill_manual_reviews.find(
-        {"user_id": uid}, {"image_base64": 0}
+        {"user_id": uid}, {"image_s3_key": 0}
     ).sort("created_at", -1)
     docs = await cursor.to_list(length=100)
     return {
@@ -331,6 +333,8 @@ async def admin_list_reviews(
     for d in docs:
         s = serialize_doc(d)
         s.setdefault("submitted_at", s.get("created_at"))
+        s3_key = s.pop("image_s3_key", None)
+        s["image_url"] = await generate_presigned_url(s3_key) if s3_key else None
         result.append(s)
     return result
 
@@ -500,7 +504,8 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
         "bill_time":     (data.bill_time or "").strip() or None,
         "manual_reason": data.manual_reason or "missing_fields",
         "has_image":     bool(data.image_base64),
-        "image_base64":  data.image_base64,
+        "image_s3_key":  (await upload_base64(data.image_base64, "bill-reviews")
+                  if data.image_base64 else None),
         "status":        "pending",
         "created_at":    datetime.now(timezone.utc),
         "reviewed_at":   None,
@@ -519,7 +524,7 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
 async def my_reviews(current_user: dict = Depends(get_current_user)):
     db  = get_db()
     uid = str(current_user["_id"])
-    cursor = db.bill_manual_reviews.find({"user_id": uid}, {"image_base64": 0}).sort("created_at", -1)
+    cursor = db.bill_manual_reviews.find({"user_id": uid}, {"image_s3_key": 0}).sort("created_at", -1)
     docs = await cursor.to_list(length=100)
     return {"success": True, "reviews": [serialize_doc(d) for d in docs], "total": len(docs)}
 
@@ -535,6 +540,8 @@ async def admin_list_reviews(status: Optional[str] = Query(None), _: None = Depe
     for d in docs:
         s = serialize_doc(d)
         s.setdefault("submitted_at", s.get("created_at"))
+        s3_key = s.pop("image_s3_key", None)
+        s["image_url"] = await generate_presigned_url(s3_key) if s3_key else None
         result.append(s)
     return result
 

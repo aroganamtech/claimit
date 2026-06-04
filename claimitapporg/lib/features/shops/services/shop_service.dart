@@ -308,7 +308,13 @@ class ShopService {
     final rawDist = j['distance'];
     final distance = rawDist != null ? rawDist.toString() : '';
 
-    // Parse carousel image list
+    // Parse S3 image URLs (preferred)
+    final rawUrlList = j['image_urls'];
+    final imageUrls = rawUrlList is List
+        ? rawUrlList.whereType<String>().where((s) => s.isNotEmpty).toList()
+        : <String>[];
+
+    // Parse legacy base64 list (fallback)
     final rawImageList = j['image_data_list'];
     final imageDataList = rawImageList is List
         ? rawImageList.whereType<String>().where((s) => s.isNotEmpty).toList()
@@ -323,6 +329,8 @@ class ShopService {
       rating:       (j['rating']       as num?)?.toDouble() ?? 0.0,
       reviewCount:  (j['review_count'] as num?)?.toInt()    ?? 0,
       addedDaysAgo: (j['added_days_ago'] as num?)?.toInt()  ?? 0,
+      imageUrl:     (j['image_url']    as String? ?? '').trim(),
+      imageUrls:    imageUrls,
       imageData:    j['image_data']    as String?,
       imageDataList: imageDataList,
       imageName:    j['image_name']    as String? ?? '',

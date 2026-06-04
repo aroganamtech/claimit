@@ -27,11 +27,16 @@ class ShopItem {
   final int reviewCount;
   final int addedDaysAgo;
 
-  /// Base64-encoded image bytes from MongoDB.
-  /// Render with: Image.memory(base64Decode(imageData!))
+  /// S3 public URL for the primary shop image (preferred over imageData).
+  final String imageUrl;
+
+  /// S3 URLs for the detail-page carousel (up to 3).
+  final List<String> imageUrls;
+
+  /// Base64-encoded image bytes — legacy fallback only (now usually empty).
   final String? imageData;
 
-  /// List of up to 3 base64-encoded images for the detail page carousel.
+  /// List of up to 3 base64-encoded images — legacy fallback only.
   final List<String> imageDataList;
 
   /// Filename reference, e.g. "img1.jpg"
@@ -70,6 +75,8 @@ class ShopItem {
     required this.fallbackColor,
     required this.fallbackIcon,
     this.reviewCount = 0,
+    this.imageUrl = '',
+    this.imageUrls = const [],
     this.imageData,
     this.imageDataList = const [],
     this.imageName = '',
@@ -161,8 +168,9 @@ class _ShopListScreenState extends State<ShopListScreen> {
   @override
   void initState() {
     super.initState();
-    // isTab always shows Redeem zone; id=-1 also locks to Redeem
-    _isRewards = !widget.isTab && widget.category.id != -1;
+    // Default tab: Rewards for category screens (id > 0).
+    // For isTab / id==-1 (Nearby) the toggle is hidden; value doesn't affect filtering.
+    _isRewards = !widget.isTab && widget.category.id > 0;
     _loadShops();
   }
 
@@ -196,12 +204,24 @@ class _ShopListScreenState extends State<ShopListScreen> {
         ? _shops.toList()
         : _shops.where((s) => s.categoryIds.contains(baseCatId)).toList();
 
-    // Rewards / Redeem tab
-    if (_isRewards) {
-      shops = shops.where((s) => s.hasRewards).toList();
-    } else {
+    // Rewards / Redeem filter:
+    // • isTab (Redeem+ Zone bottom-nav tab) → always filter hasRedeem
+    // • id > 0 (specific category) → respect _isRewards toggle
+    // • id == -1 AND NOT isTab (Nearby Shops / See-All) → show ALL shops, no filter
+    // • id == 0 (Reward Zone) → filter hasRewards
+    if (widget.isTab) {
       shops = shops.where((s) => s.hasRedeem).toList();
+    } else if (baseCatId == 0) {
+      shops = shops.where((s) => s.hasRewards).toList();
+    } else if (baseCatId != -1) {
+      // Specific category: apply tab toggle
+      if (_isRewards) {
+        shops = shops.where((s) => s.hasRewards).toList();
+      } else {
+        shops = shops.where((s) => s.hasRedeem).toList();
+      }
     }
+    // baseCatId == -1 AND !isTab → Nearby / See-All: no reward/redeem filter
 
     // Search
     if (_searchQuery.isNotEmpty) {
@@ -571,6 +591,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
                                       s.id,
                                       name: s.name,
                                       location: s.location,
+                                      imageUrl: s.imageUrl,
                                       imageData: s.imageData,
                                       discount: s.discount,
                                       rating: s.rating,
@@ -696,13 +717,7 @@ class _ShopCard extends StatelessWidget {
               child: SizedBox(
                 width: 130,
                 height: 130,
-                child: shop.imageData != null && shop.imageData!.isNotEmpty
-                    ? Image.memory(
-                        base64Decode(shop.imageData!),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _fallbackAvatar(shop),
-                      )
-                    : _fallbackAvatar(shop),
+                child: _shopImageWidget(shop, fit: BoxFit.cover),
               ),
             ),
 
@@ -885,6 +900,27 @@ class _Badge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Shop image helper — prefers S3 URL, falls back to base64, then avatar ─────
+Widget _shopImageWidget(ShopItem shop, {BoxFit fit = BoxFit.cover}) {
+  if (shop.imageUrl.isNotEmpty) {
+    return Image.network(
+      shop.imageUrl,
+      fit: fit,
+      errorBuilder: (_, __, ___) => _fallbackAvatar(shop),
+    );
+  }
+  if (shop.imageData != null && shop.imageData!.isNotEmpty) {
+    try {
+      return Image.memory(
+        base64Decode(shop.imageData!),
+        fit: fit,
+        errorBuilder: (_, __, ___) => _fallbackAvatar(shop),
+      );
+    } catch (_) {}
+  }
+  return _fallbackAvatar(shop);
+}
+
 // Fallback avatar — shown when image_data is absent or fails to decode
 // ─────────────────────────────────────────────────────────────────────────────
 

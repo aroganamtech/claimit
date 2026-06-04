@@ -924,7 +924,12 @@ class _FavShopTile extends StatelessWidget {
     final provider = context.read<ProfileProvider>();
 
     Widget avatar;
-    if (shop.imageData != null && shop.imageData!.isNotEmpty) {
+    if (shop.imageUrl.isNotEmpty) {
+      avatar = CircleAvatar(
+        radius: 26,
+        backgroundImage: CachedNetworkImageProvider(shop.imageUrl),
+      );
+    } else if (shop.imageData != null && shop.imageData!.isNotEmpty) {
       avatar = CircleAvatar(
         radius: 26,
         backgroundImage: MemoryImage(base64Decode(shop.imageData!)),
@@ -957,6 +962,7 @@ class _FavShopTile extends StatelessWidget {
           shop.id,
           name: shop.name,
           location: shop.location,
+          imageUrl: shop.imageUrl,
           imageData: shop.imageData,
           discount: shop.discount,
           rating: shop.rating,

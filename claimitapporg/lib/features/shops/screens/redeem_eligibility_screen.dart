@@ -781,13 +781,19 @@ class _ShopCard extends StatelessWidget {
             child: SizedBox(
               width: 74,
               height: 74,
-              child: s.imageData != null && s.imageData!.isNotEmpty
-                  ? Image.memory(
-                      base64Decode(s.imageData!),
+              child: s.imageUrl.isNotEmpty
+                  ? Image.network(
+                      s.imageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _fallback(s),
                     )
-                  : _fallback(s),
+                  : (s.imageData != null && s.imageData!.isNotEmpty
+                      ? Image.memory(
+                          base64Decode(s.imageData!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _fallback(s),
+                        )
+                      : _fallback(s)),
             ),
           ),
           const SizedBox(width: 14),

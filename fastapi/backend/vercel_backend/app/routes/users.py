@@ -5,6 +5,7 @@ import os
 import aiofiles
 from ..database import get_db
 from ..utils.auth import get_current_user
+from ..utils.s3 import upload_bytes as _s3_upload_bytes, generate_presigned_url as _s3_presign
 from ..utils.helpers import serialize_doc
 from ..models.user import UserUpdate, LocationUpdate
 from ..config import get_settings
@@ -16,7 +17,12 @@ settings = get_settings()
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get current user profile including stored location."""
-    return serialize_doc(current_user)
+    profile = serialize_doc(current_user)
+    # Regenerate presigned avatar URL on every profile fetch so it never expires
+    avatar_s3_key = current_user.get("avatar_s3_key")
+    if avatar_s3_key:
+        profile["avatar_url"] = await _s3_presign(avatar_s3_key)
+    return profile
 
 
 @router.put("/profile/update")
@@ -102,22 +108,19 @@ async def upload_avatar(
             detail=f"File size exceeds {settings.max_file_size_mb}MB limit",
         )
 
-    upload_dir = os.path.join(settings.upload_dir, "avatars")
-    os.makedirs(upload_dir, exist_ok=True)
+    s3_key = await _s3_upload_bytes(content, folder="avatars",
+                 filename=avatar.filename,
+                 content_type=avatar.content_type or "image/jpeg")
 
-    ext = avatar.filename.split(".")[-1]
-    filename = f"{user_id}.{ext}"
-    filepath = os.path.join(upload_dir, filename)
-
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(content)
-
-    avatar_url = f"/uploads/avatars/{filename}"
+    # Generate a fresh presigned URL to return in this response.
+    # We store only the s3_key in MongoDB — presigned URLs are generated
+    # on demand (see get_profile) so they never go stale.
+    avatar_url = await _s3_presign(s3_key) or ""
 
     db = get_db()
     await db.users.update_one(
         {"_id": ObjectId(str(user_id))},
-        {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}},
+        {"$set": {"avatar_s3_key": s3_key, "updated_at": datetime.utcnow()}},
     )
 
     return {"avatar_url": avatar_url, "success": True}

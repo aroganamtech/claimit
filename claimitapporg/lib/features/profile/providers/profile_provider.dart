@@ -11,7 +11,8 @@ class FavouriteShop {
   final String id;
   final String name;
   final String location;
-  final String? imageData; // base64
+  final String imageUrl;   // S3 URL (preferred)
+  final String? imageData; // base64 legacy fallback
   final int discount;
   final double rating;
 
@@ -19,6 +20,7 @@ class FavouriteShop {
     required this.id,
     required this.name,
     required this.location,
+    this.imageUrl = '',
     this.imageData,
     required this.discount,
     required this.rating,
@@ -28,6 +30,7 @@ class FavouriteShop {
         id: j['id'] ?? j['_id'] ?? '',
         name: j['name'] ?? '',
         location: j['location'] ?? '',
+        imageUrl: (j['image_url'] as String? ?? '').trim(),
         imageData: j['image_data'],
         discount: (j['discount'] ?? 0) as int,
         rating: ((j['rating'] ?? 0) as num).toDouble(),
@@ -167,6 +170,7 @@ class ProfileProvider extends ChangeNotifier {
     String shopId, {
     String name = '',
     String location = '',
+    String imageUrl = '',
     String? imageData,
     int discount = 0,
     double rating = 0,
@@ -185,6 +189,7 @@ class ProfileProvider extends ChangeNotifier {
           id: shopId,
           name: name,
           location: location,
+          imageUrl: imageUrl,
           imageData: imageData,
           discount: discount,
           rating: rating,

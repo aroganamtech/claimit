@@ -283,13 +283,19 @@ class _ShopPreviewCard extends StatelessWidget {
             child: SizedBox(
               width: 70,
               height: 70,
-              child: shop.imageData != null && shop.imageData!.isNotEmpty
-                  ? Image.memory(
-                      base64Decode(shop.imageData!),
+              child: shop.imageUrl.isNotEmpty
+                  ? Image.network(
+                      shop.imageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _fallback(shop),
                     )
-                  : _fallback(shop),
+                  : (shop.imageData != null && shop.imageData!.isNotEmpty
+                      ? Image.memory(
+                          base64Decode(shop.imageData!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _fallback(shop),
+                        )
+                      : _fallback(shop)),
             ),
           ),
           const SizedBox(width: 12),

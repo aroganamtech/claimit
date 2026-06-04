@@ -50,9 +50,22 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
   // Full shop fetched from detail endpoint (includes gallery)
   ShopItem? _fullShop;
 
-  // Effective image list: prefer gallery from full shop, then cover
+  // Whether the current image list contains URLs (vs base64 strings).
+  bool get _imagesAreUrls {
+    final shop = _fullShop ?? widget.shop;
+    if (shop.imageUrls.where((s) => s.isNotEmpty).isNotEmpty) return true;
+    if (shop.imageUrl.isNotEmpty) return true;
+    return false;
+  }
+
+  // Effective image list: prefer S3 URLs, fall back to base64.
   List<String> get _images {
     final shop = _fullShop ?? widget.shop;
+    // S3 URLs (preferred)
+    final urls = shop.imageUrls.where((s) => s.isNotEmpty).toList();
+    if (urls.isNotEmpty) return urls;
+    if (shop.imageUrl.isNotEmpty) return [shop.imageUrl];
+    // Legacy base64
     final list = shop.imageDataList.where((s) => s.isNotEmpty).toList();
     if (list.isNotEmpty) return list;
     final single = shop.imageData;
@@ -168,6 +181,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
           s.id,
           name: s.name,
           location: s.location,
+          imageUrl: s.imageUrl,
           imageData: s.imageData,
           discount: s.discount,
           rating: s.rating,
@@ -558,6 +572,13 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
           itemCount: images.length,
           onPageChanged: (i) => setState(() => _currentImg = i),
           itemBuilder: (ctx, i) {
+            if (_imagesAreUrls) {
+              return Image.network(
+                images[i],
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _heroFallback(s),
+              );
+            }
             try {
               return Image.memory(
                 base64Decode(images[i]),
@@ -1015,13 +1036,19 @@ class _NearbyShopCard extends StatelessWidget {
               child: SizedBox(
                 width: 70,
                 height: 70,
-                child: shop.imageData != null && shop.imageData!.isNotEmpty
-                    ? Image.memory(
-                        base64Decode(shop.imageData!),
+                child: shop.imageUrl.isNotEmpty
+                    ? Image.network(
+                        shop.imageUrl,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _fallback(shop),
                       )
-                    : _fallback(shop),
+                    : (shop.imageData != null && shop.imageData!.isNotEmpty
+                        ? Image.memory(
+                            base64Decode(shop.imageData!),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _fallback(shop),
+                          )
+                        : _fallback(shop)),
               ),
             ),
             const SizedBox(width: 12),
@@ -1076,6 +1103,7 @@ class _NearbyShopCard extends StatelessWidget {
                   shop.id,
                   name: shop.name,
                   location: shop.location,
+                  imageUrl: shop.imageUrl,
                   imageData: shop.imageData,
                   discount: shop.discount,
                   rating: shop.rating,

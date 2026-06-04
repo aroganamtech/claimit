@@ -3,3 +3,6 @@
 fastapi/backend/vercel_backend/vercel.json
 fastapi/backend/.env
 fastapi/backend/vercel_backend/.env
+fastapi/backend/vercel_backend/.env.example
+claimit_web_org/fastapi/backend/.env
+claimit_web_org/fastapi/backend/claimit_web_backend_vercel/.env.example

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from bson import ObjectId
 from ..database import get_db
 from ..utils.auth import get_current_user
+from ..utils.s3 import generate_presigned_url
 from ..utils.helpers import serialize_doc
 from ..models.shop import ReviewCreate
 
@@ -32,13 +33,28 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
+async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
     result = serialize_doc(doc)
     if distance_km is not None:
         result["distance"] = f"{distance_km:.1f} km"
 
-    # Derive has_rewards / has_redeem from shop_type if not already set,
-    # so the Flutter client always receives explicit boolean flags.
+    # ── Generate presigned URLs from S3 keys (private bucket) ────────────────
+    s3_key  = result.get("image_s3_key")
+    s3_keys = result.get("image_s3_keys") or []
+
+    if s3_key:
+        result["image_url"] = await generate_presigned_url(s3_key) or ""
+
+    if s3_keys:
+        presigned = []
+        for k in s3_keys:
+            url = await generate_presigned_url(k)
+            if url:
+                presigned.append(url)
+        if presigned:
+            result["image_urls"] = presigned
+
+    # ── Derive has_rewards / has_redeem from shop_type ────────────────────────
     shop_type = result.get("shop_type", "")
     if shop_type == "reward":
         result.setdefault("has_rewards", True)
@@ -50,7 +66,6 @@ def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
         result.setdefault("has_rewards", True)
         result.setdefault("has_redeem",  True)
     else:
-        # Any other shop_type (grocery, salon, etc.) or missing → default both True
         result.setdefault("has_rewards", True)
         result.setdefault("has_redeem",  True)
 
@@ -111,10 +126,13 @@ async def get_shops(
 
     shops = shops[:limit]
 
+    shops_out = []
+    for s in shops:
+        shops_out.append(await _doc_to_response(s))
     return {
         "success": True,
-        "shops": [_doc_to_response(s) for s in shops],
-        "total": len(shops),
+        "shops": shops_out,
+        "total": len(shops_out),
     }
 
 
@@ -136,10 +154,13 @@ async def search_shops(
         if q_lower in s.get("name", "").lower()
         or q_lower in s.get("location", "").lower()
     ]
+    results_out = []
+    for s in results:
+        results_out.append(await _doc_to_response(s))
     return {
         "success": True,
-        "shops": [_doc_to_response(s) for s in results],
-        "total": len(results),
+        "shops": results_out,
+        "total": len(results_out),
     }
 
 
@@ -171,7 +192,7 @@ async def get_nearby_shops(
         if shop_lat is not None and shop_lng is not None:
             dist = _haversine(lat, lng, float(shop_lat), float(shop_lng))
             if dist <= radius_km:
-                doc = _doc_to_response(shop, distance_km=dist)
+                doc = await _doc_to_response(shop, distance_km=dist)
                 nearby.append((dist, doc))
         # Shops without GPS: skip from nearby (they have no coordinates to measure)
 
@@ -216,7 +237,7 @@ async def get_shop(
     review_count = await db.shop_reviews.count_documents({"shop_id": shop_id})
     shop["review_count"] = review_count
 
-    return {"success": True, "shop": _doc_to_response(shop)}
+    return {"success": True, "shop": await _doc_to_response(shop)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -233,15 +254,42 @@ async def get_shop_image(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid shop ID")
 
-    shop = await db.shops.find_one({"_id": oid}, {"image_data": 1, "image_name": 1})
+    shop = await db.shops.find_one(
+        {"_id": oid},
+        {"image_s3_key": 1, "image_s3_keys": 1,
+         "image_url": 1,    "image_urls": 1,
+         "image_data": 1,   "image_name": 1},
+    )
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
+    # Generate presigned URLs from S3 keys (private bucket); fall back to
+    # whatever is stored in image_url for legacy/base64 records.
+    s3_key  = shop.get("image_s3_key")
+    s3_keys = shop.get("image_s3_keys") or []
+
+    image_url = (
+        await generate_presigned_url(s3_key)
+        if s3_key
+        else shop.get("image_url", "")
+    )
+    image_urls = []
+    for key in s3_keys:
+        url = await generate_presigned_url(key)
+        if url:
+            image_urls.append(url)
+    if not image_urls:
+        image_urls = shop.get("image_urls", [])
+
     return {
-        "success": True,
-        "shop_id": shop_id,
-        "image_name": shop.get("image_name", ""),
-        "image_data": shop.get("image_data", ""),
+        "success":      True,
+        "shop_id":      shop_id,
+        "image_url":    image_url or "",
+        "image_urls":   image_urls,
+        "image_s3_key": s3_key,
+        # legacy fields kept for backward compat
+        "image_name":   shop.get("image_name", ""),
+        "image_data":   shop.get("image_data", ""),
     }
 
 

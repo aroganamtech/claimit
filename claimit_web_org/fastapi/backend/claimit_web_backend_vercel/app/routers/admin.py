@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import os
 
+from app.utils.s3 import generate_presigned_url_sync as _presign
 from app.database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
@@ -224,7 +225,7 @@ def _serialize_review(r):
         "reward_points": r.get("reward_points"),
         "cashback":      r.get("cashback"),
         "admin_note":    r.get("admin_note") or "",
-        "image_base64":  r.get("image_base64") or "",
+        "image_url":     _presign(r.get("image_s3_key")) if r.get("image_s3_key") else None,
         "submitted_at": (
             r["submitted_at"].isoformat() if r.get("submitted_at") else
             r["created_at"].isoformat()   if r.get("created_at")   else ""

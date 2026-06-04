@@ -4,6 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/error_handler.dart';
 import '../models/user_model.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -108,14 +109,8 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  String _extractError(Object e, String fallback) {
-    if (e is DioException) {
-      final data = e.response?.data;
-      if (data is Map && data['detail'] != null) return data['detail'].toString();
-      return e.message ?? fallback;
-    }
-    return e.toString();
-  }
+  String _extractError(Object e, String fallback) =>
+      AppError.friendly(e, fallback, context: 'Auth');
 
   String? _readDetail(dynamic data) {
     if (data is Map && data['detail'] != null) {

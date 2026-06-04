@@ -90,7 +90,7 @@ class CreateClassifiedRequest(BaseModel):
     area: str
     address: str = ""
     payment_method: str = "Credit/Debit Card"
-    photos: List[str] = []   # base64-encoded image strings
+    photos: List[str] = []   # S3 keys (uploaded via /classifieds/upload-photo)
 
 
 @router.post("", status_code=201)
@@ -113,7 +113,7 @@ async def create_classified(
         "area": body.area,
         "address": body.address,
         "payment_method": body.payment_method,
-        "photos": body.photos,
+        "photos": body.photos,   # list of S3 keys
         "is_available": True,
         "created_at": datetime.now(timezone.utc),
     }

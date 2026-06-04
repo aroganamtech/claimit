@@ -4,9 +4,13 @@ seed.py — Populate MongoDB with dynamic data for Claimit.
 HOW TO RUN (from fastapi/backend/ folder):
     python seed.py
 
+Images are uploaded to AWS S3 (bucket: claimit-image-bucket).
+AWS credentials are read from .env:
+  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_STORAGE_BUCKET_NAME
+
 WHAT IT DOES:
   1. Reads shop images from  uploads/shop_images/img1.jpg … img20.jpg
-     and stores them as base64-encoded strings in MongoDB.
+     and uploads them to S3. Stores s3_key + public URL in MongoDB.
   2. Inserts 20 shops with categories, discounts, rewards, redeem flags.
   3. Inserts deals (nearby + brand groups).
   4. Inserts rewards (loyalty points offers) for each shop.
@@ -14,46 +18,62 @@ WHAT IT DOES:
 
 IMAGES:
   • Drop your real images as  uploads/shop_images/img1.jpg … img20.jpg
-    before running this script. The seed will encode them to base64.
-  • If an image file is missing, a coloured placeholder is auto-generated.
+    before running this script. They will be uploaded to S3 automatically.
+  • If an image file is missing, a coloured placeholder is auto-generated
+    and uploaded to S3.
 """
 
 import asyncio
 import base64
+import io
 import os
 import sys
+import uuid
 from datetime import datetime, timezone, timedelta
 
+import boto3
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DATABASE_NAME", "claimit_db")
-IMAGE_DIR = os.path.join(os.path.dirname(__file__), "uploads", "shop_images")
+MONGO_URL  = os.getenv("MONGODB_URL",           "mongodb://localhost:27017")
+DB_NAME    = os.getenv("DATABASE_NAME",          "claimit_db")
+IMAGE_DIR  = os.path.join(os.path.dirname(__file__), "uploads", "shop_images")
+
+# ── S3 config ─────────────────────────────────────────────────────────────────
+_AWS_KEY    = os.getenv("AWS_ACCESS_KEY_ID",       "")
+_AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY",   "")
+_AWS_REGION = os.getenv("AWS_REGION",              "eu-north-1")
+_BUCKET     = os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
+
+def _s3():
+    return boto3.client("s3", region_name=_AWS_REGION,
+                        aws_access_key_id=_AWS_KEY,
+                        aws_secret_access_key=_AWS_SECRET)
+
+def _s3_url(key: str) -> str:
+    return f"https://{_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/{key}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: read an image file → base64 string
+# Helper: read/generate image bytes (JPEG), upload to S3, return (s3_key, url)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _image_to_base64(image_name: str, max_size: tuple = (480, 360), quality: int = 65) -> str:
+def _upload_image_to_s3(image_name: str,
+                        max_size: tuple = (480, 360),
+                        quality: int = 65) -> tuple:
     """
-    Read uploads/shop_images/<image_name>, resize to max_size, compress to JPEG,
-    and return base64 string.  Keeps each image under ~40 KB so MongoDB stays fast.
-    If the file doesn't exist, generate a small colored placeholder.
+    Read uploads/shop_images/<image_name>, resize, compress, upload to S3.
+    Returns (s3_key, public_url).  Falls back to placeholder if file missing.
     """
-    from PIL import Image
-    import io
+    from PIL import Image, ImageDraw
 
     path = os.path.join(IMAGE_DIR, image_name)
-
     try:
         if os.path.exists(path):
             img = Image.open(path).convert("RGB")
         else:
-            # Auto-generate a colored placeholder
             idx = int("".join(filter(str.isdigit, image_name)) or "1")
             palette = [
                 (76, 175, 80), (33, 150, 243), (255, 152, 0), (244, 67, 54),
@@ -64,22 +84,21 @@ def _image_to_base64(image_name: str, max_size: tuple = (480, 360), quality: int
             ]
             color = palette[(idx - 1) % len(palette)]
             img = Image.new("RGB", (400, 300), color=color)
-            from PIL import ImageDraw
             draw = ImageDraw.Draw(img)
             draw.rectangle([20, 110, 380, 190], fill=(255, 255, 255))
 
-        # Resize keeping aspect ratio — never upscale
         img.thumbnail(max_size, Image.LANCZOS)
-
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=quality, optimize=True)
-        encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
-        size_kb = len(buf.getvalue()) / 1024
-        return encoded
+        data = buf.getvalue()
+
+        key = f"shops/{uuid.uuid4().hex}.jpg"
+        _s3().put_object(Bucket=_BUCKET, Key=key, Body=data, ContentType="image/jpeg")
+        return key, _s3_url(key)
 
     except Exception as e:
-        print(f"     ⚠️  Image error ({image_name}): {e}")
-        return ""
+        print(f"     ⚠️  Image upload error ({image_name}): {e}")
+        return "", ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -956,21 +975,29 @@ async def seed():
     print(f"\n🏪 Seeding {len(SHOPS_SEED)} shops …")
     shop_docs = []
     for shop in SHOPS_SEED:
-        image_name = shop.get("image_name", "")
+        image_name  = shop.get("image_name", "")
         image_names = shop.get("image_names", [image_name] if image_name else [])
 
-        print(f"   📷 Encoding '{shop['name']}' …", end=" ", flush=True)
-        # Primary image (backward compat for shop list cards)
-        image_b64 = _image_to_base64(image_name) if image_name else ""
-        # All 3 images for the detail page carousel
-        image_data_list = [_image_to_base64(n) for n in image_names]
-        kb = round(len(image_b64) * 3 / 4 / 1024)
-        print(f"✅ (~{kb} KB)" if image_b64 else "⚠️  (no image)")
+        print(f"   ☁️  Uploading '{shop['name']}' images to S3 …", end=" ", flush=True)
+        # Primary image — upload to S3, store key + public URL
+        primary_key, primary_url = _upload_image_to_s3(image_name) if image_name else ("", "")
+        # Gallery images (detail carousel)
+        gallery = [_upload_image_to_s3(n) for n in image_names]
+        gallery_keys = [k for k, _ in gallery]
+        gallery_urls = [u for _, u in gallery]
+        print(f"✅ {primary_url[:60]}…" if primary_url else "⚠️  (upload failed)")
 
         doc = {
             **shop,
-            "image_data": image_b64,
-            "image_data_list": image_data_list,
+            # S3 keys for programmatic access
+            "image_s3_key":       primary_key,
+            "image_s3_keys":      gallery_keys,
+            # Public S3 URLs — Flutter reads these directly
+            "image_url":          primary_url,
+            "image_urls":         gallery_urls,
+            # Legacy fields kept for backward compatibility
+            "image_data":         "",
+            "image_data_list":    [],
             "created_at": datetime.now(timezone.utc),
         }
         shop_docs.append(doc)

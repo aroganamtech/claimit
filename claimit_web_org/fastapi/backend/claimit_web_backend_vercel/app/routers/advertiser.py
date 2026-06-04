@@ -8,6 +8,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional
 import base64, os, json
+from app.utils.s3 import upload_bytes as _s3_upload
 
 router = APIRouter()
 
@@ -106,33 +107,32 @@ async def create_ad(
     end_date = pub_date + timedelta(days=7)
     ad_status = "active" if publish_today else "scheduled"
 
-    # ── Save uploaded files + encode as base64 for app ───────────────────────
-    upload_dir = "/tmp/uploads"
-    os.makedirs(upload_dir, exist_ok=True)
+    # ── Upload creative + thumbnail to S3 ──────────────────────────────────────
+    _region = os.getenv("AWS_REGION", "eu-north-1")
+    _bucket = os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
 
-    web_base = os.getenv("WEB_BASE_URL", "")
+    def _s3_url(key: str) -> str:
+        return f"https://{_bucket}.s3.{_region}.amazonaws.com/{key}"
 
     creative_url  = ""
-    creative_b64  = ""   # raw base64 — what the Flutter app uses
+    creative_b64  = ""   # kept for legacy compatibility
     if creative and creative.filename:
-        content = await creative.read()
-        creative_b64 = base64.b64encode(content).decode("utf-8")
-        if web_base:
-            safe = f"{user_id}_{int(pub_date.timestamp())}_{creative.filename}"
-            with open(os.path.join(upload_dir, safe), "wb") as f:
-                f.write(content)
-            creative_url = f"{web_base}/uploads/{safe}"
+        content       = await creative.read()
+        creative_b64  = base64.b64encode(content).decode("utf-8")   # legacy
+        s3_key        = await _s3_upload(content, "ad-creatives",
+                            filename=creative.filename,
+                            content_type=creative.content_type or "image/jpeg")
+        creative_url  = _s3_url(s3_key)
 
     thumbnail_url = ""
     thumbnail_b64 = ""
     if thumbnail and thumbnail.filename:
-        content = await thumbnail.read()
-        thumbnail_b64 = base64.b64encode(content).decode("utf-8")
-        if web_base:
-            safe = f"{user_id}_{int(pub_date.timestamp())}_thumb_{thumbnail.filename}"
-            with open(os.path.join(upload_dir, safe), "wb") as f:
-                f.write(content)
-            thumbnail_url = f"{web_base}/uploads/{safe}"
+        content       = await thumbnail.read()
+        thumbnail_b64 = base64.b64encode(content).decode("utf-8")   # legacy
+        s3_key        = await _s3_upload(content, "ad-thumbnails",
+                            filename=thumbnail.filename,
+                            content_type=thumbnail.content_type or "image/jpeg")
+        thumbnail_url = _s3_url(s3_key)
 
     # ── Parse tags ────────────────────────────────────────────────────────────
     parsed_tags: list = []
@@ -164,7 +164,6 @@ async def create_ad(
             "sub":        sub or description or "",
             "cta_link":   cta_link or "",
             "image_url":  creative_url,
-            "image_data": creative_b64,
             "title":      headline or title or "",
         })
 
@@ -196,7 +195,6 @@ async def create_ad(
             "distance":    distance or "",
             "tags":        parsed_tags,
             "image_url":   creative_url,
-            "image_data":  creative_b64,
             "rating":      4.0,
             "reviews":     0,
             "deal_group":  "brand" if ad_type == "brand_deals" else "nearby",
@@ -218,7 +216,6 @@ async def create_ad(
             "sub":        sub or description or "",
             "cta_link":   cta_link or "",
             "image_url":  creative_url,
-            "image_data": creative_b64,
             "pincode":    pincode,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),

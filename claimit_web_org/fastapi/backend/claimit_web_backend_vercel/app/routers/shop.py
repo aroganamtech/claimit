@@ -9,6 +9,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
+from app.utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign
 import json
 import re
 
@@ -117,11 +118,44 @@ async def _sync_shop_to_app(user_id: str) -> None:
     if not shop:
         return
 
-    cover_raw          = _strip_b64_prefix(shop.get("cover_photo_b64") or "")
-    gallery            = shop.get("gallery_photos", []) or []
-    gallery_raw        = [_strip_b64_prefix(p) for p in gallery if p]
-    cover_compressed   = _compress_b64_image(cover_raw)
-    gallery_compressed = [_compress_b64_image(g) for g in gallery_raw]
+    import asyncio as _asyncio, io as _io, os as _os
+
+    def _b64_to_bytes(b64: str) -> bytes:
+        import base64 as _b64
+        raw = _strip_b64_prefix(b64)
+        return _b64.b64decode(raw + "==") if raw else b""
+
+    _region = _os.getenv("AWS_REGION", "eu-north-1")
+    _bucket = _os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
+
+    def _s3_url(key: str) -> str:
+        return f"https://{_bucket}.s3.{_region}.amazonaws.com/{key}" if key else ""
+
+    # Upload cover photo to S3
+    cover_key = ""
+    cover_url = ""
+    cover_raw = _b64_to_bytes(shop.get("cover_photo_b64") or "")
+    if cover_raw:
+        try:
+            cover_key = _asyncio.get_event_loop().run_until_complete(
+                _s3_upload(cover_raw, "shop-covers", content_type="image/jpeg"))
+            cover_url = _s3_url(cover_key)
+        except Exception as _e:
+            print(f"Cover S3 upload error: {_e}")
+
+    # Upload gallery photos to S3
+    gallery_keys = []
+    gallery_urls = []
+    for gp in (shop.get("gallery_photos") or []):
+        gb = _b64_to_bytes(gp)
+        if gb:
+            try:
+                gk = _asyncio.get_event_loop().run_until_complete(
+                    _s3_upload(gb, "shop-gallery", content_type="image/jpeg"))
+                gallery_keys.append(gk)
+                gallery_urls.append(_s3_url(gk))
+            except Exception as _e:
+                print(f"Gallery S3 upload error: {_e}")
 
     app_fields = {
         "name":            shop.get("shop_name", ""),
@@ -140,8 +174,14 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "phone":           shop.get("phone", ""),
         "lat":             shop.get("lat"),
         "lng":             shop.get("lng"),
-        "image_data":      cover_compressed,
-        "image_data_list": gallery_compressed,
+        # S3 keys and URLs
+        "image_s3_key":    cover_key,
+        "image_url":       cover_url,
+        "image_s3_keys":   gallery_keys,
+        "image_urls":      gallery_urls,
+        # Legacy empty fields (no more base64 in DB)
+        "image_data":      "",
+        "image_data_list": [],
     }
 
     # Keep cover_photo_b64 and gallery_photos — removing them breaks

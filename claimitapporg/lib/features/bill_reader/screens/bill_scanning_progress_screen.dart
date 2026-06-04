@@ -186,7 +186,8 @@ class _BillScanningProgressScreenState
     });
 
     // Populate provider
-    context.read<BillRewardProvider>().setScanResult(
+    final provider = context.read<BillRewardProvider>();
+    provider.setScanResult(
       totalAmount: total,
       imagePath:   widget.imagePath,
       ocrText:     rawText,
@@ -195,6 +196,43 @@ class _BillScanningProgressScreenState
       billNumber:  billNumber,
       billTime:    billTime,
     );
+
+    // ── Early duplicate check ─────────────────────────────────────────────────
+    // Only check when OCR extracted enough data (shop + amount + date).
+    // This blocks both normal scan AND manual review before the user wastes time.
+    if (total != null && shopName != null && shopName.isNotEmpty && billDate != null) {
+      final alreadyScanned = provider.isDuplicate(
+        shopName:  shopName,
+        amount:    total,
+        billDate:  billDate,
+        billTime:  billTime,
+      );
+      if (alreadyScanned && mounted) {
+        // Go back to scanner and show already-scanned message
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFB71C1C),
+            duration: const Duration(seconds: 4),
+            content: Row(
+              children: [
+                const Icon(Icons.receipt_long_rounded,
+                    color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'This bill from "$shopName" has already been scanned. '
+                    'Each bill can only be claimed once.',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        return;
+      }
+    }
 
     context.pushReplacement('/bill-reader/confirm');
   }

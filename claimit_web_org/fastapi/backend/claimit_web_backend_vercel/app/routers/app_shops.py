@@ -26,14 +26,6 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
     """Convert a MongoDB shops document → Flutter ShopItem JSON shape."""
     sid = str(doc["_id"])
 
-    # Cover image — use stripped image_data (no data-URL prefix)
-    image_data = doc.get("image_data") or ""
-    # Truncate safety: if somehow still has prefix, strip it
-    if image_data.startswith("data:"):
-        import re
-        m = re.match(r"data:[^;]+;base64,(.+)", image_data, re.DOTALL)
-        image_data = m.group(1) if m else ""
-
     result = {
         "id":            sid,
         "name":          doc.get("name") or doc.get("shop_name") or "",
@@ -43,7 +35,9 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
         "rating":        float(doc.get("rating") or 4.0),
         "review_count":  int(doc.get("review_count") or 0),
         "added_days_ago": int(doc.get("added_days_ago") or 0),
-        "image_data":    image_data,
+        # Prefer S3 URL; fall back to legacy base64 for older documents
+        "image_url":     doc.get("image_url") or "",
+        "image_data":    doc.get("image_data") or "",   # legacy
         "image_name":    doc.get("image_name") or "",
         "has_rewards":   bool(doc.get("has_rewards") or doc.get("shop_type") == "reward"),
         "has_redeem":    bool(doc.get("has_redeem") or doc.get("shop_type") == "redeem"),
@@ -57,7 +51,8 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
         "distance":      doc.get("distance") or "",
         "shop_type":     doc.get("shop_type") or "",
         # Gallery only on detail view — omit on list to keep response small
-        "image_data_list": (doc.get("image_data_list") or []) if include_gallery else [],
+        "image_urls":      (doc.get("image_urls") or []) if include_gallery else [],
+        "image_data_list": (doc.get("image_data_list") or []) if include_gallery else [],   # legacy
     }
     return result
 

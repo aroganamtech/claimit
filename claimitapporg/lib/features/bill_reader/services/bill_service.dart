@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +66,8 @@ class BillService {
     if (response.statusCode == 409) {
       throw const BillAlreadyScannedException();
     }
-    throw Exception('Bill scan API error: ${response.statusCode}');
+    AppError.friendly(Exception('Bill scan HTTP ${response.statusCode}'), '', context: 'BillScan');
+    throw Exception('Unable to submit bill. Please try again.');
   }
 
   // ── Fetch current wallet ───────────────────────────────────────────────────
@@ -74,7 +76,8 @@ class BillService {
     if (response.statusCode == 200) {
       return response.data as Map<String, dynamic>;
     }
-    throw Exception('Wallet API error: ${response.statusCode}');
+    AppError.friendly(Exception('Wallet HTTP ${response.statusCode}'), '', context: 'BillWallet');
+    throw Exception('Unable to load wallet. Please try again.');
   }
 
   // ── Fetch scan history ─────────────────────────────────────────────────────
@@ -83,7 +86,8 @@ class BillService {
     if (response.statusCode == 200) {
       return (response.data as List).cast<Map<String, dynamic>>();
     }
-    throw Exception('History API error: ${response.statusCode}');
+    AppError.friendly(Exception('History HTTP ${response.statusCode}'), '', context: 'BillHistory');
+    throw Exception('Unable to load history. Please try again.');
   }
 
   // ── Submit for manual review (missing fields or wrong OCR data) ─────────────
@@ -100,7 +104,8 @@ class BillService {
     try {
       final bytes = await File(imagePath).readAsBytes();
       imageBase64 = base64Encode(bytes);
-    } catch (_) {
+    } catch (e) {
+      AppError.friendly(e, '', context: 'BillImageRead');
       throw Exception('Could not read bill image. Please retake the photo.');
     }
     if (imageBase64.isEmpty) throw Exception('Bill image is required.');
@@ -123,7 +128,8 @@ class BillService {
     if (response.statusCode == 200 || response.statusCode == 201) {
       return response.data as Map<String, dynamic>;
     }
-    throw Exception('Manual review error: ${response.statusCode}');
+    AppError.friendly(Exception('ManualReview HTTP ${response.statusCode}'), '', context: 'BillManualReview');
+    throw Exception('Could not submit for review. Please try again.');
   }
 
   // ── Fetch my manual reviews ─────────────────────────────────────────────────

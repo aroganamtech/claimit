@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from app.utils.s3 import upload_base64 as _s3_b64_async, generate_presigned_url_sync as _presign
 from app.database import app_db, app_bill_reviews_collection, app_notifications_collection
 from app.utils.dependencies import get_current_user_optional
 from bson import ObjectId
@@ -225,7 +226,7 @@ async def submit_manual_review(
         "bill_number":   body.bill_number or "",
         "bill_date":     body.bill_date or datetime.utcnow().strftime("%Y-%m-%d"),
         "bill_time":     body.bill_time or "",
-        "image_base64":  body.image_base64,
+        "image_s3_key":  None,  # populated below
         "manual_reason": body.manual_reason,   # missing_fields | wrong_data
         "status":        "pending",             # pending | approved | rejected
         "reward_points": None,
@@ -234,6 +235,11 @@ async def submit_manual_review(
         "submitted_at":  datetime.utcnow(),
         "reviewed_at":   None,
     }
+    if body.image_base64:
+        try:
+            doc["image_s3_key"] = await _s3_b64_async(body.image_base64, "bill-reviews")
+        except Exception as _e:
+            print(f"S3 upload error: {_e}")
     res = await app_bill_reviews_collection.insert_one(doc)
     return {
         "ok":        True,
@@ -260,7 +266,7 @@ async def list_manual_reviews(status: str = "pending"):
             "bill_number":   r.get("bill_number", ""),
             "bill_date":     r.get("bill_date", ""),
             "bill_time":     r.get("bill_time", ""),
-            "image_base64":  r.get("image_base64", ""),
+            "image_url":     _presign(r.get("image_s3_key")) if r.get("image_s3_key") else None,
             "manual_reason": r.get("manual_reason", ""),
             "status":        r.get("status", "pending"),
             "reward_points": r.get("reward_points"),
