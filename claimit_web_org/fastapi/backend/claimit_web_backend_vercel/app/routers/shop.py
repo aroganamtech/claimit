@@ -176,9 +176,9 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "lng":             shop.get("lng"),
         # S3 keys and URLs
         "image_s3_key":    cover_key,
-        "image_url":       cover_url,
+        "image_url":       "",
         "image_s3_keys":   gallery_keys,
-        "image_urls":      gallery_urls,
+        "image_urls":      [],
         # Legacy empty fields (no more base64 in DB)
         "image_data":      "",
         "image_data_list": [],

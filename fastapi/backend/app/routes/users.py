@@ -255,11 +255,3 @@ async def get_deal_favourites(
             pass
 
     return {"success": True, "deals": deals, "total": len(deals)}
-        try:
-            deal = await db.deals.find_one({"_id": ObjectId(deal_id)})
-            if deal:
-                deals.append(serialize_doc(deal))
-        except Exception:
-            pass
-
-    return {"success": True, "deals": deals, "total": len(deals)}

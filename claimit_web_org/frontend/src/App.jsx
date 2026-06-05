@@ -64,31 +64,47 @@ function AdminProtected({ children }) {
 // Landing page (same for all)
 function LandingPage() {
   return (
-    <div style={{
-      minHeight: '100vh', paddingTop: 64,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)'
-    }}>
-      <div style={{ textAlign: 'center', maxWidth: 600 }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: '50%',
-          background: '#1565C0', margin: '0 auto 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 36, fontWeight: 700, color: '#fff', fontStyle: 'italic'
-        }}>c</div>
-        <h1 style={{ fontSize: 40, fontWeight: 800, color: '#1565C0', marginBottom: 12 }}>
-          Welcome to Claimit
-        </h1>
-        <p style={{ fontSize: 18, color: '#555', marginBottom: 8 }}>
-          Rewards. Discounts. Cashbacks
-        </p>
-        <p style={{ fontSize: 15, color: '#888', marginBottom: 40, lineHeight: 1.7 }}>
-          Join the affiliate network where every sale generates extra value for your business and a cashback bonus for you.
-        </p>
-        <p style={{ fontSize: 14, color: '#1565C0', fontWeight: 600 }}>
-          Click "Login" in the top right to get started →
+    <div style={{ minHeight: '100vh', paddingTop: 64, background: '#fff' }}>
+
+      {/* Hero Banner */}
+      <div style={{ width: '100%', maxHeight: 480, overflow: 'hidden' }}>
+        <img
+          src="/assets/home_img5.png"
+          alt="claimit hero"
+          style={{ width: '100%', height: 480, objectFit: 'cover', display: 'block' }}
+        />
+      </div>
+
+      {/* About Section */}
+      <div style={{ textAlign: 'center', padding: '60px 32px 40px' }}>
+        <h2 style={{ fontSize: 32, fontWeight: 700, color: '#1565C0', marginBottom: 20 }}>
+          About claimit
+        </h2>
+        <p style={{ fontSize: 17, color: '#333', maxWidth: 760, margin: '0 auto', lineHeight: 1.7 }}>
+          Empower your brand with our loyalty ecosystem, designed to increase your footfall and maximize your long-term revenue potential.
         </p>
       </div>
+
+      {/* 4-Image Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 0,
+        maxWidth: 1100,
+        margin: '0 auto 60px',
+        padding: '0 32px'
+      }}>
+        {[1, 2, 3, 4].map((n) => (
+          <div key={n} style={{ overflow: 'hidden', borderRadius: 8, margin: 8 }}>
+            <img
+              src={`/assets/home_img${n}.png`}
+              alt={`claimit feature ${n}`}
+              style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+            />
+          </div>
+        ))}
+      </div>
+
     </div>
   )
 }

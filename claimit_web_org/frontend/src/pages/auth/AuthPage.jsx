@@ -151,9 +151,9 @@ export default function AuthPage({ portal }) {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src={step === 'register' ? '/assets/auth-register.svg' : '/assets/auth-otp.svg'}
+          src={step === 'register' ? '/assets/images/register.png' : '/assets/images/otp.png'}
           alt="claimit"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32, objectFit: 'cover' }}
+          style={{ width: 380, height: '100%', borderRadius: 12, marginBottom: 32, objectFit: 'cover' }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           {step === 'register' ? config.title : config.otpTitle}

@@ -12,6 +12,7 @@ Serves the Flutter app's /shops requests.
 
 from fastapi import APIRouter, Query, HTTPException
 from app.database import app_shops_collection, reviews_collection
+from app.utils.s3 import generate_presigned_url_sync as _presign
 from bson import ObjectId
 from typing import Optional
 from datetime import datetime
@@ -26,6 +27,22 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
     """Convert a MongoDB shops document → Flutter ShopItem JSON shape."""
     sid = str(doc["_id"])
 
+    # Generate presigned URL from S3 key (private bucket)
+    cover_url = _presign(doc.get("image_s3_key") or "") or ""
+    if not cover_url:
+        stored_url = doc.get("image_url") or ""
+        if stored_url.startswith("https://"):
+            from urllib.parse import urlparse
+            key = urlparse(stored_url).path.lstrip("/")
+            cover_url = _presign(key) or ""
+
+    gallery_urls = []
+    if include_gallery:
+        for key in (doc.get("image_s3_keys") or []):
+            url = _presign(key)
+            if url:
+                gallery_urls.append(url)
+
     result = {
         "id":            sid,
         "name":          doc.get("name") or doc.get("shop_name") or "",
@@ -35,9 +52,8 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
         "rating":        float(doc.get("rating") or 4.0),
         "review_count":  int(doc.get("review_count") or 0),
         "added_days_ago": int(doc.get("added_days_ago") or 0),
-        # Prefer S3 URL; fall back to legacy base64 for older documents
-        "image_url":     doc.get("image_url") or "",
-        "image_data":    doc.get("image_data") or "",   # legacy
+        "image_url":     cover_url,
+        "image_data":    doc.get("image_data") or "",
         "image_name":    doc.get("image_name") or "",
         "has_rewards":   bool(doc.get("has_rewards") or doc.get("shop_type") == "reward"),
         "has_redeem":    bool(doc.get("has_redeem") or doc.get("shop_type") == "redeem"),
@@ -50,9 +66,8 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
         "lng":           doc.get("lng"),
         "distance":      doc.get("distance") or "",
         "shop_type":     doc.get("shop_type") or "",
-        # Gallery only on detail view — omit on list to keep response small
-        "image_urls":      (doc.get("image_urls") or []) if include_gallery else [],
-        "image_data_list": (doc.get("image_data_list") or []) if include_gallery else [],   # legacy
+        "image_urls":    gallery_urls,
+        "image_data_list": [],
     }
     return result
 

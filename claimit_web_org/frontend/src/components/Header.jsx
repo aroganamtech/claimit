@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import img from '../../public/assets/logo_home.png'
 
 export default function Header() {
   const { user, role, logout } = useAuth()
@@ -26,9 +27,10 @@ export default function Header() {
   }
 
   const portals = [
-    { label: 'L1 - Advertiser Portal', role: 'advertiser', path: '/advertiser/auth' },
-    { label: 'L2 - Sales Portal', role: 'sales', path: '/sales/auth' },
-    { label: 'L3 - Shop Portal', role: 'shop', path: '/shop/auth' },
+    { label: 'Business Owner Registration', role: 'shop', path: '/shop/auth' },
+    { label: 'Create Advertisements', role: 'advertiser', path: '/advertiser/auth' },
+    { label: 'Business Associate', role: 'shop', path: '/shop/auth' },
+    { label: 'Sales Representative', role: 'sales', path: '/sales/auth' },
   ]
 
   const getDashboardPath = () => {
@@ -52,22 +54,27 @@ export default function Header() {
         onClick={() => navigate('/')}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
       >
-        <div style={{
+        <div>
+          <img style={{
+            width: '100%', height: 40
+          }} src={img}></img>
+        </div>
+        {/* <div style={{
           width: 40, height: 40, borderRadius: '50%',
           background: '#F5A623',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontWeight: 700, fontSize: 18, color: '#fff', fontStyle: 'italic'
-        }}>c</div>
-        <div>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: 20, letterSpacing: 1 }}>claimit</div>
+        }}>c</div> */}
+        {/* <div>
+          <div style={{ }}>claimit</div>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 9, letterSpacing: 2, marginTop: -2 }}>REWARDS. DISCOUNTS. CASHBACKS</div>
-        </div>
+        </div> */}
       </div>
 
       {/* Nav Links */}
       <nav style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-        {['Help Centre', 'Support', 'Terms of Service', 'Privacy Policy'].map(item => (
-          <a key={item} href="#" style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 400 }}>{item}</a>
+        {['About us', 'Why claimIT', 'Features', 'Contact us'].map(item => (
+          <a key={item} href="#" style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 400, textDecoration: 'none' }}>{item}</a>
         ))}
 
         {/* Login / User Button */}
@@ -140,12 +147,9 @@ export default function Header() {
                   boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
                   minWidth: 220, zIndex: 999, overflow: 'hidden'
                 }}>
-                  <div style={{ padding: '10px 16px 6px', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
-                    Select Portal
-                  </div>
                   {portals.map((p) => (
                     <button
-                      key={p.role}
+                      key={p.label}
                       onClick={() => { navigate(p.path); setShowLoginMenu(false) }}
                       style={{ ...menuItemStyle }}
                     >

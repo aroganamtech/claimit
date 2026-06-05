@@ -20,9 +20,9 @@ export function ReviewAndSubmit() {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src="/assets/shop-review.svg"
+          src="/assets/images/submit_shop.png"
           alt="Review and submit"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+          style={{ width: 380, height: 380, borderRadius: 12, marginBottom: 32 }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           Keep Your Customers Coming Back for More
@@ -235,9 +235,9 @@ export function ShopPayment() {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src="/assets/shop-payment.svg"
+          src="/assets/images/payment_shop.png"
           alt="Finish payment"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+          style={{ width: 380, height: 380, borderRadius: 12, marginBottom: 32 }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           Master the Art of Customer Retention

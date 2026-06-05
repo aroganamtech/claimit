@@ -249,9 +249,9 @@ export default function ShopRegister() {
           padding: '60px 40px', background: '#fff'
         }}>
           <img
-            src="/assets/shop-register.svg"
+            src="/assets/images/shop_register.png"
             alt="Register your shop"
-            style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+            style={{ width: 480, height: 480, borderRadius: 12, marginBottom: 52 }}
           />
           <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
             Unlock New Horizons for Your Shop

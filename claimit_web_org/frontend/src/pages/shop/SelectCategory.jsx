@@ -55,9 +55,9 @@ export default function SelectCategory() {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src="/assets/shop-category.svg"
+          src="/assets/images/shop_register.png"
           alt="Select category"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+          style={{ width: 480, height: 450, borderRadius: 12, marginBottom: 32 }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           Elevate Your Brand Presence Today

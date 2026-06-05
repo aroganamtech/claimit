@@ -23,9 +23,9 @@ export default function ChooseShopType() {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src="/assets/shop-type.svg"
+          src="/assets/images/redeem_reward.png"
           alt="Choose shop type"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+          style={{ width: 450, height: 380, borderRadius: 12, marginBottom: 32 }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           Turn One-Time Shoppers Into Lifelong Fans

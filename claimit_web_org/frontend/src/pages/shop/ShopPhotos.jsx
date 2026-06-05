@@ -173,9 +173,9 @@ export default function ShopPhotos() {
         padding: '60px 40px', background: '#fff'
       }}>
         <img
-          src="/assets/shop-photos.svg"
+          src="/assets/images/register.png"
           alt="Upload shop photos"
-          style={{ width: 380, height: 280, borderRadius: 12, marginBottom: 32 }}
+          style={{ width: 380, height: 380, borderRadius: 12, marginBottom: 32 }}
         />
         <h2 style={{ fontWeight: 700, fontSize: 22, textAlign: 'center', marginBottom: 12 }}>
           Drive Your Business Towards Success

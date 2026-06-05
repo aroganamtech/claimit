@@ -989,12 +989,13 @@ async def seed():
 
         doc = {
             **shop,
-            # S3 keys for programmatic access
+            # S3 keys — backend generates presigned URLs from these at serve time
             "image_s3_key":       primary_key,
             "image_s3_keys":      gallery_keys,
-            # Public S3 URLs — Flutter reads these directly
-            "image_url":          primary_url,
-            "image_urls":         gallery_urls,
+            # Leave image_url/image_urls empty — presigned URLs are generated
+            # on demand by the API so they never expire in the DB.
+            "image_url":          "",
+            "image_urls":         [],
             # Legacy fields kept for backward compatibility
             "image_data":         "",
             "image_data_list":    [],

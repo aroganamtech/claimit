@@ -359,4 +359,39 @@ async def submit_review(
         raise HTTPException(status_code=404, detail="Shop not found")
 
     user_id = str(current_user.get("_id") or current_user.get("id"))
-    user_name = curre
+    user_name = current_user.get("full_name") or current_user.get("name") or "User"
+    user_avatar = current_user.get("avatar_url")
+
+    review_doc = {
+        "shop_id": shop_id,
+        "user_id": user_id,
+        "user_name": user_name,
+        "user_avatar": user_avatar,
+        "rating": round(float(data.rating), 1),
+        "comment": data.comment.strip(),
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    # Upsert: one review per user per shop
+    await db.shop_reviews.update_one(
+        {"shop_id": shop_id, "user_id": user_id},
+        {"$set": review_doc},
+        upsert=True,
+    )
+
+    # Update cached avg_rating on the shop document
+    cursor = db.shop_reviews.find({"shop_id": shop_id})
+    all_reviews = await cursor.to_list(length=500)
+    total = len(all_reviews)
+    new_avg = round(sum(r.get("rating", 0) for r in all_reviews) / total, 1) if total else 0
+    await db.shops.update_one(
+        {"_id": oid},
+        {"$set": {"rating": new_avg, "review_count": total}},
+    )
+
+    return {
+        "success": True,
+        "message": "Review submitted successfully",
+        "review": serialize_doc(review_doc),
+        "new_avg_rating": new_avg,
+    }
