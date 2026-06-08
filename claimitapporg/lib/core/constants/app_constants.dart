@@ -7,9 +7,16 @@ class AppConstants {
 //    static const String baseUrl = 'http://13.63.176.113:8001';
 
   // 💻 Local dev — only works when phone is on the SAME WiFi as your PC
-  // static const String baseUrl = 'http://10.103.197.67:8001';
+  // static const String baseUrl = 'http://10.204.99.28:8001';
   // static const String baseUrl = 'http://10.0.2.2:8001';   // Android emulator
   // static const String baseUrl = 'http://localhost:8001';   // iOS simulator
+
+  // ── Legal & Support (public pages — also required for Play Store listing) ──
+  static const String privacyPolicyUrl = 'https://www.claimitapp.in/privacy-policy';
+  static const String termsUrl         = 'https://www.claimitapp.in/terms';
+  static const String supportUrl       = 'https://www.claimitapp.in/support';
+  static const String refundPolicyUrl  = 'https://www.claimitapp.in/refund-policy';
+  static const String supportEmail     = 'support@claimitapp.in';
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   static const String sendOtp        = '/auth/send-otp';

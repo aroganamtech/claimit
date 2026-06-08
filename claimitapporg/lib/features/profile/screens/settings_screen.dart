@@ -48,7 +48,23 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.lock_outline_rounded,
                 iconColor: const Color(0xFF2563EB),
                 label: 'Privacy & Security',
-                onTap: () => _showComingSoon(context, 'Privacy & Security'),
+                onTap: () => context.push('/privacy-policy'),
+              ),
+              _divider(),
+              // Terms & Conditions
+              _NavTile(
+                icon: Icons.description_outlined,
+                iconColor: const Color(0xFF2563EB),
+                label: 'Terms & Conditions',
+                onTap: () => context.push('/terms'),
+              ),
+              _divider(),
+              // Refund Policy
+              _NavTile(
+                icon: Icons.currency_exchange_rounded,
+                iconColor: const Color(0xFF2563EB),
+                label: 'Refund Policy',
+                onTap: () => context.push('/refund-policy'),
               ),
               _divider(),
               // Payment History
@@ -64,7 +80,7 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.help_outline_rounded,
                 iconColor: const Color(0xFF2563EB),
                 label: 'Help & Support',
-                onTap: () => _showComingSoon(context, 'Help & Support'),
+                onTap: () => context.push('/support'),
               ),
               _divider(),
               // Language

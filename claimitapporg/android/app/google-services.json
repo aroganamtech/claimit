@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "59894768932",
+    "project_id": "claimit-fcm",
+    "storage_bucket": "claimit-fcm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:59894768932:android:6e470662dbb3d1b87a3fb1",
+        "android_client_info": {
+          "package_name": "com.example.claimitapporg"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAW5rEggT208F3XdgHlWV9INPj4JAgw7Jo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

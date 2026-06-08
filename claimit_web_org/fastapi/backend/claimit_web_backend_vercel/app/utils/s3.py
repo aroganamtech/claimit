@@ -7,18 +7,26 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
 
 _URL_EXPIRY = 3600
 
 
 def _s3_client():
-    """Read credentials fresh from env vars on every call (serverless safe)."""
+    """Virtual-hosted style + SigV4 — generates correct regional presigned URLs.
+    e.g. https://claimit-image-bucket.s3.eu-north-1.amazonaws.com/shops/abc.jpg?...
+    """
+    region = os.getenv("AWS_REGION", "eu-north-1")
     return boto3.client(
         "s3",
-        region_name=os.getenv("AWS_REGION", "eu-north-1"),
+        region_name=region,
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", ""),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
     )
 
 
@@ -27,28 +35,23 @@ def _bucket():
 
 
 def _normalize_key(s3_key: str) -> str:
-    """Strip full S3 URLs to just the key path."""
     if s3_key.startswith("https://") or s3_key.startswith("http://"):
-        return urlparse(s3_key).path.lstrip("/")
+        path = urlparse(s3_key).path.lstrip("/")
+        # path-style URLs: /bucket/key — strip bucket prefix
+        bucket = _bucket()
+        if path.startswith(bucket + "/"):
+            path = path[len(bucket) + 1:]
+        return path
     return s3_key
 
 
 def _sync_upload(data: bytes, key: str, content_type: str) -> str:
-    _s3_client().put_object(
-        Bucket=_bucket(),
-        Key=key,
-        Body=data,
-        ContentType=content_type,
-    )
+    _s3_client().put_object(Bucket=_bucket(), Key=key, Body=data, ContentType=content_type)
     return key
 
 
-async def upload_bytes(
-    data: bytes,
-    folder: str,
-    filename: Optional[str] = None,
-    content_type: str = "image/jpeg",
-) -> str:
+async def upload_bytes(data: bytes, folder: str, filename: Optional[str] = None,
+                       content_type: str = "image/jpeg") -> str:
     ext = ""
     if filename:
         _, ext = os.path.splitext(filename)
@@ -60,11 +63,8 @@ async def upload_bytes(
     return key
 
 
-async def upload_base64(
-    b64_string: str,
-    folder: str,
-    content_type: str = "image/jpeg",
-) -> str:
+async def upload_base64(b64_string: str, folder: str,
+                        content_type: str = "image/jpeg") -> str:
     import base64
     if "," in b64_string:
         header, b64_string = b64_string.split(",", 1)

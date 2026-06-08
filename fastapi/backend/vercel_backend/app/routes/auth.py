@@ -14,6 +14,7 @@ from ..utils.auth import (
 )
 from ..utils.helpers import serialize_doc
 from ..utils.otp import generate_otp, send_otp_sms, store_otp, verify_otp
+from ..utils.notify import notify_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -33,10 +34,21 @@ class VerifyOtpRequest(BaseModel):
     phone: str   # mobile number OR email – same as above
     otp: str
     mode: str = "login"  # same semantics as SendOtpRequest.mode
+    # Optional: pass the device's FCM token here to register it for push
+    # notifications in the same round-trip as login (no extra API call needed).
+    fcm_token: Optional[str] = None
+    fcm_platform: Optional[str] = None  # "android" | "ios" | "web"
 
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    # Optional: pass this device's FCM token so we can stop pushing to it
+    # once the user signs out (prevents pushes meant for the next account
+    # on a shared/reset device from leaking to the previous user).
+    fcm_token: Optional[str] = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -183,6 +195,36 @@ async def verify_otp_endpoint(request: VerifyOtpRequest):
     access_token = create_access_token({"sub": user_id})
     refresh_token = create_refresh_token({"sub": user_id})
 
+    # ── 4. Register this device's FCM token (optional, single round-trip) ────
+    if request.fcm_token:
+        token = request.fcm_token.strip()
+        if token:
+            await db.fcm_tokens.update_one(
+                {"token": token},
+                {
+                    "$set": {
+                        "user_id": user_id,
+                        "platform": request.fcm_platform,
+                        "updated_at": datetime.utcnow(),
+                    },
+                    "$setOnInsert": {"created_at": datetime.utcnow()},
+                },
+                upsert=True,
+            )
+
+    # ── 5. Fire the "Login Successful" notification (in-app + push popup) ────
+    # Best-effort: notify_user() swallows its own errors, so a push outage
+    # can never fail a login.
+    display_name = user.get("name") or identifier
+    await notify_user(
+        db,
+        user_id,
+        title="✅ Login Successful",
+        message=f"Welcome back, {display_name}! You're now logged in to Claimit.",
+        type="success",
+        data={"event": "login_success"},
+    )
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -217,6 +259,16 @@ async def refresh_token(request: RefreshTokenRequest):
 
 
 @router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user)):
-    """Logout user (client should delete tokens)."""
+async def logout(
+    request: LogoutRequest = LogoutRequest(),
+    current_user: dict = Depends(get_current_user),
+):
+    """Logout user (client should delete tokens). Also de-registers this
+    device's FCM token so the signed-out account stops receiving pushes
+    meant for it (important on shared/reset devices)."""
+    if request.fcm_token:
+        db = get_db()
+        user_id = str(current_user.get("_id") or current_user.get("id"))
+        await db.fcm_tokens.delete_one({"token": request.fcm_token.strip(), "user_id": user_id})
+
     return {"success": True, "message": "Logged out successfully"}

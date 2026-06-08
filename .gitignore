@@ -1,8 +1,26 @@
 
+# Never commit secrets — env files of any kind, anywhere in the repo
+.env
+.env.*
+*/.env
+*/.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
 # Vercel config contains secrets — do not commit
 fastapi/backend/vercel_backend/vercel.json
+claimit_web_org/fastapi/backend/claimit_web_backend_vercel/vercel.json
+
+# Firebase service-account keys (FCM push notifications) — never commit
+**/secret/
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+
+# Explicit paths (kept for clarity / older git versions)
 fastapi/backend/.env
 fastapi/backend/vercel_backend/.env
-fastapi/backend/vercel_backend/.env.example
 claimit_web_org/fastapi/backend/.env
-claimit_web_org/fastapi/backend/claimit_web_backend_vercel/.env.example
+claimit_web_org/frontend/.env.local
+claimit_web_org/frontend/.env.production
+claimitapporg/.env

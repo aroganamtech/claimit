@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/error_handler.dart';
+import '../../../core/services/fcm_service.dart';
 import '../models/user_model.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -152,9 +154,20 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Attach this device's FCM token (if available) so the backend can
+      // register it for push notifications in the same round-trip as login.
+      final fcmToken = FcmService.instance.fcmToken;
+
       final response = await _apiClient.post(
         AppConstants.verifyOtp,
-        data: {'phone': phone, 'otp': otp, 'mode': isLogin ? 'login' : 'register'},
+        data: {
+          'phone': phone,
+          'otp': otp,
+          'mode': isLogin ? 'login' : 'register',
+          if (fcmToken != null && fcmToken.isNotEmpty) 'fcm_token': fcmToken,
+          if (fcmToken != null && fcmToken.isNotEmpty)
+            'fcm_platform': Platform.isIOS ? 'ios' : 'android',
+        },
       );
 
       if (response.statusCode == 200 && response.data is Map) {
@@ -429,7 +442,13 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     try {
-      await _apiClient.post(AppConstants.logout);
+      // Tell the backend to drop this device's FCM token so the signed-out
+      // account stops receiving pushes meant for it (matters on shared/reset devices).
+      final fcmToken = FcmService.instance.fcmToken;
+      await _apiClient.post(
+        AppConstants.logout,
+        data: (fcmToken != null && fcmToken.isNotEmpty) ? {'fcm_token': fcmToken} : null,
+      );
     } catch (_) {}
     await _apiClient.clearTokens();
     _user = null;

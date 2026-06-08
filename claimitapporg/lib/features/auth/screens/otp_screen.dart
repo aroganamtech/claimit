@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../../../shared/widgets/loading_button.dart';
+import '../../../core/services/fcm_service.dart';
 
 // 6 OTP boxes — matches the 6-digit OTP the backend generates
 const int _kOtpLength = 6;
@@ -116,6 +117,10 @@ class _OtpScreenState extends State<OtpScreen> {
     if (!mounted) return;
 
     if (success) {
+      // 🔔 Pop the "Login Successful" notification banner right away —
+      // this is the popup the FCM/local-notifications setup powers.
+      // (Fire-and-forget: don't block navigation on it.)
+      FcmService.instance.showLoginSuccessNotification(userLabel: widget.phone);
       context.go('/auth/success');
     } else {
       for (final c in _boxControllers) {

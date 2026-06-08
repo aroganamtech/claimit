@@ -24,6 +24,7 @@ import TransactionHistory from './pages/advertiser/TransactionHistory'
 
 // Cross-portal pages
 import HelpSupport from './pages/HelpSupport'
+import { PrivacyPolicy, Terms, Support, RefundPolicy } from './pages/LegalPages'
 
 // Sales (L2)
 import SalesDashboard from './pages/sales/SalesDashboard'
@@ -117,6 +118,13 @@ export default function App() {
         <Routes>
           {/* Landing */}
           <Route path="/" element={<LandingPage />} />
+
+          {/* Public legal & support pages — required for Play Store submission
+              (Play Console → Policy → App content → Privacy Policy URL) */}
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/refund-policy" element={<RefundPolicy />} />
+          <Route path="/support" element={<Support />} />
 
           {/* ─── L1 Advertiser ─────────────────────────────── */}
           <Route path="/advertiser/auth" element={<AuthPage portal="advertiser" />} />

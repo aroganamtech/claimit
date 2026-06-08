@@ -27,8 +27,23 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_name: str = "Claimit"
 
+    # AWS S3 storage credentials
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "eu-north-1"
+    aws_storage_bucket_name: str = "claimit-image-bucket"
+
+    # Firebase Cloud Messaging (push notifications)
+    # Provide EITHER a path to the service-account JSON file (local/server deploys
+    # where the file is on disk) OR the raw JSON contents as one string (Vercel /
+    # other serverless platforms with no persistent filesystem to read from).
+    firebase_project_id: str = ""
+    firebase_service_account_path: str = ""
+    firebase_service_account_json: str = ""
+
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 @lru_cache()

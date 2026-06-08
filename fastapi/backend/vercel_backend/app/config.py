@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_name: str = "Claimit"
 
+    # Firebase Cloud Messaging (push notifications)
+    # Vercel has no persistent filesystem, so use FIREBASE_SERVICE_ACCOUNT_JSON
+    # (paste the ENTIRE service-account JSON contents as one env var value).
+    firebase_project_id: str = ""
+    firebase_service_account_json: str = ""
+    firebase_service_account_path: str = ""
+
     class Config:
         # On Vercel, all vars come from the dashboard (env vars).
         # Locally, a .env file in this folder is also read.

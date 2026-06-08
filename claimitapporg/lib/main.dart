@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart';
+import 'core/services/fcm_service.dart';
 
 import 'features/auth/providers/auth_provider.dart';
 import 'features/claims/providers/claims_provider.dart';
@@ -14,8 +17,22 @@ import 'features/policies/providers/policy_provider.dart';
 import 'features/profile/providers/profile_provider.dart';
 import 'features/bill_reader/providers/bill_reward_provider.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Firebase Cloud Messaging (push / popup notifications) ─────────────────
+  // Requires android/app/google-services.json (and ios/Runner/GoogleService-Info.plist)
+  // to be in place — see FIREBASE_FCM_SETUP.md at the repo root for the full guide.
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await FcmService.instance.init();
+  } catch (e) {
+    // Don't crash the app if Firebase config files haven't been added yet —
+    // just log so it's obvious push notifications are not active.
+    debugPrint('⚠️ Firebase/FCM initialization skipped: $e');
+  }
+
   // Lock orientation to portrait for the consumer-style insurance UI.
   SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,

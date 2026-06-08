@@ -8,7 +8,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional
 import base64, os, json
-from app.utils.s3 import upload_bytes as _s3_upload
+from app.utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign
 
 router = APIRouter()
 
@@ -107,32 +107,28 @@ async def create_ad(
     end_date = pub_date + timedelta(days=7)
     ad_status = "active" if publish_today else "scheduled"
 
-    # ── Upload creative + thumbnail to S3 ──────────────────────────────────────
-    _region = os.getenv("AWS_REGION", "eu-north-1")
-    _bucket = os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
-
-    def _s3_url(key: str) -> str:
-        return f"https://{_bucket}.s3.{_region}.amazonaws.com/{key}"
-
-    creative_url  = ""
-    creative_b64  = ""   # kept for legacy compatibility
+    # ── Upload creative + thumbnail to S3 (store key, presign for display) ─────
+    creative_s3_key = ""
+    creative_url    = ""
+    creative_b64    = ""   # kept for legacy compatibility
     if creative and creative.filename:
-        content       = await creative.read()
-        creative_b64  = base64.b64encode(content).decode("utf-8")   # legacy
-        s3_key        = await _s3_upload(content, "ad-creatives",
+        content         = await creative.read()
+        creative_b64    = base64.b64encode(content).decode("utf-8")   # legacy
+        creative_s3_key = await _s3_upload(content, "ad-creatives",
                             filename=creative.filename,
                             content_type=creative.content_type or "image/jpeg")
-        creative_url  = _s3_url(s3_key)
+        creative_url    = _presign(creative_s3_key) or ""
 
-    thumbnail_url = ""
-    thumbnail_b64 = ""
+    thumbnail_s3_key = ""
+    thumbnail_url    = ""
+    thumbnail_b64    = ""
     if thumbnail and thumbnail.filename:
-        content       = await thumbnail.read()
-        thumbnail_b64 = base64.b64encode(content).decode("utf-8")   # legacy
-        s3_key        = await _s3_upload(content, "ad-thumbnails",
+        content          = await thumbnail.read()
+        thumbnail_b64    = base64.b64encode(content).decode("utf-8")   # legacy
+        thumbnail_s3_key = await _s3_upload(content, "ad-thumbnails",
                             filename=thumbnail.filename,
                             content_type=thumbnail.content_type or "image/jpeg")
-        thumbnail_url = _s3_url(s3_key)
+        thumbnail_url    = _presign(thumbnail_s3_key) or ""
 
     # ── Parse tags ────────────────────────────────────────────────────────────
     parsed_tags: list = []
@@ -160,45 +156,49 @@ async def create_ad(
 
     if ad_type == "home_banner":
         ad_doc.update({
-            "headline":   headline or title or "",
-            "sub":        sub or description or "",
-            "cta_link":   cta_link or "",
-            "image_url":  creative_url,
-            "title":      headline or title or "",
+            "headline":     headline or title or "",
+            "sub":          sub or description or "",
+            "cta_link":     cta_link or "",
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "title":        headline or title or "",
         })
 
     elif ad_type == "promo_reelz":
         ad_doc.update({
-            "shop_name":     shop_name or "",
-            "shop_location": shop_location or "",
-            "shop_category": shop_category or "",
-            "caption":       caption or "",
-            "offer":         offer or "",
-            "tag":           tag or "",
-            "video_url":     creative_url,
-            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
-            "thumbnail_url": thumbnail_url,
-            "title":         shop_name or "",
+            "shop_name":       shop_name or "",
+            "shop_location":   shop_location or "",
+            "shop_category":   shop_category or "",
+            "caption":         caption or "",
+            "offer":           offer or "",
+            "tag":             tag or "",
+            "video_s3_key":    creative_s3_key,
+            "video_url":       creative_url,
+            "image_data":      "",   # no more base64 — served via presigned S3 URL
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":   thumbnail_url,
+            "title":           shop_name or "",
         })
 
     elif ad_type in ("brand_deals", "nearby_deals"):
         ad_doc.update({
-            "name":        name or "",
-            "location":    location or "",
-            "offer":       offer or "",
-            "description": description or "",
-            "address":     address or "",
-            "phone":       phone or "",
-            "timing":      timing or "",
-            "type":        type or "",
-            "cashback":    cashback or "1% Cashback",
-            "distance":    distance or "",
-            "tags":        parsed_tags,
-            "image_url":   creative_url,
-            "rating":      4.0,
-            "reviews":     0,
-            "deal_group":  "brand" if ad_type == "brand_deals" else "nearby",
-            "title":       name or "",
+            "name":         name or "",
+            "location":     location or "",
+            "offer":        offer or "",
+            "description":  description or "",
+            "address":      address or "",
+            "phone":        phone or "",
+            "timing":       timing or "",
+            "type":         type or "",
+            "cashback":     cashback or "1% Cashback",
+            "distance":     distance or "",
+            "tags":         parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "rating":       4.0,
+            "reviews":      0,
+            "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
+            "title":        name or "",
         })
 
     # Insert into web portal collection
@@ -211,15 +211,16 @@ async def create_ad(
     # ─────────────────────────────────────────────────────────────────────────
     if ad_type == "home_banner":
         banner_doc = {
-            "web_ad_id":  ad_id,
-            "headline":   headline or title or "",
-            "sub":        sub or description or "",
-            "cta_link":   cta_link or "",
-            "image_url":  creative_url,
-            "pincode":    pincode,
-            "status":     ad_status,
-            "end_date":   end_date.strftime("%d/%m/%Y"),
-            "created_at": datetime.utcnow(),
+            "web_ad_id":    ad_id,
+            "headline":     headline or title or "",
+            "sub":          sub or description or "",
+            "cta_link":     cta_link or "",
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "pincode":      pincode,
+            "status":       ad_status,
+            "end_date":     end_date.strftime("%d/%m/%Y"),
+            "created_at":   datetime.utcnow(),
         }
         await app_banners_collection.insert_one(banner_doc)
 
@@ -234,8 +235,9 @@ async def create_ad(
             "distance":     distance or "",
             "type":         type or "",
             "category":     type or "",
+            "image_s3_key": creative_s3_key,
             "image_url":    creative_url,
-            "image_data":   creative_b64,   # raw base64 — Flutter renders this directly
+            "image_data":   "",   # no more base64 — served via presigned S3 URL
             "description":  description or "",
             "address":      address or "",
             "phone":        phone or "",
@@ -252,23 +254,25 @@ async def create_ad(
 
     elif ad_type == "promo_reelz":
         reel_doc = {
-            "web_ad_id":     ad_id,
-            "shop_name":     shop_name or "",
-            "shop_location": shop_location or "",
-            "shop_category": shop_category or "",
-            "caption":       caption or "",
-            "offer":         offer or "",
-            "video_url":     creative_url,
-            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
-            "thumbnail_url": thumbnail_url,
-            "like_count":    0,
-            "view_count":    0,
-            "tag":           tag or "",
-            "liked_by":      [],
-            "pincode":       pincode,
-            "status":        ad_status,
-            "end_date":      end_date.strftime("%d/%m/%Y"),
-            "created_at":    datetime.utcnow(),
+            "web_ad_id":        ad_id,
+            "shop_name":        shop_name or "",
+            "shop_location":    shop_location or "",
+            "shop_category":    shop_category or "",
+            "caption":          caption or "",
+            "offer":            offer or "",
+            "video_s3_key":     creative_s3_key,
+            "video_url":        creative_url,
+            "image_data":       "",   # no more base64 — served via presigned S3 URL
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":    thumbnail_url,
+            "like_count":       0,
+            "view_count":       0,
+            "tag":              tag or "",
+            "liked_by":         [],
+            "pincode":          pincode,
+            "status":           ad_status,
+            "end_date":         end_date.strftime("%d/%m/%Y"),
+            "created_at":       datetime.utcnow(),
         }
         await app_reels_collection.insert_one(reel_doc)
 

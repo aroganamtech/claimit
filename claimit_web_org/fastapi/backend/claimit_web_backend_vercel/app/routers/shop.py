@@ -118,7 +118,7 @@ async def _sync_shop_to_app(user_id: str) -> None:
     if not shop:
         return
 
-    import asyncio as _asyncio, io as _io, os as _os
+    import os as _os
 
     def _b64_to_bytes(b64: str) -> bytes:
         import base64 as _b64
@@ -137,8 +137,7 @@ async def _sync_shop_to_app(user_id: str) -> None:
     cover_raw = _b64_to_bytes(shop.get("cover_photo_b64") or "")
     if cover_raw:
         try:
-            cover_key = _asyncio.get_event_loop().run_until_complete(
-                _s3_upload(cover_raw, "shop-covers", content_type="image/jpeg"))
+            cover_key = await _s3_upload(cover_raw, "shop-covers", content_type="image/jpeg")
             cover_url = _s3_url(cover_key)
         except Exception as _e:
             print(f"Cover S3 upload error: {_e}")
@@ -150,8 +149,7 @@ async def _sync_shop_to_app(user_id: str) -> None:
         gb = _b64_to_bytes(gp)
         if gb:
             try:
-                gk = _asyncio.get_event_loop().run_until_complete(
-                    _s3_upload(gb, "shop-gallery", content_type="image/jpeg"))
+                gk = await _s3_upload(gb, "shop-gallery", content_type="image/jpeg")
                 gallery_keys.append(gk)
                 gallery_urls.append(_s3_url(gk))
             except Exception as _e:
@@ -176,9 +174,9 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "lng":             shop.get("lng"),
         # S3 keys and URLs
         "image_s3_key":    cover_key,
-        "image_url":       "",
+        "image_url":       cover_url,
         "image_s3_keys":   gallery_keys,
-        "image_urls":      [],
+        "image_urls":      gallery_urls,
         # Legacy empty fields (no more base64 in DB)
         "image_data":      "",
         "image_data_list": [],

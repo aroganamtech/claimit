@@ -378,22 +378,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // 1. Updated the slide data to take image paths instead of icons
   final List<_OnboardingSlide> _slides = const [
     _OnboardingSlide(
-      title: 'Shop IT',
+      title: 'SHOP',
       description:
-          'Shop at Claimit-affiliated Reward Zones\nand earn Free Redeemable Reward Points\nplus 1% Cashback on every purchase.',
-      imageAsset: 'assets/images/onb1.png', 
+          'Shop at Claimit affiliates to earn\n100% Reward Points plus 1% Cashback\non your daily purchases.',
+      imageAsset: 'assets/images/onb1.png',
     ),
     _OnboardingSlide(
-      title: 'Scan IT',
+      title: 'SCAN',
       description:
-          'Scan your bill with the Claimit App to\ninstantly receive Redeemable Reward\nPoints and 1% Cashback in your wallet.',
-      imageAsset: 'assets/images/onb2.png', 
+          'Scan your paper bill in the app\nto instantly collect your points and cash\ndirectly into your digital wallets.',
+      imageAsset: 'assets/images/onb2.png',
     ),
     _OnboardingSlide(
-      title: 'Earn IT',
+      title: 'ENJOY',
       description:
-          'At Claimit-affiliated Redeem Zones,scan your bill to enjoy Rewards as Discounts plus 1% Cashback on every purchase.',
-      imageAsset: 'assets/images/onb3.png', 
+          'Enjoy Exclusive, Unbeatable Discounts\n+1% extra Cashback by using your reward\npoints at nearby affiliated businesses.',
+      imageAsset: 'assets/images/onb3.png',
     ),
   ];
 
@@ -602,6 +602,7 @@ class _SlideContent extends StatelessWidget {
               child: Image.asset(
                 slide.imageAsset,
                 fit: BoxFit.contain,
+                alignment: Alignment.center,
                 errorBuilder: (context, error, stackTrace) => const Icon(
                   Icons.image_not_supported_outlined,
                   size: 64,

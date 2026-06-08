@@ -16,3 +16,4 @@ Pillow
 httpx
 twilio
 boto3>=1.34.0
+firebase-admin

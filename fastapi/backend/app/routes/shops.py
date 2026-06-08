@@ -33,28 +33,66 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+# async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
+#     result = serialize_doc(doc)
+#     if distance_km is not None:
+#         result["distance"] = f"{distance_km:.1f} km"
+
+#     # ── Generate presigned URLs from S3 keys (private bucket) ────────────────
+#     s3_key  = result.get("image_s3_key")
+#     s3_keys = result.get("image_s3_keys") or []
+
+#     if s3_key:
+#         result["image_url"] = await generate_presigned_url(s3_key) or ""
+
+#     if s3_keys:
+#         presigned = []
+#         for k in s3_keys:
+#             url = await generate_presigned_url(k)
+#             if url:
+#                 presigned.append(url)
+#         if presigned:
+#             result["image_urls"] = presigned
+
+#     # ── Derive has_rewards / has_redeem from shop_type ────────────────────────
+#     shop_type = result.get("shop_type", "")
+#     if shop_type == "reward":
+#         result.setdefault("has_rewards", True)
+#         result.setdefault("has_redeem",  False)
+#     elif shop_type == "redeem":
+#         result.setdefault("has_rewards", False)
+#         result.setdefault("has_redeem",  True)
+#     elif shop_type == "both":
+#         result.setdefault("has_rewards", True)
+#         result.setdefault("has_redeem",  True)
+#     else:
+#         result.setdefault("has_rewards", True)
+#         result.setdefault("has_redeem",  True)
+
+#     return result
+
 async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> dict:
     result = serialize_doc(doc)
     if distance_km is not None:
         result["distance"] = f"{distance_km:.1f} km"
 
-    # ── Generate presigned URLs from S3 keys (private bucket) ────────────────
-    s3_key  = result.get("image_s3_key")
-    s3_keys = result.get("image_s3_keys") or []
+    # Since the bucket is public, we can use the clean URLs directly 
+    # that your seed.py file generated and saved in MongoDB!
+    # No need to override them with generate_presigned_url keys.
 
-    if s3_key:
-        result["image_url"] = await generate_presigned_url(s3_key) or ""
+    # If your DB ever misses a full URL, fallback to building it manually:
+    bucket = "claimit-image-bucket"
+    region = "eu-north-1"
+    
+    if not result.get("image_url") and result.get("image_s3_key"):
+        result["image_url"] = f"https://{bucket}.s3.{region}.amazonaws.com/{result['image_s3_key']}"
 
-    if s3_keys:
-        presigned = []
-        for k in s3_keys:
-            url = await generate_presigned_url(k)
-            if url:
-                presigned.append(url)
-        if presigned:
-            result["image_urls"] = presigned
+    if not result.get("image_urls") and result.get("image_s3_keys"):
+        result["image_urls"] = [
+            f"https://{bucket}.s3.{region}.amazonaws.com/{k}" for k in result["image_s3_keys"]
+        ]
 
-    # ── Derive has_rewards / has_redeem from shop_type ────────────────────────
+    # Derive has_rewards / has_redeem from shop_type
     shop_type = result.get("shop_type", "")
     if shop_type == "reward":
         result.setdefault("has_rewards", True)
@@ -62,16 +100,11 @@ async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> di
     elif shop_type == "redeem":
         result.setdefault("has_rewards", False)
         result.setdefault("has_redeem",  True)
-    elif shop_type == "both":
-        result.setdefault("has_rewards", True)
-        result.setdefault("has_redeem",  True)
     else:
         result.setdefault("has_rewards", True)
         result.setdefault("has_redeem",  True)
 
     return result
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /shops  — list / filter / search
 # ─────────────────────────────────────────────────────────────────────────────

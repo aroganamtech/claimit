@@ -18,6 +18,7 @@ import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/edit_profile_screen.dart';
 import '../../features/profile/screens/settings_screen.dart';
+import '../../features/profile/screens/legal_screens.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/policies/screens/policies_screen.dart';
 import '../../features/policies/screens/policy_detail_screen.dart';
@@ -55,6 +56,11 @@ import '../../features/bill_reader/screens/bill_review_pending_screen.dart';
 // "GlobalKey used multiple times" / HeroControllerScope crash.
 final _rootNavKey  = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _shellNavKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
+
+// Public alias so other parts of the app (e.g. FcmService, which has no
+// BuildContext of its own) can navigate using the root navigator —
+// e.g. `rootNavigatorKey.currentContext?.push('/notifications')`.
+final GlobalKey<NavigatorState> rootNavigatorKey = _rootNavKey;
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -421,6 +427,22 @@ class AppRouter {
         GoRoute(
           path: '/settings',
           builder: (context, state) => const SettingsScreen(),
+        ),
+        GoRoute(
+          path: '/privacy-policy',
+          builder: (context, state) => const PrivacyPolicyScreen(),
+        ),
+        GoRoute(
+          path: '/terms',
+          builder: (context, state) => const TermsScreen(),
+        ),
+        GoRoute(
+          path: '/refund-policy',
+          builder: (context, state) => const RefundPolicyScreen(),
+        ),
+        GoRoute(
+          path: '/support',
+          builder: (context, state) => const SupportScreen(),
         ),
         GoRoute(
           path: '/policies/:id',

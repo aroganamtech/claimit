@@ -105,6 +105,10 @@ async def connect_db():
         await _db.claims.create_index("user_id")
         await _db.claims.create_index("claim_number", unique=True)
         await _db.notifications.create_index("user_id")
+        # FCM device tokens — one user can be logged in on many devices; a token
+        # itself always belongs to exactly one install at a time, so it's unique.
+        await _db.fcm_tokens.create_index("user_id")
+        await _db.fcm_tokens.create_index("token", unique=True)
         await _db.otp_store.create_index("phone")
         await _db.otp_store.create_index("expires_at", expireAfterSeconds=0)
         await _db.shops.create_index("category_ids")

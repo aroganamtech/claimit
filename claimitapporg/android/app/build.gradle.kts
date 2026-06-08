@@ -3,6 +3,10 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // FCM: applies google-services.json -> generates Firebase config for this app.
+    // Requires android/app/google-services.json to exist (download from Firebase console),
+    // otherwise the build will fail. See FIREBASE_FCM_SETUP.md.
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -13,6 +17,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Required by flutter_local_notifications (Java 8+ API desugaring on older Android versions)
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -47,4 +53,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Required by flutter_local_notifications when core library desugaring is enabled
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

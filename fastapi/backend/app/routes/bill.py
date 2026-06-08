@@ -32,6 +32,7 @@ from ..database import get_db
 from ..utils.auth import get_current_user, decode_token
 from ..utils.helpers import serialize_doc
 from ..utils.s3 import upload_base64, generate_presigned_url
+from ..utils.notify import notify_user
 
 
 def _require_admin(x_admin_key: Optional[str] = Header(None)):
@@ -594,19 +595,26 @@ async def admin_action_review(review_id: str, data: ReviewActionRequest, _: None
             "source": "manual_review", "review_id": review_id, "scanned_at": now,
         })
 
-    await db.notifications.insert_one({
-        "user_id":    uid,
-        "title":      "🎉 Bill Approved — Rewards Added!" if data.action == "approve" else "Bill Review Update",
-        "message":    (
+    # notify_user() both stores the in-app notification (powers the bell/badge
+    # and the Notifications page) AND sends an FCM push — so the user is told
+    # about their reward even if the app is closed/backgrounded.
+    await notify_user(
+        db,
+        user_id=uid,
+        title=(
+            "🎉 Bill Approved — Rewards Added!" if data.action == "approve"
+            else "Bill Review Update"
+        ),
+        message=(
             f"Your bill from {shop_name} (Rs.{int(amount)}) has been verified. "
             f"Rs.{cb:.0f} cashback and {pts} reward points added to your wallet."
         ) if data.action == "approve" else (
             f"Your bill from {shop_name} (Rs.{int(amount)}) could not be verified"
             + (f": {data.admin_note}" if data.admin_note else ".")
         ),
-        "type":    "bill_review_approved" if data.action == "approve" else "bill_review_rejected",
-        "is_read": False, "review_id": review_id, "created_at": now,
-    })
+        type="bill_review_approved" if data.action == "approve" else "bill_review_rejected",
+        data={"review_id": review_id},
+    )
 
     return {
         "success": True, "action": data.action, "review_id": review_id,

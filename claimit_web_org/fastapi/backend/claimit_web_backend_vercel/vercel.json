@@ -14,7 +14,7 @@
   ],
   "env": {
     "PYTHONPATH": "/var/task",
-    "MONGO_URL": "mongodb://admin:claimit123@13.63.176.113:27017/?authSource=admin",
+    "MONGO_URL": "mongodb://admin:claimit123@16.170.110.232:27017/?authSource=admin",
     "DB_NAME": "claimit_web",
     "APP_DB_NAME": "claimit_db",
     "SECRET_KEY": "your_super_secret_key_here_change_this",
@@ -23,8 +23,8 @@
     "UNIVERSAL_OTP": "123456",
     "ADMIN_USER": "admin",
     "ADMIN_PASS": "admin123",
-    "AWS_ACCESS_KEY_ID": "AKIA53CJHAB2KFPSPNXT",
-    "AWS_SECRET_ACCESS_KEY": "Ruq6XYHyznroUMFBPSyAqGskrOtiqHrlnbzUp6UF",
+    "AWS_ACCESS_KEY_ID": "your_aws_access_key_id_here",
+    "AWS_SECRET_ACCESS_KEY": "your_aws_secret_access_key_here",
     "AWS_REGION": "eu-north-1",
     "AWS_STORAGE_BUCKET_NAME": "claimit-image-bucket"
   }

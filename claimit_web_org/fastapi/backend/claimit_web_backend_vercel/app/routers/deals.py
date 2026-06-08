@@ -13,8 +13,26 @@ from app.database import ads_collection
 from bson import ObjectId
 from datetime import datetime
 from typing import Optional
+from app.utils.s3 import generate_presigned_url_sync as _presign
 
 router = APIRouter()
+
+
+def _image_url(ad: dict) -> str:
+    """Prefer a freshly-presigned URL from the stored S3 key; fall back to
+    whatever raw URL/key is on the document (handles legacy ads)."""
+    key = ad.get("image_s3_key") or ""
+    url = _presign(key) if key else ""
+    if url:
+        return url
+    stored = ad.get("image_url") or ""
+    if stored.startswith("https://") and ".amazonaws.com/" in stored:
+        from urllib.parse import urlparse
+        derived_key = urlparse(stored).path.lstrip("/")
+        url = _presign(derived_key) or ""
+        if url:
+            return url
+    return stored
 
 
 def _serialize_deal(ad: dict) -> dict:
@@ -27,7 +45,7 @@ def _serialize_deal(ad: dict) -> dict:
         "cashback": ad.get("cashback") or "1% Cashback",
         "distance": ad.get("distance") or "",
         "type": ad.get("type") or "",
-        "image_url": ad.get("image_url") or "",
+        "image_url": _image_url(ad),
         "description": ad.get("description") or "",
         "address": ad.get("address") or "",
         "phone": ad.get("phone") or "",

@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
 import '../../../core/theme/app_theme.dart';
@@ -31,6 +34,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   /// True when the user registered/logged in via phone — phone is their
   /// primary login credential so we show it read-only.
   bool _phoneIsReadOnly = false;
+
+  /// Locally-picked & cropped avatar, shown immediately while it uploads.
+  File? _pickedAvatar;
+  bool _isUploadingAvatar = false;
 
   @override
   void initState() {
@@ -105,6 +112,182 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  // ── Profile picture: pick → adjust circular crop size → upload ────────────
+  Future<void> _changeProfilePicture() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 14, bottom: 4),
+              child: Text(
+                'Update profile picture',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined,
+                  color: AppTheme.primaryColor),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined,
+                  color: AppTheme.primaryColor),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 90,
+      maxWidth: 2000,
+      maxHeight: 2000,
+    );
+    if (picked == null || !mounted) return;
+
+    // Circular crop UI — the user can drag the corners to resize the
+    // circle (the crop area) before confirming.
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      compressFormat: ImageCompressFormat.jpg,
+      compressQuality: 90,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Adjust profile picture',
+          toolbarColor: AppTheme.primaryColor,
+          statusBarColor: AppTheme.primaryColor,
+          toolbarWidgetColor: Colors.white,
+          cropStyle: CropStyle.circle,
+          aspectRatioPresets: const [CropAspectRatioPreset.square],
+          lockAspectRatio: true,
+          hideBottomControls: false,
+        ),
+        IOSUiSettings(
+          title: 'Adjust profile picture',
+          cropStyle: CropStyle.circle,
+          aspectRatioLockEnabled: true,
+          aspectRatioPickerButtonHidden: true,
+          resetAspectRatioEnabled: false,
+        ),
+      ],
+    );
+    if (cropped == null || !mounted) return;
+
+    final file = File(cropped.path);
+    setState(() {
+      _pickedAvatar = file;
+      _isUploadingAvatar = true;
+    });
+
+    final profileProvider = context.read<ProfileProvider>();
+    final success = await profileProvider.uploadAvatar(file.path);
+
+    if (!mounted) return;
+    setState(() => _isUploadingAvatar = false);
+
+    if (success) {
+      await context.read<AuthProvider>().fetchUserProfile();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile picture updated!'),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
+    } else {
+      setState(() => _pickedAvatar = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text(profileProvider.error ?? 'Failed to update profile picture'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
+  Widget _buildAvatarPicker() {
+    final user = context.watch<AuthProvider>().user;
+    final initials = (user?.fullName.isNotEmpty == true)
+        ? user!.fullName.trim()[0].toUpperCase()
+        : '?';
+
+    ImageProvider? imageProvider;
+    if (_pickedAvatar != null) {
+      imageProvider = FileImage(_pickedAvatar!);
+    } else if ((user?.avatarUrl ?? '').isNotEmpty) {
+      imageProvider = NetworkImage(user!.avatarUrl!);
+    }
+
+    return Center(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            radius: 48,
+            backgroundColor: AppTheme.primaryColor.withOpacity(0.12),
+            backgroundImage: imageProvider,
+            child: imageProvider == null
+                ? Text(
+                    initials,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryColor,
+                    ),
+                  )
+                : null,
+          ),
+          if (_isUploadingAvatar)
+            const Positioned.fill(
+              child: CircleAvatar(
+                radius: 48,
+                backgroundColor: Colors.black38,
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: GestureDetector(
+              onTap: _isUploadingAvatar ? null : _changeProfilePicture,
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.camera_alt,
+                    size: 16, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,6 +305,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildAvatarPicker(),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  'Tap the camera icon to update your photo',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
               _SectionHeader('Personal Information'),
               const SizedBox(height: 12),
               CustomTextField(

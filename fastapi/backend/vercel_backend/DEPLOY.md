@@ -54,6 +54,28 @@ Add these (copy values from your local `.env`):
 | `TWILIO_PHONE_NUMBER` | (if using SMS OTP) |
 | `SMTP_USERNAME` | (if using email OTP) |
 | `SMTP_PASSWORD` | (if using email OTP) |
+| `FIREBASE_PROJECT_ID` | `claimit-fcm` |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | full contents of your Firebase service-account JSON, pasted as **one single-line string** (see note below) |
+
+### About `FIREBASE_SERVICE_ACCOUNT_JSON`
+
+Vercel's filesystem is ephemeral/read-only, so the local backend's approach
+(`FIREBASE_SERVICE_ACCOUNT_PATH` pointing at a file in `secret/`) won't work here.
+Instead, paste the **entire JSON file contents** as the value of one env var:
+
+1. Open your `*-firebase-adminsdk-*.json` key file in a text editor.
+2. Minify it to a single line (remove the line breaks) — e.g. run
+   `python -c "import json;print(json.dumps(json.load(open('key.json'))))"`
+   or use any "minify JSON" tool online.
+3. Paste that single-line string as the value of `FIREBASE_SERVICE_ACCOUNT_JSON`
+   in the Vercel dashboard (Settings → Environment Variables). Do **not** commit
+   it anywhere or paste it into `vercel.json` — set it only via the dashboard UI.
+4. Leave `FIREBASE_SERVICE_ACCOUNT_PATH` unset in production; the code already
+   prefers `FIREBASE_SERVICE_ACCOUNT_JSON` when both are present.
+
+`vercel.json` already has a `FIREBASE_SERVICE_ACCOUNT_JSON` placeholder
+(`__SET_VIA_VERCEL_DASHBOARD__`) — overwrite it with the real value via the
+dashboard; the dashboard value takes precedence over `vercel.json`.
 
 After adding variables, redeploy:
 ```bash
