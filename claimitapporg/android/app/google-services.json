@@ -12,7 +12,20 @@
           "package_name": "com.example.claimitapporg"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "665581452240-s0pvu3c7hqkpg1oesq2e0fht1tran8a8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.claimitapporg",
+            "certificate_hash": "02BF61F077308CA1A52BF5BEE99520DC60C76B92"
+          }
+        },
+        {
+          "client_id": "665581452240-239kicsrfucc5j2umem8h3fihhhgjv04.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAW5rEggT208F3XdgHlWV9INPj4JAgw7Jo"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "665581452240-239kicsrfucc5j2umem8h3fihhhgjv04.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

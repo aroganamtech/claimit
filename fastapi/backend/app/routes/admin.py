@@ -12,7 +12,7 @@ with coordinates derived from their location string.
 """
 import os
 from typing import Dict, Tuple, Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header
 
 from ..database import get_db
 

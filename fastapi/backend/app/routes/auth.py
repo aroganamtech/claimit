@@ -52,6 +52,13 @@ class LogoutRequest(BaseModel):
     fcm_token: Optional[str] = None
 
 
+class SocialLoginRequest(BaseModel):
+    provider: str          # "google" | "facebook"
+    name: str = ""
+    email: Optional[str] = None
+    provider_id: str = ""
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _is_email(identifier: str) -> bool:
@@ -253,6 +260,63 @@ async def refresh_token(request: RefreshTokenRequest):
 
     access_token = create_access_token({"sub": user_id})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/social/login")
+async def social_login(request: SocialLoginRequest):
+    """
+    Social login / registration via Google or Facebook.
+    Finds an existing user by email or provider_id, or creates a new one.
+    Returns access_token, refresh_token, and user object.
+    """
+    db = get_db()
+    provider = request.provider.strip().lower()
+    email = request.email.strip() if request.email else None
+    provider_id = request.provider_id.strip()
+    name = request.name.strip()
+
+    # ── 1. Find existing user by email or provider_id ────────────────────────
+    user = None
+    if email:
+        user = await db.users.find_one({"email": email})
+    if not user and provider_id:
+        user = await db.users.find_one({f"{provider}_id": provider_id})
+
+    # ── 2. Create user if not found ──────────────────────────────────────────
+    if not user:
+        count = await db.users.count_documents({})
+        user_doc: dict = {
+            "full_name": name or f"User{count + 1}",
+            "is_verified": True,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            f"{provider}_id": provider_id,
+        }
+        if email:
+            user_doc["email"] = email
+        result = await db.users.insert_one(user_doc)
+        user_doc["_id"] = result.inserted_id
+        user = user_doc
+    else:
+        # Update provider_id and name if missing
+        updates: dict = {"updated_at": datetime.utcnow()}
+        if provider_id and not user.get(f"{provider}_id"):
+            updates[f"{provider}_id"] = provider_id
+        if name and not user.get("full_name"):
+            updates["full_name"] = name
+        await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
+
+    # ── 3. Issue tokens ──────────────────────────────────────────────────────
+    user_id = str(user["_id"])
+    access_token = create_access_token({"sub": user_id})
+    refresh_token = create_refresh_token({"sub": user_id})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": serialize_doc(user),
+    }
 
 
 @router.post("/logout")

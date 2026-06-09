@@ -192,16 +192,37 @@ async def send_otp_sms(phone: str, otp: str) -> bool:
     if "@" in phone:
         return await send_otp_email(phone, otp)
 
-    # ── SMS path ──────────────────────────────────────────────────────────────
+    # ── WhatsApp path ─────────────────────────────────────────────────────────
     e164_phone = _format_e164(phone)
-    message_body = f"Your Claimit OTP is: {otp}. Valid for 10 minutes. Do not share it with anyone."
+    message_body = (
+        f"🔐 *Your Claimit OTP is: {otp}*\n\n"
+        f"Valid for 10 minutes. Do not share this code with anyone."
+    )
 
     client = _get_twilio_client()
-    if client and settings.twilio_phone_number:
+
+    # Prefer WhatsApp if a WhatsApp sender number is configured
+    whatsapp_from = getattr(settings, "twilio_whatsapp_number", "").strip()
+    if client and whatsapp_from:
         try:
             message = client.messages.create(
                 body=message_body,
-                from_=settings.twilio_phone_number,
+                from_=f"whatsapp:{whatsapp_from}",
+                to=f"whatsapp:{e164_phone}",
+            )
+            print(f"✅ OTP WhatsApp sent to {e164_phone} | Twilio SID: {message.sid}")
+            return True
+        except Exception as e:
+            print(f"❌ Twilio WhatsApp failed for {e164_phone}: {e}")
+            # Fall through to SMS fallback below
+
+    # ── SMS fallback ──────────────────────────────────────────────────────────
+    sms_from = settings.twilio_phone_number.strip()
+    if client and sms_from:
+        try:
+            message = client.messages.create(
+                body=f"Your Claimit OTP is: {otp}. Valid for 10 minutes. Do not share it with anyone.",
+                from_=sms_from,
                 to=e164_phone,
             )
             print(f"✅ OTP SMS sent to {e164_phone} | Twilio SID: {message.sid}")

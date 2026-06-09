@@ -112,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Center(
                   child: Image.asset(
                     'assets/images/main_logo2.png',
-                    width: size.width * 0.38,
+                    width: size.width * 0.27,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),

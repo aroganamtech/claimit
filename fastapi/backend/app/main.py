@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 import os
 
+from dotenv import load_dotenv
+load_dotenv()  # loads fastapi/backend/.env into os.environ
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

@@ -21,10 +21,11 @@ class Settings(BaseSettings):
     aws_video_bucket_name: str = ""   # leave empty to use same bucket as images
     max_video_size_mb: int = 100
 
-    # Twilio SMS (OTP delivery)
+    # Twilio (OTP delivery)
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
-    twilio_phone_number: str = ""
+    twilio_phone_number: str = ""         # SMS fallback number
+    twilio_whatsapp_number: str = ""      # WhatsApp sender number (e.g. +14155238886)
     twilio_default_country_code: str = "+91"
 
     # SMTP email (OTP fallback)

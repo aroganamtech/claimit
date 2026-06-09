@@ -87,11 +87,10 @@ class _SuccessScreenState extends State<SuccessScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // ── Top: home page logo ─────────────────────────────────────────
+            // ── Top: home page logo — centered ──────────────────────────────
             Padding(
               padding: const EdgeInsets.only(top: 28, left: 20, right: 20),
-              child: Align(
-                alignment: Alignment.centerLeft,
+              child: Center(
                 child: Image.asset(
                   'assets/images/home_main_logo.png',
                   height: 36,
@@ -135,7 +134,7 @@ class _SuccessScreenState extends State<SuccessScreen>
               ),
               child: Image.asset(
                 'assets/images/main_logo2.png',
-                width: size.width * 0.38,
+                width: size.width * 0.27,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => _FallbackVersoAi(),
               ),

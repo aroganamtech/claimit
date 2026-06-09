@@ -29,6 +29,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     _tab = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ProfileProvider>().fetchAll();
+      // Refresh auth user so presigned avatar URL is always fresh
+      context.read<AuthProvider>().fetchUserProfile();
     });
   }
 
@@ -227,8 +229,10 @@ class _ProfileCard extends StatelessWidget {
                 radius: 38,
                 backgroundColor: const Color(0xFFE8EFF8),
                 backgroundImage: (user?.avatarUrl != null)
-                    ? NetworkImage(
-                        '${context.read<AuthProvider>().user?.avatarUrl}')
+                    ? CachedNetworkImageProvider(
+                        user!.avatarUrl!,
+                        cacheKey: user.id,
+                      )
                     : null,
                 child: (user?.avatarUrl == null)
                     ? Text(

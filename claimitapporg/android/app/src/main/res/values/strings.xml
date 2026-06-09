@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">claimit</string>
+    <!-- Facebook Login — replace with real values from https://developers.facebook.com -->
+    <string name="facebook_app_id">000000000000000</string>
+    <string name="facebook_client_token">DUMMY_FACEBOOK_CLIENT_TOKEN</string>
+    <!-- fb + app_id — replace 000000000000000 with your real Facebook App ID -->
+    <string name="fb_login_protocol_scheme">fb000000000000000</string>
+</resources>

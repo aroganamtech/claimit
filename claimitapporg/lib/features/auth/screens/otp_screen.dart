@@ -203,7 +203,38 @@ class _OtpScreenState extends State<OtpScreen> {
                 ),
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 16),
+
+              // ── Spam notice — shown only for email OTPs ────────────────
+              if (widget.phone.contains('@'))
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFBBF24)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.info_outline, size: 18, color: Color(0xFFD97706)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          "Can't find the email? Check your Spam or Junk folder — it may have been filtered.",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF92400E),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 24),
 
               // ── 6 OTP boxes — responsive width ─────────────────────────
               LayoutBuilder(

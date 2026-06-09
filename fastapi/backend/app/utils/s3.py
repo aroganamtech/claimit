@@ -36,6 +36,14 @@ def _bucket():
     return os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
 
 
+def public_url(s3_key: str) -> str:
+    """Return a permanent public URL for a bucket object (bucket must be public)."""
+    region = os.getenv("AWS_REGION", "eu-north-1")
+    bucket = _bucket()
+    key = s3_key.lstrip("/")
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+
+
 def _video_bucket():
     """Separate bucket for videos. Falls back to image bucket if not set."""
     return os.getenv("AWS_VIDEO_BUCKET_NAME") or _bucket()

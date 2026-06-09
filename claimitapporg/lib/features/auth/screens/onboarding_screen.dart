@@ -586,53 +586,58 @@ class _SlideContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    // Use SingleChildScrollView so content never overflows on small screens.
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        children: [
-          // Responsive top gap: 6% of screen height (≈ 50 dp on a 360p phone).
-          SizedBox(height: size.height * 0.06),
+      child: SizedBox(
+        width: size.width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(height: size.height * 0.10),
 
-          // Slide illustration — height capped so text always fits below.
-          SizedBox(
-            width: double.infinity,
-            height: size.height * 0.30,
-            child: Center(
-              child: Image.asset(
-                slide.imageAsset,
-                fit: BoxFit.contain,
-                alignment: Alignment.center,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.image_not_supported_outlined,
-                  size: 64,
-                  color: Color(0xFFCBD5E1),
+            // Image — centered with explicit width so it never drifts
+            Center(
+              child: SizedBox(
+                width: size.width * 0.85,
+                height: size.height * 0.35,
+                child: Image.asset(
+                  slide.imageAsset,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.image_not_supported_outlined,
+                    size: 64,
+                    color: Color(0xFFCBD5E1),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          SizedBox(height: size.height * 0.04),
-          Text(
-            slide.title,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E3A8A),
+            SizedBox(height: size.height * 0.03),
+
+            Text(
+              slide.title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E3A8A),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            slide.description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF4B5563),
-              height: 1.65,
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Text(
+                slide.description,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF4B5563),
+                  height: 1.65,
+                ),
+              ),
             ),
-          ),
-          SizedBox(height: size.height * 0.05),
-        ],
+            SizedBox(height: size.height * 0.05),
+          ],
+        ),
       ),
     );
   }

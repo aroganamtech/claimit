@@ -13,11 +13,44 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _controller = TextEditingController();
+  String? _socialLoading;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _signInWithGoogle(AuthProvider auth) async {
+    setState(() => _socialLoading = 'google');
+    final success = await auth.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _socialLoading = null);
+    if (success) {
+      context.go('/auth/success');
+    } else if (auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error!), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _signInWithFacebook(AuthProvider auth) async {
+    setState(() => _socialLoading = 'facebook');
+    final success = await auth.loginWithFacebook();
+    if (!mounted) return;
+    setState(() => _socialLoading = null);
+    if (success) {
+      if (auth.needsProfileCompletion) {
+        context.go('/auth/complete-profile');
+      } else {
+        context.go('/auth/success');
+      }
+    } else if (auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error!), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _sendOtp() async {
@@ -91,157 +124,165 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
 
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // ── Logo — always at the top ──────────────────────────────
+                const SizedBox(height: 40),
+                Center(child: _HomeLogoWidget()),
 
-                  _HomeLogoWidget(),
-
-                  // Responsive gap — 8% of screen height instead of fixed 106 px.
-                  SizedBox(height: size.height * 0.08),
-
-                  const Text(
-                    'Signup here',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E3A8A),
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  const Text(
-                    'Welcome To claimit',
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFF2563EB),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-
-                  const SizedBox(height: 36),
-
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Enter your mobile number or Email',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF374151),
-                        fontWeight: FontWeight.w500,
+                // ── Form block — vertically centered in remaining space ───
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: size.height - 120,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  TextField(
-                    controller: _controller,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      hintText: 'Email / Phone',
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 15,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                            const BorderSide(color: Color(0xFF2563EB)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                            color: Color(0xFF2563EB), width: 2),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Consumer<AuthProvider>(
-                    builder: (context, auth, _) => LoadingButton(
-                      isLoading: auth.isLoading,
-                      onPressed: _sendOtp,
-                      label: 'Send OTP',
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'Already have an account? ',
-                        style:
-                            TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-                      ),
-                      GestureDetector(
-                        onTap: () => context.go('/auth/login'),
-                        child: const Text(
-                          'Login',
-                          style: TextStyle(
-                            color: Color(0xFF374151),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Signup here',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E3A8A),
+                            ),
                           ),
-                        ),
+
+                          const SizedBox(height: 6),
+
+                          const Text(
+                            'Welcome To claimit',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF2563EB),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+
+                          const SizedBox(height: 32),
+
+                          const Text(
+                            'Enter your mobile number or Email',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF374151),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          TextField(
+                            controller: _controller,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: InputDecoration(
+                              hintText: 'Email / Phone',
+                              hintStyle: const TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 15,
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF2563EB)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          Consumer<AuthProvider>(
+                            builder: (context, auth, _) => LoadingButton(
+                              isLoading: auth.isLoading,
+                              onPressed: _sendOtp,
+                              label: 'Send OTP',
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'Already have an account? ',
+                                style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                              ),
+                              GestureDetector(
+                                onTap: () => context.go('/auth/login'),
+                                child: const Text(
+                                  'Login',
+                                  style: TextStyle(
+                                    color: Color(0xFF374151),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 40),
+
+                          const Text(
+                            'Or continue with',
+                            style: TextStyle(
+                              color: Color(0xFF2563EB),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _SocialButton(
+                                onTap: _socialLoading != null
+                                    ? null
+                                    : () => _signInWithGoogle(context.read<AuthProvider>()),
+                                child: _socialLoading == 'google'
+                                    ? const SizedBox(width: 20, height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4285F4)))
+                                    : const Text('G',
+                                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF4285F4))),
+                              ),
+                              const SizedBox(width: 16),
+                              _SocialButton(
+                                onTap: _socialLoading != null
+                                    ? null
+                                    : () => _signInWithFacebook(context.read<AuthProvider>()),
+                                child: _socialLoading == 'facebook'
+                                    ? const SizedBox(width: 20, height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1877F2)))
+                                    : const Icon(Icons.facebook, size: 28, color: Color(0xFF1877F2)),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 32),
+                        ],
                       ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 52),
-
-                  const Text(
-                    'Or continue with',
-                    style: TextStyle(
-                      color: Color(0xFF2563EB),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SocialButton(
-                        onTap: () {},
-                        child: const Text(
-                          'G',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF4285F4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      _SocialButton(
-                        onTap: () {},
-                        child: const Icon(
-                          Icons.facebook,
-                          size: 28,
-                          color: Color(0xFF1877F2),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 32),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -283,23 +324,27 @@ class _HomeLogoWidget extends StatelessWidget {
 }
 
 class _SocialButton extends StatelessWidget {
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget child;
   const _SocialButton({required this.onTap, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+    return Material(
+      color: const Color(0xFFF3F4F6),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Center(child: child),
         ),
-        child: Center(child: child),
       ),
     );
   }
