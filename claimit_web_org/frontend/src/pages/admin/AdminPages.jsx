@@ -726,3 +726,151 @@ export function AdminBillReviews() {
     </div>
   )
 }
+
+
+// ─── Bonus Settings ───────────────────────────────────────────
+export function AdminBonusSettings() {
+  const [pts, setPts]       = useState('')
+  const [cb, setCb]         = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getAppConfig()
+      .then(cfg => {
+        setPts(String(cfg.reward_points ?? 1000))
+        setCb(String(cfg.cashback ?? 10))
+      })
+      .catch(() => { setPts('1000'); setCb('10') })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setError('')
+    const p = parseInt(pts, 10)
+    const c = parseFloat(cb)
+    if (isNaN(p) || p < 0) { setError('Reward points must be a number ≥ 0'); return }
+    if (isNaN(c) || c < 0) { setError('Cashback must be a number ≥ 0'); return }
+    setSaving(true)
+    try {
+      await api.admin.updateAppConfig({ reward_points: p, cashback: c })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>New User Bonus Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Configure the welcome reward every new user receives when they first scan a bill.
+        Changes take effect immediately — new wallets created after saving will use the updated values.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current settings…</div>
+      ) : (
+        <div style={{ maxWidth: 520 }}>
+          {/* Current values card */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a237e 0%, #1565C0 100%)',
+            borderRadius: 14, padding: 24, marginBottom: 28, color: '#fff',
+          }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, fontWeight: 600, letterSpacing: 0.5 }}>
+              CURRENT NEW USER WELCOME BONUS
+            </div>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{pts}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Reward Points</div>
+              </div>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>₹{parseFloat(cb || '0').toFixed(0)}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Cashback</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit form */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 28 }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Reward Points
+              </label>
+              <input
+                type="number" min="0" step="1" value={pts}
+                onChange={e => { setPts(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 1000"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Points credited to every new user's wallet on signup.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Cashback (₹)
+              </label>
+              <input
+                type="number" min="0" step="0.5" value={cb}
+                onChange={e => { setCb(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 10"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Cashback (in rupees) added to every new user's cashback wallet on signup.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            {saved && (
+              <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+                ✓ Settings saved successfully!
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+                color: '#fff', border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+                fontFamily: 'Poppins', transition: 'background 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
+
+          {/* Info box */}
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              When a new user scans their first bill, the app creates a wallet for them.
+              The wallet starts with the reward points and cashback you set here.
+              Existing users are not affected — only new wallets created after saving.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

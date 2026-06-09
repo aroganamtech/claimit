@@ -164,3 +164,47 @@ async def migrate_shops_gps_force(x_admin_key: Optional[str] = Header(None)):
         "updated_shops": updated,
         "unresolved_shops": unresolved,
     }
+
+
+# ── App config (new-user bonus settings) ──────────────────────────────────────
+# Stored in app_config collection as: { key: "new_user_bonus", reward_points: 1000, cashback: 10.0 }
+
+@router.get("/app-config")
+async def get_app_config(_: None = Depends(_require_admin)):
+    """Return current new-user bonus config (or defaults if not yet set)."""
+    db  = get_db()
+    cfg = await db.app_config.find_one({"key": "new_user_bonus"})
+    return {
+        "reward_points": int(cfg.get("reward_points", 1000)) if cfg else 1000,
+        "cashback":      float(cfg.get("cashback", 10.0))   if cfg else 10.0,
+    }
+
+
+from pydantic import BaseModel as _BM
+
+class AppConfigUpdate(_BM):
+    reward_points: int
+    cashback:      float
+
+
+@router.put("/app-config")
+async def update_app_config(body: AppConfigUpdate, _: None = Depends(_require_admin)):
+    """Upsert new-user bonus config. Values take effect for every new wallet created after this."""
+    if body.reward_points < 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="reward_points must be >= 0")
+    if body.cashback < 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="cashback must be >= 0")
+    db = get_db()
+    await db.app_config.update_one(
+        {"key": "new_user_bonus"},
+        {"$set": {
+            "key":           "new_user_bonus",
+            "reward_points": body.reward_points,
+            "cashback":      body.cashback,
+            "updated_at":    __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}

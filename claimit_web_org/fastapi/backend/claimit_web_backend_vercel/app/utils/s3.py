@@ -8,25 +8,22 @@ from urllib.parse import urlparse
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError, BotoCoreError
 
 _URL_EXPIRY = 3600
+_UPLOAD_URL_EXPIRY = 1800  # 30 min for presigned PUT
+
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/x-m4v", "video/webm"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
 def _s3_client():
-    """Virtual-hosted style + SigV4 — generates correct regional presigned URLs.
-    e.g. https://claimit-image-bucket.s3.eu-north-1.amazonaws.com/shops/abc.jpg?...
-    """
     region = os.getenv("AWS_REGION", "eu-north-1")
     return boto3.client(
         "s3",
         region_name=region,
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", ""),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
-        config=Config(
-            signature_version="s3v4",
-            s3={"addressing_style": "virtual"},
-        ),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
     )
 
 
@@ -34,10 +31,13 @@ def _bucket():
     return os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
 
 
+def _video_bucket():
+    return os.getenv("AWS_VIDEO_BUCKET_NAME") or _bucket()
+
+
 def _normalize_key(s3_key: str) -> str:
     if s3_key.startswith("https://") or s3_key.startswith("http://"):
         path = urlparse(s3_key).path.lstrip("/")
-        # path-style URLs: /bucket/key — strip bucket prefix
         bucket = _bucket()
         if path.startswith(bucket + "/"):
             path = path[len(bucket) + 1:]
@@ -99,5 +99,44 @@ def generate_presigned_url_sync(s3_key: str) -> Optional[str]:
     try:
         key = _normalize_key(s3_key)
         return _sync_presign(key)
+    except Exception:
+        return None
+
+
+# ── Video helpers ─────────────────────────────────────────────────────────────
+
+def generate_presigned_upload_url(folder: str, filename: str,
+                                   content_type: str = "video/mp4",
+                                   is_video: bool = True) -> dict:
+    """
+    Returns a presigned S3 PUT URL for direct browser-to-S3 upload.
+    Bypasses Vercel 4.5 MB body limit entirely.
+    """
+    _, ext = os.path.splitext(filename)
+    if not ext:
+        ext = ".mp4" if is_video else ".jpg"
+    key = "{}/{}{}".format(folder, uuid.uuid4().hex, ext)
+    bucket = _video_bucket() if is_video else _bucket()
+    upload_url = _s3_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
+        ExpiresIn=_UPLOAD_URL_EXPIRY,
+    )
+    return {"upload_url": upload_url, "key": key, "expires_in": _UPLOAD_URL_EXPIRY}
+
+
+def _sync_video_presign(key: str) -> str:
+    return _s3_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": _video_bucket(), "Key": key},
+        ExpiresIn=604800,  # 7 days
+    )
+
+
+def generate_video_url_sync(s3_key: str) -> Optional[str]:
+    if not s3_key:
+        return None
+    try:
+        return _sync_video_presign(_normalize_key(s3_key))
     except Exception:
         return None

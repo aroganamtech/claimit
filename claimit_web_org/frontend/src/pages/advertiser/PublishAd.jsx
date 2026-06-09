@@ -22,34 +22,66 @@ export default function PublishAd() {
   // Files were passed via router state from AdDetails
   const creative = location.state?.creative || null
   const thumbnail = location.state?.thumbnail || null
+  const [uploadProgress, setUploadProgress] = useState('')
+
+  // ── Direct-to-S3 upload helper ────────────────────────────────────────────
+  // Gets a presigned PUT URL from backend, then PUTs file directly to S3.
+  // This bypasses Vercel's 4.5 MB limit — works for videos up to 100 MB.
+  const uploadToS3 = async (file, folder) => {
+    if (!file) return null
+
+    // Step 1: get presigned upload URL from backend
+    const presignRes = await api.advertiser.presignUpload({
+      filename: file.name,
+      content_type: file.type,
+      folder,
+    })
+
+    // Step 2: PUT file directly to S3 (no auth header — presigned URL is self-contained)
+    const putRes = await fetch(presignRes.upload_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    })
+    if (!putRes.ok) throw new Error(`S3 upload failed: ${putRes.status}`)
+
+    return presignRes.key  // S3 key to store in MongoDB
+  }
 
   const handlePublish = async () => {
     const draft = JSON.parse(sessionStorage.getItem('ad_draft') || '{}')
     setLoading(true)
     try {
-      const formData = new FormData()
+      // ── Upload files directly to S3 ───────────────────────────
+      const isVideo = (adType === 'promo_reelz')
+      let creativeKey = null
+      let thumbnailKey = null
 
-      // ── Core fields ───────────────────────────────────────────
-      formData.append('ad_type', draft.adType || adType)
-      formData.append('pincode', draft.pincode || '000000')
-      formData.append('publish_today', publishOption === 'today')
-      if (publishOption === 'schedule' && scheduleDate) {
-        formData.append('scheduled_date', scheduleDate)
+      if (creative) {
+        setUploadProgress(isVideo ? 'Uploading video to S3…' : 'Uploading image to S3…')
+        creativeKey = await uploadToS3(creative, isVideo ? 'ads-video' : 'ads')
+      }
+      if (thumbnail) {
+        setUploadProgress('Uploading thumbnail to S3…')
+        thumbnailKey = await uploadToS3(thumbnail, 'ads-video/thumbnails')
       }
 
-      // ── Type-specific fields ──────────────────────────────────
+      // ── Send metadata (no files) to backend ───────────────────
+      setUploadProgress('Saving ad…')
       const skip = new Set(['adType', 'pincode', '_hasCreative', '_hasThumbnail'])
+      const payload = {
+        ad_type: draft.adType || adType,
+        pincode: draft.pincode || '000000',
+        publish_today: publishOption === 'today',
+        scheduled_date: publishOption === 'schedule' ? scheduleDate : undefined,
+        creative_key: creativeKey,
+        thumbnail_key: thumbnailKey,
+      }
       Object.entries(draft).forEach(([k, v]) => {
-        if (!skip.has(k) && v !== undefined && v !== null) {
-          formData.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
-        }
+        if (!skip.has(k) && v !== undefined && v !== null) payload[k] = v
       })
 
-      // ── Files ─────────────────────────────────────────────────
-      if (creative) formData.append('creative', creative)
-      if (thumbnail) formData.append('thumbnail', thumbnail)
-
-      const data = await api.advertiser.createAd(formData)
+      const data = await api.advertiser.createAd(payload)
       sessionStorage.removeItem('ad_draft')
       sessionStorage.removeItem('ad_creative_name')
       sessionStorage.removeItem('ad_thumb_name')
@@ -59,13 +91,16 @@ export default function PublishAd() {
           adType: AD_LABELS[adType],
           publishDate: data.publish_date,
           endDate: data.end_date,
-          amount: data.amount
+          amount: data.amount,
         }
       })
     } catch (e) {
       console.error(e)
-      alert(e?.response?.data?.detail || 'Failed to publish ad. Please try again.')
-    } finally { setLoading(false) }
+      alert(e?.response?.data?.detail || e?.message || 'Failed to publish ad. Please try again.')
+    } finally {
+      setLoading(false)
+      setUploadProgress('')
+    }
   }
 
   // ── Build a summary of what the user filled in ────────────────
@@ -141,7 +176,7 @@ export default function PublishAd() {
             </div>
 
             <button className="btn-primary" onClick={handlePublish} disabled={loading}>
-              {loading ? 'Publishing…' : 'Publish Now'}
+              {loading ? (uploadProgress || 'Publishing…') : 'Publish Now'}
             </button>
           </div>
 

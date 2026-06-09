@@ -314,3 +314,42 @@ async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=D
         "is_read": False, "review_id": review_id, "created_at": now,
     })
     return {"ok": True, "action": "rejected"}
+
+
+# ── App config: new-user bonus settings ───────────────────────────────────────
+from pydantic import BaseModel as _BM2
+import os as _os
+
+class _AppConfigBody(_BM2):
+    reward_points: int
+    cashback:      float
+
+
+@router.get("/app-config")
+async def get_app_config(_admin=Depends(get_current_admin)):
+    """Return current new-user bonus config."""
+    cfg = await app_db["app_config"].find_one({"key": "new_user_bonus"})
+    default_pts = int(_os.getenv("NEW_USER_REWARD_POINTS", "1000"))
+    default_cb  = float(_os.getenv("NEW_USER_CASHBACK", "10.0"))
+    return {
+        "reward_points": int(cfg.get("reward_points", default_pts)) if cfg else default_pts,
+        "cashback":      float(cfg.get("cashback", default_cb))     if cfg else default_cb,
+    }
+
+
+@router.put("/app-config")
+async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_admin)):
+    """Upsert new-user bonus. Takes effect for every new wallet created after this."""
+    if body.reward_points < 0 or body.cashback < 0:
+        raise HTTPException(status_code=400, detail="Values must be >= 0")
+    await app_db["app_config"].update_one(
+        {"key": "new_user_bonus"},
+        {"$set": {
+            "key":           "new_user_bonus",
+            "reward_points": body.reward_points,
+            "cashback":      body.cashback,
+            "updated_at":    datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}

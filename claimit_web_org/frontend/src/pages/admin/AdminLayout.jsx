@@ -8,8 +8,9 @@ const NAV = [
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
   { label: 'Sales Team',  icon: '🏅', path: '/admin/sales-team' },
-  { label: 'Bill Reviews',icon: '🧾', path: '/admin/bill-reviews' },
-  { label: 'Project PDFs',icon: '📄', path: '/admin/pdfs' },
+  { label: 'Bill Reviews',   icon: '🧾', path: '/admin/bill-reviews' },
+  { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },
+  { label: 'Project PDFs',   icon: '📄', path: '/admin/pdfs' },
 ]
 
 export default function AdminLayout() {

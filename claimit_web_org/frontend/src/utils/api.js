@@ -82,7 +82,10 @@ const auth = {
 const advertiser = {
   getDashboard:    ()             => get('/advertiser/dashboard'),
   getAds:          (status='all') => get('/advertiser/ads', { status }),
-  createAd:        (formData)     => post('/advertiser/ads/create', formData),
+  // presignUpload — returns { upload_url, key } for direct browser → S3 upload
+  presignUpload:   (payload)      => post('/advertiser/presign-upload', payload),
+  // createAd now accepts a plain JSON object (S3 keys, not files)
+  createAd:        (payload)      => post('/advertiser/ads/create', payload),
   getTransactions: ()             => get('/advertiser/transactions'),
   getProfile:      ()             => get('/advertiser/profile'),
 }
@@ -157,6 +160,9 @@ const admin = {
   // Bill Reviews — reads claimit_db.bill_manual_reviews (same DB as Flutter app)
   listBillReviews:   (status = 'pending') => get(`/admin/bill-reviews`, { status }),
   actionBillReview:  (id, payload)        => post(`/admin/bill-reviews/${id}/action`, payload),
+  // New-user bonus config
+  getAppConfig:      ()       => get('/admin/app-config'),
+  updateAppConfig:   (payload) => put('/admin/app-config', payload),
 }
 
 // Default export bundles everything. Pages migrated to the new style

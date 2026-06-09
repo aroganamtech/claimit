@@ -1,5 +1,8 @@
 """
-Reels routes — short promo video clips posted by shops.
+Reels routes — short promo video clips posted by shops / advertisers.
+
+Video storage: AWS S3 (videos/ prefix in the video bucket).
+MongoDB stores only the S3 key; presigned URLs are generated per-request.
 
 Like tracking
 ─────────────
@@ -11,11 +14,14 @@ Each reel stores a `liked_by` list of user-ID strings.
 
 Endpoints
 ─────────
-GET  /reels              → list reels (liked_by_me per user)
-GET  /reels/{id}         → single reel
+GET  /reels              → list reels with presigned video URLs
+GET  /reels/{id}         → single reel with presigned URL
 POST /reels/{id}/like    → toggle like   {"liked": true|false}
 POST /reels/{id}/view    → record a view (increments view_count)
 """
+
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -23,6 +29,7 @@ from bson import ObjectId
 
 from ..database import get_db
 from ..utils.auth import get_current_user
+from ..utils.s3 import generate_video_url_sync, generate_presigned_url_sync
 
 router = APIRouter(prefix="/reels", tags=["reels"])
 
@@ -39,9 +46,16 @@ def _oid(reel_id: str) -> ObjectId:
 def _serialize(doc: dict, user_id: str = "") -> dict:
     doc["id"] = str(doc.pop("_id"))
     liked_by: list = doc.pop("liked_by", [])
-    # Derive like_count from the list so it's always in sync
     doc["like_count"] = len(liked_by)
     doc["liked_by_me"] = user_id in liked_by
+
+    # Resolve S3 keys → presigned URLs so Flutter video_player can stream directly
+    video_key = doc.pop("video_key", None)
+    thumbnail_key = doc.pop("thumbnail_key", None)
+    if video_key:
+        doc["video_url"] = generate_video_url_sync(video_key)
+    if thumbnail_key:
+        doc["thumbnail_url"] = generate_presigned_url_sync(thumbnail_key)
     return doc
 
 

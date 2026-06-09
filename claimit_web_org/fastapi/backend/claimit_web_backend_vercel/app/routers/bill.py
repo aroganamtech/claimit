@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -12,8 +13,27 @@ router = APIRouter()
 # ── Collections (in claimit_db — same DB the Flutter app reads) ───────────────
 _wallets = app_db["user_wallets"]
 _scans   = app_db["bill_scans"]
+_config  = app_db["app_config"]
 
-NEW_USER_BONUS = 1000   # free points given on first-ever scan
+
+# ── New-user bonus config ─────────────────────────────────────────────────────
+async def _get_new_user_config() -> dict:
+    """
+    Read new-user bonus settings from app_config collection.
+    Falls back to env vars, then to hard-coded defaults (1000 pts / ₹10 cashback).
+    """
+    default_pts = int(os.getenv("NEW_USER_REWARD_POINTS", "1000"))
+    default_cb  = float(os.getenv("NEW_USER_CASHBACK", "10.0"))
+    try:
+        cfg = await _config.find_one({"key": "new_user_bonus"})
+        if cfg:
+            return {
+                "reward_points": int(cfg.get("reward_points", default_pts)),
+                "cashback":      float(cfg.get("cashback", default_cb)),
+            }
+    except Exception:
+        pass
+    return {"reward_points": default_pts, "cashback": default_cb}
 
 
 # ── Request model ─────────────────────────────────────────────────────────────
@@ -34,20 +54,25 @@ def _resolve_uid(current_user, body_uid: Optional[str]) -> Optional[str]:
     return body_uid
 
 
-async def _get_or_create_wallet(uid: str) -> dict:
-    """Return existing wallet or create a brand-new one with 1000 welcome pts."""
+async def _get_or_create_wallet(uid: str) -> tuple:
+    """
+    Return (wallet_doc, is_new).
+    New wallets receive the configurable welcome bonus (points + cashback).
+    """
     wallet = await _wallets.find_one({"user_id": uid})
     if wallet is None:
+        bonus = await _get_new_user_config()
         wallet = {
-            "user_id":          uid,
-            "reward_points":    NEW_USER_BONUS,   # ← 1000 welcome bonus
-            "cashback_wallet":  0.0,
-            "lifetime_cashback": 0.0,
-            "total_scans":      0,
-            "created_at":       datetime.utcnow(),
+            "user_id":           uid,
+            "reward_points":     bonus["reward_points"],
+            "cashback_wallet":   bonus["cashback"],
+            "lifetime_cashback": bonus["cashback"],
+            "total_scans":       0,
+            "created_at":        datetime.utcnow(),
         }
         await _wallets.insert_one(wallet)
-    return wallet
+        return wallet, True
+    return wallet, False
 
 
 def _dup_key(shop: str, bill_no: str, bill_date: str, amount: float) -> str:
@@ -76,8 +101,8 @@ async def bill_scan(
         raise HTTPException(status_code=400, detail="Bill amount must be positive")
 
     # ── Load / create wallet ─────────────────────────────────────────────────
-    wallet    = await _get_or_create_wallet(uid)
-    is_first  = wallet.get("total_scans", 0) == 0   # first real scan?
+    wallet, is_new = await _get_or_create_wallet(uid)
+    is_first = is_new or wallet.get("total_scans", 0) == 0
 
     # ── Duplicate check ──────────────────────────────────────────────────────
     bill_date = body.bill_date or datetime.utcnow().strftime("%Y-%m-%d")
@@ -134,7 +159,8 @@ async def bill_scan(
         "earned_points":    earned_pts,
         # New user welcome bonus info
         "is_new_user_bonus": is_first,
-        "bonus_points":     NEW_USER_BONUS if is_first else 0,
+        "bonus_points":     (await _get_new_user_config())["reward_points"] if is_first else 0,
+        "bonus_cashback":   (await _get_new_user_config())["cashback"] if is_first else 0.0,
         # Running wallet totals (app updates its local state from these)
         "reward_points":    new_pts,
         "cashback_wallet":  new_cb_wallet,
@@ -148,7 +174,7 @@ async def get_wallet(current_user=Depends(get_current_user_optional)):
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid    = str(current_user["_id"])
-    wallet = await _get_or_create_wallet(uid)
+    wallet, _ = await _get_or_create_wallet(uid)
     return {
         "reward_points":    wallet["reward_points"],
         "cashback_wallet":  wallet["cashback_wallet"],
@@ -305,7 +331,7 @@ async def review_action(review_id: str, body: AdminReviewAction):
         uid = review["user_id"]
 
         # Add to user wallet
-        wallet = await _get_or_create_wallet(uid)
+        wallet, _ = await _get_or_create_wallet(uid)
         await _wallets.update_one(
             {"user_id": uid},
             {"$set": {
@@ -407,6 +433,36 @@ async def get_bill_notifications(current_user=Depends(get_current_user_optional)
         {"user_id": uid}
     ).sort("created_at", -1).to_list(50)
     return [
+        {
+            "id":         str(n["_id"]),
+            "type":       n.get("type", ""),
+            "title":      n.get("title", ""),
+            "body":       n.get("body", ""),
+            "data":       n.get("data", {}),
+            "read":       n.get("read", False),
+            "created_at": n["created_at"].isoformat() if n.get("created_at") else "",
+        }
+        for n in notifs
+    ]
+
+
+# ── POST /bill/notifications/{id}/read ───────────────────────────────────────
+@router.post("/notifications/{notif_id}/read")
+async def mark_notification_read(
+    notif_id: str,
+    current_user=Depends(get_current_user_optional),
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        oid = ObjectId(notif_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notification ID")
+    await app_notifications_collection.update_one(
+        {"_id": oid, "user_id": str(current_user["_id"])},
+        {"$set": {"read": True}},
+    )
+    return {"ok": True}
         {
             "id":         str(n["_id"]),
             "type":       n.get("type", ""),

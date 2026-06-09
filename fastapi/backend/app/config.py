@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_region: str = "eu-north-1"
     aws_storage_bucket_name: str = "claimit-image-bucket"
+    # Separate S3 bucket for videos (reels / promo ads).
+    # Leave empty to use the same bucket as images (videos stored under videos/ prefix).
+    aws_video_bucket_name: str = ""
+    max_video_size_mb: int = 100
 
     # Firebase Cloud Messaging (push notifications)
     # Provide EITHER a path to the service-account JSON file (local/server deploys
