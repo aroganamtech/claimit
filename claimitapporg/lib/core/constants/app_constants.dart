@@ -3,7 +3,7 @@ class AppConstants {
   // Comment/uncomment the line you need:
 
   // 🌐 Production (Vercel) — use this when testing on a real device / LTE
-  // static const String baseUrl = 'https://claimitorgbackend.vercel.app';
+//   static const String baseUrl = 'https://claimitorgbackend.vercel.app';
 //    static const String baseUrl = 'http://13.63.176.113:8001';
 
   // 💻 Local dev — only works when phone is on the SAME WiFi as your PC
@@ -42,10 +42,10 @@ class AppConstants {
       String.fromEnvironment('GOOGLE_CLIENT_ID_IOS',
           defaultValue: 'DUMMY_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com');
   static const String facebookAppId =
-      String.fromEnvironment('FACEBOOK_APP_ID', defaultValue: '000000000000000');
+      String.fromEnvironment('FACEBOOK_APP_ID', defaultValue: '1336911001869763');
   static const String facebookClientToken =
       String.fromEnvironment('FACEBOOK_CLIENT_TOKEN',
-          defaultValue: 'DUMMY_FACEBOOK_CLIENT_TOKEN');
+          defaultValue: '2a08e13a291f0eb09ae90c53947374c1');
 
   // ── Users / Profile ───────────────────────────────────────────────────────
   static const String profile        = '/users/profile';

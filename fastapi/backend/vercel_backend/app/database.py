@@ -1,4 +1,6 @@
 """
+from __future__ import annotations  # allows X | Y type syntax on Python 3.9
+
 Serverless-safe MongoDB connection.
 
 Vercel spins up a new Python process for every cold start, and the process
@@ -81,7 +83,9 @@ async def connect_db():
         # and Atlas has a connection limit on free/shared tiers.
         maxPoolSize=5,
         minPoolSize=0,
-        serverSelectionTimeoutMS=5000,
+        serverSelectionTimeoutMS=3000,   # fail fast — Vercel has 10s limit
+        connectTimeoutMS=3000,
+        socketTimeoutMS=5000,
     )
     _db = _client[settings.database_name]
 

@@ -138,7 +138,11 @@ async def send_otp(request: SendOtpRequest):
 
     otp = generate_otp()
     await store_otp(identifier, otp)
-    await send_otp_sms(identifier, otp)   # logs to console; plug in SMS/email provider here
+    try:
+        await send_otp_sms(identifier, otp)
+    except Exception as exc:
+        # Delivery failure must never return 500 — OTP is stored; user can retry.
+        print(f"⚠️  OTP delivery error for {identifier}: {exc}")
 
     return {
         "success": True,

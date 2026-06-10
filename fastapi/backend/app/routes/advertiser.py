@@ -29,7 +29,9 @@ from ..utils.helpers import serialize_doc
 from ..utils.s3 import (
     generate_presigned_upload_url,
     generate_presigned_url,
+    generate_presigned_url_sync,
     generate_video_url,
+    generate_video_url_sync,
     ALLOWED_VIDEO_TYPES,
     ALLOWED_IMAGE_TYPES,
 )
