@@ -4,7 +4,7 @@ class AppConstants {
 
   // 🌐 Production (Vercel) — use this when testing on a real device / LTE
 //   static const String baseUrl = 'https://claimitorgbackend.vercel.app';
-//    static const String baseUrl = 'http://13.63.176.113:8001';
+//    static const String baseUrl = 'http://16.170.110.232:8001';
 
   // 💻 Local dev — only works when phone is on the SAME WiFi as your PC
   static const String baseUrl = 'http://10.204.99.28:8001';

@@ -1,1 +1,0 @@
-# Claimit App
