@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -163,7 +164,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       sourcePath: picked.path,
       compressFormat: ImageCompressFormat.jpg,
       compressQuality: 90,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Adjust profile picture',
@@ -171,9 +171,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           statusBarColor: AppTheme.primaryColor,
           toolbarWidgetColor: Colors.white,
           cropStyle: CropStyle.circle,
+          initAspectRatio: CropAspectRatioPreset.square,
           aspectRatioPresets: const [CropAspectRatioPreset.square],
           lockAspectRatio: true,
           hideBottomControls: false,
+          showCropGrid: false,
         ),
         IOSUiSettings(
           title: 'Adjust profile picture',
@@ -181,6 +183,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           aspectRatioLockEnabled: true,
           aspectRatioPickerButtonHidden: true,
           resetAspectRatioEnabled: false,
+          resetButtonHidden: true,
         ),
       ],
     );
@@ -199,6 +202,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isUploadingAvatar = false);
 
     if (success) {
+      // Clear cached image so profile page always shows the new avatar
+      await CachedNetworkImage.evictFromCache(
+        context.read<AuthProvider>().user?.avatarUrl ?? '',
+      );
       await context.read<AuthProvider>().fetchUserProfile();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

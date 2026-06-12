@@ -2,13 +2,15 @@ from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File 
 from datetime import datetime
 from bson import ObjectId
 import os
-import aiofiles
+import logging
 from ..database import get_db
 from ..utils.auth import get_current_user
-from ..utils.s3 import upload_bytes as _s3_upload_bytes, generate_presigned_url as _s3_presign
+from ..utils.s3 import upload_bytes as _s3_upload_bytes, public_url as _s3_public_url
 from ..utils.helpers import serialize_doc
 from ..models.user import UserUpdate, LocationUpdate
 from ..config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 settings = get_settings()
@@ -21,7 +23,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
     # Regenerate presigned avatar URL on every profile fetch so it never expires
     avatar_s3_key = current_user.get("avatar_s3_key")
     if avatar_s3_key:
-        profile["avatar_url"] = await _s3_presign(avatar_s3_key)
+        profile["avatar_url"] = _s3_public_url(avatar_s3_key)
     return profile
 
 
@@ -40,10 +42,11 @@ async def update_profile(
     user_id = current_user.get("_id") or current_user.get("id")
 
     update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
-    update_dict["updated_at"] = datetime.utcnow()
 
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    update_dict["updated_at"] = datetime.utcnow()
 
     # ── Uniqueness checks for login credentials ──────────────────────────────
     if "phone" in update_dict:
@@ -62,13 +65,16 @@ async def update_profile(
                 detail="This email address is already linked to another account.",
             )
 
-    await db.users.update_one(
-        {"_id": ObjectId(str(user_id))},
-        {"$set": update_dict},
-    )
-
-    updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
-    return serialize_doc(updated_user)
+    try:
+        await db.users.update_one(
+            {"_id": ObjectId(str(user_id))},
+            {"$set": update_dict},
+        )
+        updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})
+        return serialize_doc(updated_user)
+    except Exception as e:
+        logger.exception("profile update failed for user %s: %s", user_id, e)
+        raise HTTPException(status_code=500, detail=f"Profile update failed: {str(e)}")
 
 
 @router.post("/location")
@@ -115,7 +121,7 @@ async def upload_avatar(
     # Generate a fresh presigned URL to return in this response.
     # We store only the s3_key in MongoDB — presigned URLs are generated
     # on demand (see get_profile) so they never go stale.
-    avatar_url = await _s3_presign(s3_key) or ""
+    avatar_url = _s3_public_url(s3_key) or ""
 
     db = get_db()
     await db.users.update_one(

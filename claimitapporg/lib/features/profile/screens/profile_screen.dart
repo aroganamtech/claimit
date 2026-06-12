@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../bill_reader/models/bill_reward_model.dart';
 import '../../bill_reader/providers/bill_reward_provider.dart';
+import '../../deals/models/deal_model.dart';
+import '../../deals/services/deal_service.dart';
 import '../../notifications/providers/notification_provider.dart';
+import '../../shops/screens/shop_list_screen.dart' show ShopItem;
 import '../providers/profile_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -229,10 +233,7 @@ class _ProfileCard extends StatelessWidget {
                 radius: 38,
                 backgroundColor: const Color(0xFFE8EFF8),
                 backgroundImage: (user?.avatarUrl != null)
-                    ? CachedNetworkImageProvider(
-                        user!.avatarUrl!,
-                        cacheKey: user.id,
-                      )
+                    ? CachedNetworkImageProvider(user!.avatarUrl!)
                     : null,
                 child: (user?.avatarUrl == null)
                     ? Text(
@@ -961,6 +962,19 @@ class _FavShopTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+      onTap: () => context.push('/shop-detail', extra: ShopItem(
+        id: shop.id,
+        name: shop.name,
+        location: shop.location,
+        categoryIds: const [],
+        discount: shop.discount,
+        rating: shop.rating,
+        addedDaysAgo: 0,
+        fallbackColor: const Color(0xFF2563EB),
+        fallbackIcon: Icons.store_rounded,
+        imageUrl: shop.imageUrl,
+        imageData: shop.imageData,
+      )),
       trailing: GestureDetector(
         onTap: () => provider.toggleFavourite(
           shop.id,
@@ -979,12 +993,50 @@ class _FavShopTile extends StatelessWidget {
 }
 
 // ── Favourite deal tile ───────────────────────────────────────────────────────
-class _FavDealTile extends StatelessWidget {
+class _FavDealTile extends StatefulWidget {
   final FavouriteDeal deal;
   const _FavDealTile({required this.deal});
+  @override
+  State<_FavDealTile> createState() => _FavDealTileState();
+}
+
+class _FavDealTileState extends State<_FavDealTile> {
+  bool _loading = false;
+
+  Future<void> _openDetail() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final dto = await DealService.instance.fetchDealById(widget.deal.id);
+      if (!mounted) return;
+      if (dto != null) {
+        context.push('/deal-detail', extra: DealData(
+          id: dto.id,
+          name: dto.name,
+          location: dto.location,
+          offer: dto.offer,
+          distance: dto.distance,
+          type: dto.type,
+          imageUrl: dto.imageUrl,
+          imageData: dto.imageData,
+          fallbackColor: const Color(0xFF2563EB),
+          fallbackIcon: Icons.local_offer_rounded,
+          description: dto.description,
+          address: dto.address,
+          phone: dto.phone,
+          timing: dto.timing,
+          rating: dto.rating,
+          reviews: dto.reviews,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final deal = widget.deal;
     final provider = context.read<ProfileProvider>();
 
     Widget avatar;
@@ -1038,8 +1090,7 @@ class _FavDealTile extends StatelessWidget {
           Text(deal.location,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style:
-                  const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
           if (deal.offer.isNotEmpty)
             Text(deal.offer,
                 maxLines: 1,
@@ -1051,17 +1102,23 @@ class _FavDealTile extends StatelessWidget {
         ],
       ),
       isThreeLine: deal.offer.isNotEmpty,
-      trailing: GestureDetector(
-        onTap: () => provider.toggleDealFavourite(
-          deal.id,
-          name: deal.name,
-          location: deal.location,
-          imageUrl: deal.imageUrl,
-          offer: deal.offer,
-        ),
-        child: const Icon(Icons.favorite_rounded,
-            color: Colors.redAccent, size: 22),
-      ),
+      onTap: _openDetail,
+      trailing: _loading
+          ? const SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2,
+                  color: Color(0xFF2563EB)))
+          : GestureDetector(
+              onTap: () => provider.toggleDealFavourite(
+                deal.id,
+                name: deal.name,
+                location: deal.location,
+                imageUrl: deal.imageUrl,
+                offer: deal.offer,
+              ),
+              child: const Icon(Icons.favorite_rounded,
+                  color: Colors.redAccent, size: 22),
+            ),
     );
   }
 }
@@ -1160,6 +1217,7 @@ class _HistoryTabState extends State<_HistoryTab> {
         return ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          onTap: () => _showBillDetail(ctx, entry),
           leading: CircleAvatar(
             radius: 26,
             backgroundColor: entry.shopColor.withOpacity(0.15),
@@ -1211,6 +1269,103 @@ class _HistoryTabState extends State<_HistoryTab> {
       },
     );
   }
+
+  void _showBillDetail(BuildContext context, BillRewardEntry entry) {
+    final dateStr =
+        '${entry.date.day} ${_month(entry.date.month)} ${entry.date.year}';
+    final timeStr =
+        '${entry.date.hour.toString().padLeft(2, '0')}:${entry.date.minute.toString().padLeft(2, '0')} ${entry.date.hour < 12 ? 'AM' : 'PM'}';
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: entry.shopColor.withOpacity(0.15),
+                child: Text(
+                  entry.shopName.isNotEmpty ? entry.shopName[0] : 'S',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: entry.shopColor,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(entry.shopName,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700)),
+              ),
+            ]),
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 12),
+            _billRow('Scan Date', '$dateStr  $timeStr'),
+            if (entry.billDate != null)
+              _billRow('Bill Date',
+                  '${entry.billDate!.day} ${_month(entry.billDate!.month)} ${entry.billDate!.year}'),
+            if (entry.billNumber != null && entry.billNumber!.isNotEmpty)
+              _billRow('Bill No.', entry.billNumber!),
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+            _billRow('Total Bill', '₹ ${entry.totalBill.toStringAsFixed(2)}',
+                valueStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2563EB))),
+            _billRow('Cashback Earned', '₹ ${entry.cashback.toStringAsFixed(2)}',
+                valueStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF16A34A))),
+            _billRow('Reward Points', '${entry.rewardPoints} pts ★',
+                valueStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFD97706))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _billRow(String label, String value, {TextStyle? valueStyle}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 13, color: Color(0xFF6B7280))),
+            Text(value,
+                style: valueStyle ??
+                    const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
 
   static String _month(int m) {
     const months = [

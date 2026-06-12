@@ -2124,7 +2124,7 @@ class _CategoryRow extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Show\nAll',
+              'All',
               maxLines: 2,
               textAlign: TextAlign.center,
               style: TextStyle(

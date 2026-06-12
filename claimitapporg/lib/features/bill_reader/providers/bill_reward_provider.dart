@@ -157,15 +157,43 @@ class BillRewardProvider extends ChangeNotifier {
   Future<void> loadHistory() async {
     try {
       final items = await BillService.instance.fetchHistory();
+
+      // Only replace local history when the server actually returns data.
+      // If the server returns [] (no scans found / transient issue), keep
+      // whatever is already cached — clearing here would permanently wipe
+      // locally-stored entries that haven't synced yet.
+      if (items.isEmpty) return;
+
+      // Preserve any offline/local-only entries (id starts with "local_")
+      // that aren't yet on the server, so they survive the server refresh.
+      final localOnly = _history
+          .where((e) => e.id.startsWith('local_'))
+          .toList();
+
       _history.clear();
       for (var i = 0; i < items.length; i++) {
         _history.add(_entryFromMap(items[i], _shopColors[i % _shopColors.length]));
       }
+
+      // Re-insert local-only entries that aren't already represented by a
+      // server entry (avoid duplicates when the same scan appears in both).
+      for (final local in localOnly) {
+        final alreadySynced = _history.any((e) =>
+            e.shopName == local.shopName &&
+            e.totalBill == local.totalBill &&
+            e.date.difference(local.date).inMinutes.abs() < 5);
+        if (!alreadySynced) {
+          _history.insert(0, local);
+        }
+      }
+      // Re-sort so newest entries stay at the top.
+      _history.sort((a, b) => b.date.compareTo(a.date));
+
       notifyListeners();
       await _saveToCache();
     } catch (e) {
       AppError.friendly(e, '', context: 'BillHistory');
-      // Cache already shown — nothing more to do
+      // Cache already shown from _restoreFromCache — nothing more to do
     }
   }
 

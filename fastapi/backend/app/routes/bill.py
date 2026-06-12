@@ -199,6 +199,20 @@ async def scan_bill(data: BillScanRequest, request: Request):
     }
     res = await db.bill_scans.insert_one(scan_doc)
 
+    # Permanent history record — no TTL, shown to user in the app.
+    # bill_scans is deleted after 24 h (dup-detection only); bill_history is kept forever.
+    await db.bill_history.insert_one({
+        "user_id":         uid,
+        "shop_name":       shop_name,
+        "total_amount":    total,
+        "earned_cashback": earned_cb,
+        "earned_points":   earned_pts,
+        "bill_number":     data.bill_number,
+        "bill_date":       bill_date,
+        "bill_time":       data.bill_time,
+        "scanned_at":      scan_doc["scanned_at"],
+    })
+
     # Get bonus values for response (already applied to wallet)
     bonus = await _get_new_user_config(db) if is_first else {"reward_points": 0, "cashback": 0.0}
 
@@ -236,20 +250,21 @@ async def get_wallet(current_user: dict = Depends(get_current_user)):
 async def bill_history(current_user: dict = Depends(get_current_user)):
     db    = get_db()
     uid   = str(current_user["_id"])
-    scans = await db.bill_scans.find({"user_id": uid}).sort("scanned_at", -1).to_list(100)
+    # Read from bill_history (permanent) — NOT bill_scans (expires in 24 h)
+    records = await db.bill_history.find({"user_id": uid}).sort("scanned_at", -1).to_list(200)
     return [
         {
-            "id":              str(s["_id"]),
-            "shop_name":       s.get("shop_name", ""),
-            "total_amount":    s.get("total_amount", 0),
-            "earned_cashback": s.get("earned_cashback", 0),
-            "earned_points":   s.get("earned_points", 0),
-            "bill_number":     s.get("bill_number"),
-            "bill_date":       s.get("bill_date"),
-            "bill_time":       s.get("bill_time"),
-            "scanned_at":      s["scanned_at"].isoformat() if s.get("scanned_at") else "",
+            "id":              str(r["_id"]),
+            "shop_name":       r.get("shop_name", ""),
+            "total_amount":    r.get("total_amount", 0),
+            "earned_cashback": r.get("earned_cashback", 0),
+            "earned_points":   r.get("earned_points", 0),
+            "bill_number":     r.get("bill_number"),
+            "bill_date":       r.get("bill_date"),
+            "bill_time":       r.get("bill_time"),
+            "scanned_at":      r["scanned_at"].isoformat() if r.get("scanned_at") else "",
         }
-        for s in scans
+        for r in records
     ]
 
 
@@ -363,6 +378,7 @@ async def admin_action_review(
                 "updated_at":        now,
             }},
         )
+        scan_now = now
         await db.bill_scans.insert_one({
             "user_id": uid, "dup_key": f"review|{review_id}",
             "shop_name": shop_name, "total_amount": round(amount, 2),
@@ -370,7 +386,20 @@ async def admin_action_review(
             "bill_number": review.get("bill_number"),
             "bill_date":   str(review.get("bill_date", "")),
             "bill_time":   review.get("bill_time"),
-            "source": "manual_review", "review_id": review_id, "scanned_at": now,
+            "source": "manual_review", "review_id": review_id, "scanned_at": scan_now,
+        })
+        # Also write to permanent bill_history so it shows in the app
+        await db.bill_history.insert_one({
+            "user_id":         uid,
+            "shop_name":       shop_name,
+            "total_amount":    round(amount, 2),
+            "earned_cashback": cb,
+            "earned_points":   pts,
+            "bill_number":     review.get("bill_number"),
+            "bill_date":       str(review.get("bill_date", "")),
+            "bill_time":       review.get("bill_time"),
+            "source":          "manual_review",
+            "scanned_at":      scan_now,
         })
 
     await notify_user(

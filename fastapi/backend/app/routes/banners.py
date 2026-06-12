@@ -10,7 +10,7 @@ from datetime import datetime
 
 from ..database import get_db
 from ..utils.helpers import serialize_doc
-from ..utils.s3 import generate_presigned_url
+from ..utils.s3 import public_url
 
 router = APIRouter(prefix="/banners", tags=["Banners"])
 
@@ -38,8 +38,9 @@ async def get_banners():
         if not _is_active(b):
             continue
         doc = serialize_doc(b)
-        # Convert S3 key → presigned URL so Flutter can display the image
-        if doc.get("image_key") and not doc.get("image_url"):
-            doc["image_url"] = await generate_presigned_url(doc["image_key"]) or ""
+        # Always build a permanent public URL from the S3 key
+        key = doc.get("image_s3_key") or doc.get("image_key") or ""
+        if key:
+            doc["image_url"] = public_url(key)
         active.append(doc)
     return {"success": True, "banners": active}

@@ -12,9 +12,30 @@ from database import ads_collection
 from bson import ObjectId
 from datetime import datetime
 from utils.dependencies import get_current_user_optional
+from utils.s3 import generate_presigned_url_sync as _presign
 from typing import Optional
 
 router = APIRouter()
+
+
+def _media_url(ad: dict, key_field: str, url_fields: list[str]) -> str:
+    """Prefer a freshly-presigned URL from the stored S3 key; fall back to
+    whatever raw URL/key is on the document (handles legacy ads)."""
+    key = ad.get(key_field) or ""
+    url = _presign(key) if key else ""
+    if url:
+        return url
+    for f in url_fields:
+        stored = ad.get(f) or ""
+        if stored:
+            if stored.startswith("https://") and ".amazonaws.com/" in stored:
+                from urllib.parse import urlparse
+                derived_key = urlparse(stored).path.lstrip("/")
+                presigned = _presign(derived_key) or ""
+                if presigned:
+                    return presigned
+            return stored
+    return ""
 
 
 def _serialize_reel(ad: dict, user_id: Optional[str] = None) -> dict:
@@ -28,8 +49,8 @@ def _serialize_reel(ad: dict, user_id: Optional[str] = None) -> dict:
         "shop_category": ad.get("shop_category") or ad.get("type") or "",
         "caption": ad.get("caption") or ad.get("description") or "",
         "offer": ad.get("offer") or "",
-        "video_url": ad.get("video_url") or ad.get("creative_url") or "",
-        "thumbnail_url": ad.get("thumbnail_url") or ad.get("image_url") or "",
+        "video_url": _media_url(ad, "video_s3_key", ["video_url", "creative_url"]),
+        "thumbnail_url": _media_url(ad, "thumbnail_s3_key", ["thumbnail_url", "image_url"]),
         "like_count": int(ad.get("like_count") or 0),
         "view_count": int(ad.get("view_count") or 0),
         "tag": ad.get("tag") or "",

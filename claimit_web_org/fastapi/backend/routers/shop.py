@@ -9,6 +9,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
+from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign
 import json
 import re
 
@@ -83,64 +84,76 @@ def _strip_b64_prefix(data_url: str | None) -> str:
 
 
 def _compress_b64_image(b64_raw: str, max_kb: int = 150) -> str:
-    """
-    Compress a raw base64 image to stay under max_kb.
-    Progressively lowers JPEG quality until small enough.
-    Returns the compressed raw base64 string (no prefix).
-    Falls back to original if PIL not available or decoding fails.
-    """
     if not b64_raw:
         return ""
     try:
         import io, base64
         from PIL import Image
-
-        img_bytes = base64.b64decode(b64_raw + "==")  # pad safely
+        img_bytes = base64.b64decode(b64_raw + "==")
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-
-        # Resize if very large — max 800px on longest side
         max_side = 800
         w, h = img.size
         if max(w, h) > max_side:
             scale = max_side / max(w, h)
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-        # Progressive quality reduction
         for quality in [75, 60, 45, 30]:
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=quality, optimize=True)
             compressed = buf.getvalue()
             if len(compressed) <= max_kb * 1024:
                 return base64.b64encode(compressed).decode()
-
-        # Last resort — lowest quality
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=20, optimize=True)
         return base64.b64encode(buf.getvalue()).decode()
-
     except Exception:
-        # PIL not installed or decode failed — return as-is
         return b64_raw
 
 
 async def _sync_shop_to_app(user_id: str) -> None:
     """
-    Sync web shop data → app-facing fields on the same document.
-    Key fix: compresses images and removes the raw cover_photo_b64 / gallery_photos
-    blobs after syncing so the document doesn't store images twice and stays
-    well under MongoDB's 16 MB document limit.
+    Sync web shop → app fields. Compresses images and removes raw blobs
+    so the document stays under MongoDB's 16 MB limit.
     """
     shop = await shops_collection.find_one({"user_id": user_id})
     if not shop:
         return
 
-    cover_raw   = _strip_b64_prefix(shop.get("cover_photo_b64") or "")
-    gallery     = shop.get("gallery_photos", []) or []
-    gallery_raw = [_strip_b64_prefix(p) for p in gallery if p]
+    import os as _os
 
-    # Compress images to prevent document size blowup
-    cover_compressed   = _compress_b64_image(cover_raw)
-    gallery_compressed = [_compress_b64_image(g) for g in gallery_raw]
+    def _b64_to_bytes(b64: str) -> bytes:
+        import base64 as _b64
+        raw = _strip_b64_prefix(b64)
+        return _b64.b64decode(raw + "==") if raw else b""
+
+    _region = _os.getenv("AWS_REGION", "eu-north-1")
+    _bucket = _os.getenv("AWS_STORAGE_BUCKET_NAME", "claimit-image-bucket")
+
+    def _s3_url(key: str) -> str:
+        return f"https://{_bucket}.s3.{_region}.amazonaws.com/{key}" if key else ""
+
+    # Upload cover photo to S3
+    cover_key = ""
+    cover_url = ""
+    cover_raw = _b64_to_bytes(shop.get("cover_photo_b64") or "")
+    if cover_raw:
+        try:
+            cover_key = await _s3_upload(cover_raw, "shop-covers", content_type="image/jpeg")
+            cover_url = _s3_url(cover_key)
+        except Exception as _e:
+            print(f"Cover S3 upload error: {_e}")
+
+    # Upload gallery photos to S3
+    gallery_keys = []
+    gallery_urls = []
+    for gp in (shop.get("gallery_photos") or []):
+        gb = _b64_to_bytes(gp)
+        if gb:
+            try:
+                gk = await _s3_upload(gb, "shop-gallery", content_type="image/jpeg")
+                gallery_keys.append(gk)
+                gallery_urls.append(_s3_url(gk))
+            except Exception as _e:
+                print(f"Gallery S3 upload error: {_e}")
 
     app_fields = {
         "name":            shop.get("shop_name", ""),
@@ -159,10 +172,19 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "phone":           shop.get("phone", ""),
         "lat":             shop.get("lat"),
         "lng":             shop.get("lng"),
-        "image_data":      cover_compressed,
-        "image_data_list": gallery_compressed,
+        # S3 keys and URLs
+        "image_s3_key":    cover_key,
+        "image_url":       cover_url,
+        "image_s3_keys":   gallery_keys,
+        "image_urls":      gallery_urls,
+        # Legacy empty fields (no more base64 in DB)
+        "image_data":      "",
+        "image_data_list": [],
     }
 
+    # Keep cover_photo_b64 and gallery_photos — removing them breaks
+    # subsequent $push calls (each new gallery upload would recreate the
+    # array from scratch, leaving only the last photo).
     await shops_collection.update_one(
         {"_id": shop["_id"]},
         {"$set": app_fields},

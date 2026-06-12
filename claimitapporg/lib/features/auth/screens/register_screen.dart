@@ -263,16 +263,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     : const Text('G',
                                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF4285F4))),
                               ),
-                              const SizedBox(width: 16),
-                              _SocialButton(
-                                onTap: _socialLoading != null
-                                    ? null
-                                    : () => _signInWithFacebook(context.read<AuthProvider>()),
-                                child: _socialLoading == 'facebook'
-                                    ? const SizedBox(width: 20, height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1877F2)))
-                                    : const Icon(Icons.facebook, size: 28, color: Color(0xFF1877F2)),
-                              ),
+                              // Facebook login hidden until app is published on Meta
+                              // const SizedBox(width: 16),
+                              // _SocialButton(...facebook...),
                             ],
                           ),
 

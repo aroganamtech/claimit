@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from database import (
     ads_collection, transactions_collection,
     app_deals_collection, app_reels_collection, app_banners_collection,
 )
 from utils.dependencies import get_current_user
+from utils.s3 import (
+    generate_presigned_upload_url,
+    generate_presigned_url_sync as _presign,
+    generate_video_url_sync as _video_presign,
+    ALLOWED_VIDEO_TYPES, ALLOWED_IMAGE_TYPES,
+)
 from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional
-import base64, os, json
+import json
 
 router = APIRouter()
 
@@ -25,257 +32,219 @@ def serialize_ad(ad):
     return ad
 
 
-# ─── Dashboard ────────────────────────────────────────────────────────────────
-@router.get("/dashboard")
-async def get_dashboard(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    ads = await ads_collection.find({"user_id": user_id}).to_list(100)
-    total_views = sum(a.get("views", 0) for a in ads)
-    total_clicks = sum(a.get("clicks", 0) for a in ads)
-    return {
-        "total_ads": len(ads),
-        "total_views": total_views,
-        "total_clicks": total_clicks,
-        "ads": [serialize_ad(a) for a in ads]
-    }
+# ── Presign upload (direct browser -> S3, bypasses Vercel 4.5 MB limit) ───────
+
+class PresignRequest(BaseModel):
+    filename: str
+    content_type: str
+    folder: str = "ads"
 
 
-# ─── List ads ─────────────────────────────────────────────────────────────────
-@router.get("/ads")
-async def get_ads(status: Optional[str] = None, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    query = {"user_id": user_id}
-    if status and status != "all":
-        query["status"] = status
-    ads = await ads_collection.find(query).to_list(100)
-    return [serialize_ad(a) for a in ads]
+@router.post("/presign-upload")
+async def presign_upload(body: PresignRequest, current_user=Depends(get_current_user)):
+    is_video = body.content_type in ALLOWED_VIDEO_TYPES
+    is_image = body.content_type in ALLOWED_IMAGE_TYPES
+    if not is_video and not is_image:
+        raise HTTPException(status_code=400,
+            detail=f"Unsupported type: {body.content_type}")
+    return generate_presigned_upload_url(
+        folder=body.folder,
+        filename=body.filename,
+        content_type=body.content_type,
+        is_video=is_video,
+    )
 
 
-# ─── Create ad ────────────────────────────────────────────────────────────────
-@router.post("/ads/create")
-async def create_ad(
-    # Core
-    ad_type:        str            = Form(...),
-    pincode:        str            = Form(...),
-    publish_today:  bool           = Form(True),
-    scheduled_date: Optional[str]  = Form(None),
-    creative:       Optional[UploadFile] = File(None),
-    thumbnail:      Optional[UploadFile] = File(None),
+# ── Create ad (JSON body — creative_key / thumbnail_key from direct S3 upload) -
 
+class CreateAdRequest(BaseModel):
+    ad_type: str
+    pincode: str = "000000"
+    publish_today: bool = True
+    scheduled_date: Optional[str] = None
+    creative_key: Optional[str] = None
+    thumbnail_key: Optional[str] = None
     # Home banner
-    headline:       Optional[str]  = Form(None),
-    sub:            Optional[str]  = Form(None),
-    cta_link:       Optional[str]  = Form(None),
-
+    headline: Optional[str] = None
+    sub: Optional[str] = None
+    cta_link: Optional[str] = None
     # Promo reelz
-    shop_name:      Optional[str]  = Form(None),
-    shop_location:  Optional[str]  = Form(None),
-    shop_category:  Optional[str]  = Form(None),
-    caption:        Optional[str]  = Form(None),
-    tag:            Optional[str]  = Form(None),
+    shop_name: Optional[str] = None
+    shop_location: Optional[str] = None
+    shop_category: Optional[str] = None
+    caption: Optional[str] = None
+    tag: Optional[str] = None
+    # Deal
+    name: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    timing: Optional[str] = None
+    type: Optional[str] = None
+    cashback: Optional[str] = None
+    distance: Optional[str] = None
+    tags: Optional[str] = None
+    offer: Optional[str] = None
+    title: Optional[str] = None
 
-    # Deal (nearby / brand)
-    name:           Optional[str]  = Form(None),
-    location:       Optional[str]  = Form(None),
-    description:    Optional[str]  = Form(None),
-    address:        Optional[str]  = Form(None),
-    phone:          Optional[str]  = Form(None),
-    timing:         Optional[str]  = Form(None),
-    type:           Optional[str]  = Form(None),
-    cashback:       Optional[str]  = Form(None),
-    distance:       Optional[str]  = Form(None),
-    tags:           Optional[str]  = Form(None),
 
-    # Shared
-    offer:          Optional[str]  = Form(None),
-    title:          Optional[str]  = Form(None),   # legacy compat
-
-    current_user=Depends(get_current_user)
-):
+@router.post("/ads/create")
+async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
+    ad_type = body.ad_type
     amount  = AD_PRICES.get(ad_type, 1400)
 
-    # ── Publish date ──────────────────────────────────────────────────────────
-    if publish_today:
+    if publish_today := body.publish_today:
         pub_date = datetime.utcnow()
     else:
         try:
-            pub_date = datetime.strptime(scheduled_date, "%Y-%m-%d") if scheduled_date else datetime.utcnow()
+            pub_date = datetime.strptime(body.scheduled_date, "%Y-%m-%d") if body.scheduled_date else datetime.utcnow()
         except ValueError:
             pub_date = datetime.utcnow()
-    end_date = pub_date + timedelta(days=7)
-    ad_status = "active" if publish_today else "scheduled"
+    end_date  = pub_date + timedelta(days=7)
+    ad_status = "active" if body.publish_today else "scheduled"
 
-    # ── Save uploaded files + encode as base64 for app ───────────────────────
-    upload_dir = "uploads"
-    os.makedirs(upload_dir, exist_ok=True)
+    # Resolve S3 keys to presigned URLs
+    creative_s3_key  = body.creative_key or ""
+    thumbnail_s3_key = body.thumbnail_key or ""
 
-    web_base = os.getenv("WEB_BASE_URL", "")
+    is_video   = ad_type == "promo_reelz"
+    creative_url  = (_video_presign(creative_s3_key) if is_video else _presign(creative_s3_key)) if creative_s3_key else ""
+    thumbnail_url = _presign(thumbnail_s3_key) if thumbnail_s3_key else ""
 
-    creative_url  = ""
-    creative_b64  = ""   # raw base64 — what the Flutter app uses
-    if creative and creative.filename:
-        content = await creative.read()
-        creative_b64 = base64.b64encode(content).decode("utf-8")
-        if web_base:
-            safe = f"{user_id}_{int(pub_date.timestamp())}_{creative.filename}"
-            with open(os.path.join(upload_dir, safe), "wb") as f:
-                f.write(content)
-            creative_url = f"{web_base}/uploads/{safe}"
-
-    thumbnail_url = ""
-    thumbnail_b64 = ""
-    if thumbnail and thumbnail.filename:
-        content = await thumbnail.read()
-        thumbnail_b64 = base64.b64encode(content).decode("utf-8")
-        if web_base:
-            safe = f"{user_id}_{int(pub_date.timestamp())}_thumb_{thumbnail.filename}"
-            with open(os.path.join(upload_dir, safe), "wb") as f:
-                f.write(content)
-            thumbnail_url = f"{web_base}/uploads/{safe}"
-
-    # ── Parse tags ────────────────────────────────────────────────────────────
     parsed_tags: list = []
-    if tags:
+    if body.tags:
         try:
-            parsed_tags = json.loads(tags)
+            parsed_tags = json.loads(body.tags)
         except Exception:
-            parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
+            parsed_tags = [t.strip() for t in body.tags.split(",") if t.strip()]
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Build the web-portal ads document (stored in claimit_web.ads)
-    # ─────────────────────────────────────────────────────────────────────────
     ad_doc = {
-        "user_id":      user_id,
-        "ad_type":      ad_type,
-        "pincode":      pincode,
+        "user_id":    user_id,
+        "ad_type":    ad_type,
+        "pincode":    body.pincode,
         "publish_date": pub_date.strftime("%d/%m/%Y"),
-        "end_date":     end_date.strftime("%d/%m/%Y"),
-        "amount":       amount,
-        "status":       ad_status,
-        "views":        0,
-        "clicks":       0,
-        "created_at":   datetime.utcnow(),
+        "end_date":   end_date.strftime("%d/%m/%Y"),
+        "amount":     amount,
+        "status":     ad_status,
+        "views":      0,
+        "clicks":     0,
+        "created_at": datetime.utcnow(),
     }
 
     if ad_type == "home_banner":
         ad_doc.update({
-            "headline":   headline or title or "",
-            "sub":        sub or description or "",
-            "cta_link":   cta_link or "",
-            "image_url":  creative_url,
-            "image_data": creative_b64,
-            "title":      headline or title or "",
+            "headline":     body.headline or body.title or "",
+            "sub":          body.sub or body.description or "",
+            "cta_link":     body.cta_link or "",
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "title":        body.headline or body.title or "",
         })
 
     elif ad_type == "promo_reelz":
         ad_doc.update({
-            "shop_name":     shop_name or "",
-            "shop_location": shop_location or "",
-            "shop_category": shop_category or "",
-            "caption":       caption or "",
-            "offer":         offer or "",
-            "tag":           tag or "",
-            "video_url":     creative_url,
-            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
-            "thumbnail_url": thumbnail_url,
-            "title":         shop_name or "",
+            "shop_name":        body.shop_name or "",
+            "shop_location":    body.shop_location or "",
+            "shop_category":    body.shop_category or "",
+            "caption":          body.caption or "",
+            "offer":            body.offer or "",
+            "tag":              body.tag or "",
+            "video_s3_key":     creative_s3_key,
+            "video_url":        creative_url,
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":    thumbnail_url,
+            "title":            body.shop_name or "",
         })
 
     elif ad_type in ("brand_deals", "nearby_deals"):
         ad_doc.update({
-            "name":        name or "",
-            "location":    location or "",
-            "offer":       offer or "",
-            "description": description or "",
-            "address":     address or "",
-            "phone":       phone or "",
-            "timing":      timing or "",
-            "type":        type or "",
-            "cashback":    cashback or "1% Cashback",
-            "distance":    distance or "",
-            "tags":        parsed_tags,
-            "image_url":   creative_url,
-            "image_data":  creative_b64,
-            "rating":      4.0,
-            "reviews":     0,
-            "deal_group":  "brand" if ad_type == "brand_deals" else "nearby",
-            "title":       name or "",
+            "name":         body.name or "",
+            "location":     body.location or "",
+            "offer":        body.offer or "",
+            "description":  body.description or "",
+            "address":      body.address or "",
+            "phone":        body.phone or "",
+            "timing":       body.timing or "",
+            "type":         body.type or "",
+            "cashback":     body.cashback or "1% Cashback",
+            "distance":     body.distance or "",
+            "tags":         parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "rating":       4.0,
+            "reviews":      0,
+            "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
+            "title":        body.name or "",
         })
 
-    # Insert into web portal collection
     result = await ads_collection.insert_one(ad_doc)
     ad_id  = str(result.inserted_id)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Mirror into the app-facing claimit_db collections so the Flutter app
-    # shows the ad without any manual seeding.
-    # ─────────────────────────────────────────────────────────────────────────
+    # Mirror into app-facing collections
     if ad_type == "home_banner":
-        banner_doc = {
+        await app_banners_collection.insert_one({
             "web_ad_id":  ad_id,
-            "headline":   headline or title or "",
-            "sub":        sub or description or "",
-            "cta_link":   cta_link or "",
+            "headline":   ad_doc.get("headline", ""),
+            "sub":        ad_doc.get("sub", ""),
+            "cta_link":   ad_doc.get("cta_link", ""),
+            "image_s3_key": creative_s3_key,
             "image_url":  creative_url,
-            "image_data": creative_b64,
-            "pincode":    pincode,
+            "pincode":    body.pincode,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),
             "created_at": datetime.utcnow(),
-        }
-        await app_banners_collection.insert_one(banner_doc)
+        })
 
     elif ad_type in ("brand_deals", "nearby_deals"):
-        deal_doc = {
-            "web_ad_id":    ad_id,
-            "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
-            "name":         name or "",
-            "location":     location or "",
-            "offer":        offer or "",
-            "cashback":     cashback or "1% Cashback",
-            "distance":     distance or "",
-            "type":         type or "",
-            "category":     type or "",
-            "image_url":    creative_url,
-            "image_data":   creative_b64,   # raw base64 — Flutter renders this directly
-            "description":  description or "",
-            "address":      address or "",
-            "phone":        phone or "",
-            "timing":       timing or "",
-            "rating":       4.0,
-            "reviews":      0,
-            "tags":         parsed_tags,
-            "pincode":      pincode,
-            "status":       ad_status,
-            "end_date":     end_date.strftime("%d/%m/%Y"),
-            "created_at":   datetime.utcnow(),
-        }
-        await app_deals_collection.insert_one(deal_doc)
+        await app_deals_collection.insert_one({
+            "web_ad_id":  ad_id,
+            "deal_group": ad_doc["deal_group"],
+            "name":       ad_doc.get("name", ""),
+            "location":   ad_doc.get("location", ""),
+            "offer":      ad_doc.get("offer", ""),
+            "cashback":   ad_doc.get("cashback", "1% Cashback"),
+            "distance":   ad_doc.get("distance", ""),
+            "type":       ad_doc.get("type", ""),
+            "category":   ad_doc.get("type", ""),
+            "image_s3_key": creative_s3_key,
+            "image_url":  creative_url,
+            "description": ad_doc.get("description", ""),
+            "address":    ad_doc.get("address", ""),
+            "phone":      ad_doc.get("phone", ""),
+            "timing":     ad_doc.get("timing", ""),
+            "rating":     4.0,
+            "reviews":    0,
+            "tags":       parsed_tags,
+            "pincode":    body.pincode,
+            "status":     ad_status,
+            "end_date":   end_date.strftime("%d/%m/%Y"),
+            "created_at": datetime.utcnow(),
+        })
 
     elif ad_type == "promo_reelz":
-        reel_doc = {
-            "web_ad_id":     ad_id,
-            "shop_name":     shop_name or "",
-            "shop_location": shop_location or "",
-            "shop_category": shop_category or "",
-            "caption":       caption or "",
-            "offer":         offer or "",
-            "video_url":     creative_url,
-            "image_data":    thumbnail_b64 or creative_b64,   # thumbnail shown in app
-            "thumbnail_url": thumbnail_url,
-            "like_count":    0,
-            "view_count":    0,
-            "tag":           tag or "",
-            "liked_by":      [],
-            "pincode":       pincode,
-            "status":        ad_status,
-            "end_date":      end_date.strftime("%d/%m/%Y"),
-            "created_at":    datetime.utcnow(),
-        }
-        await app_reels_collection.insert_one(reel_doc)
+        await app_reels_collection.insert_one({
+            "web_ad_id":        ad_id,
+            "shop_name":        ad_doc.get("shop_name", ""),
+            "shop_location":    ad_doc.get("shop_location", ""),
+            "shop_category":    ad_doc.get("shop_category", ""),
+            "caption":          ad_doc.get("caption", ""),
+            "offer":            ad_doc.get("offer", ""),
+            "video_s3_key":     creative_s3_key,
+            "video_url":        creative_url,
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":    thumbnail_url,
+            "like_count":       0,
+            "view_count":       0,
+            "liked_by":         [],
+            "tag":              ad_doc.get("tag", ""),
+            "pincode":          body.pincode,
+            "status":           ad_status,
+            "end_date":         end_date.strftime("%d/%m/%Y"),
+            "created_at":       datetime.utcnow(),
+        })
 
-    # ── Record transaction ────────────────────────────────────────────────────
     display_title = (
         ad_doc.get("headline") or ad_doc.get("name") or
         ad_doc.get("shop_name") or ad_doc.get("title") or ""
@@ -290,12 +259,46 @@ async def create_ad(
         "created_at": datetime.utcnow(),
     })
 
-    ad_doc["id"] = ad_id
-    ad_doc.pop("_id", None)
-    return ad_doc
+    return {
+        "id":           ad_id,
+        "ad_type":      ad_type,
+        "publish_date": ad_doc["publish_date"],
+        "end_date":     ad_doc["end_date"],
+        "amount":       amount,
+        "status":       ad_status,
+    }
 
 
-# ─── Transactions ─────────────────────────────────────────────────────────────
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+@router.get("/dashboard")
+async def get_dashboard(current_user=Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    ads = await ads_collection.find({"user_id": user_id}).to_list(100)
+    total_views  = sum(a.get("views", 0) for a in ads)
+    total_clicks = sum(a.get("clicks", 0) for a in ads)
+    return {
+        "total_ads":    len(ads),
+        "total_views":  total_views,
+        "total_clicks": total_clicks,
+        "ads": [serialize_ad(a) for a in ads],
+    }
+
+
+# ── List ads ──────────────────────────────────────────────────────────────────
+
+@router.get("/ads")
+async def get_ads(status: Optional[str] = None, current_user=Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    query = {"user_id": user_id}
+    if status and status != "all":
+        query["status"] = status
+    ads = await ads_collection.find(query).to_list(100)
+    return [serialize_ad(a) for a in ads]
+
+
+# ── Transactions ──────────────────────────────────────────────────────────────
+
 @router.get("/transactions")
 async def get_transactions(current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
@@ -314,7 +317,8 @@ async def get_transactions(current_user=Depends(get_current_user)):
     ]
 
 
-# ─── Profile ──────────────────────────────────────────────────────────────────
+# ── Profile ───────────────────────────────────────────────────────────────────
+
 @router.get("/profile")
 async def get_profile(current_user=Depends(get_current_user)):
     return {

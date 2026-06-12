@@ -57,7 +57,7 @@ class DealDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Name + type chip
+                  // Name + type chip (chip hidden when type is empty)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -73,28 +73,29 @@ class DealDetailScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFF2563EB)),
-                        ),
-                        child: Text(
-                          d.type,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF2563EB),
-                            fontWeight: FontWeight.w600,
+                      if (d.type.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF2563EB)),
+                          ),
+                          child: Text(
+                            d.type,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF2563EB),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
 
-                  // Location + distance
+                  // Location + distance (distance hidden when empty)
                   Row(
                     children: [
                       const Icon(Icons.location_on_rounded,
@@ -109,20 +110,22 @@ class DealDetailScreen extends StatelessWidget {
                               fontSize: 13, color: Color(0xFF6B7280)),
                         ),
                       ),
-                      const SizedBox(width: 1),
-                      const Icon(Icons.directions_walk_rounded,
-                          size: 26, color: Color(0xFF2563EB)),
-                      const SizedBox(width: 3),
-                      Flexible(
-                        child: Text(
-                          d.distance,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13, color: Color(0xFF2563EB),
-                              fontWeight: FontWeight.w600),
+                      if (d.distance.isNotEmpty) ...[
+                        const SizedBox(width: 1),
+                        const Icon(Icons.directions_walk_rounded,
+                            size: 26, color: Color(0xFF2563EB)),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            d.distance,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13, color: Color(0xFF2563EB),
+                                fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -181,66 +184,73 @@ class DealDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
 
-                  // About section
-                  const Text(
-                    'Offer Details',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF111827),
+                  // About / Offer Details — only shown when non-empty
+                  if (d.description.isNotEmpty) ...[
+                    const Text(
+                      'Offer Details',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF111827),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    d.description,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF4B5563),
-                      height: 1.6,
+                    const SizedBox(height: 8),
+                    Text(
+                      d.description,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF4B5563),
+                        height: 1.6,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+                  ],
 
-                  // Info rows
-                  _InfoRow(
-                    icon: Icons.location_on_outlined,
-                    label: 'Address',
-                    value: d.address,
-                  ),
-                  _InfoRow(
-                    icon: Icons.phone_outlined,
-                    label: 'Phone',
-                    value: d.phone,
-                  ),
-                  _InfoRow(
-                    icon: Icons.access_time_rounded,
-                    label: 'Timings',
-                    value: d.timing,
-                  ),
+                  // Info rows — only shown when value is non-empty
+                  if (d.address.isNotEmpty)
+                    _InfoRow(
+                      icon: Icons.location_on_outlined,
+                      label: 'Address',
+                      value: d.address,
+                    ),
+                  if (d.phone.isNotEmpty)
+                    _InfoRow(
+                      icon: Icons.phone_outlined,
+                      label: 'Phone',
+                      value: d.phone,
+                    ),
+                  if (d.timing.isNotEmpty)
+                    _InfoRow(
+                      icon: Icons.access_time_rounded,
+                      label: 'Timings',
+                      value: d.timing,
+                    ),
 
-                  // Rating
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded,
-                          color: Color(0xFFF59E0B), size: 18),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${d.rating}',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF111827),
+                  // Rating — only shown when reviews > 0
+                  if (d.reviews > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFFF59E0B), size: 18),
+                        const SizedBox(width: 4),
+                        Text(
+                          d.rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF111827),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '(${d.reviews} reviews)',
-                        style: const TextStyle(
-                            fontSize: 13, color: Color(0xFF6B7280)),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '(${d.reviews} reviews)',
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF6B7280)),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 28),
 
                   // Scan bill CTA button

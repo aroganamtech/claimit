@@ -11,15 +11,15 @@ Every endpoint reads/writes MongoDB directly — there's no per-user auth check
 because admin can manage any record.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
 from datetime import datetime, timedelta
 from bson import ObjectId
 import os
-from pathlib import Path
 
+from utils.s3 import generate_presigned_url_sync as _presign
 from database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
+    app_bill_reviews_collection, app_db, app_notifications_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -187,36 +187,169 @@ async def update_ticket(ticket_id: str, patch: AdminTicketPatch, _admin=Depends(
     return {"ok": True, "patch": {k: v for k, v in update.items() if k != "updated_at"}}
 
 
-# ─── Project PDFs (the original design spec PDFs) ─────────────
-# Located at the project root (one level above the backend folder).
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-PDF_FILES = {
-    "shop":       "shop-reg-web.pdf",
-    "sales":      "sales-web (1).pdf",
-    "advertiser": "creating-ad-web.pdf",
-}
-
-
+# ─── Project PDFs ─────────────────────────────────────────────
 @router.get("/pdfs")
 async def list_pdfs(_admin=Depends(get_current_admin)):
-    out = []
-    for key, fname in PDF_FILES.items():
-        p = PROJECT_ROOT / fname
-        out.append({
-            "key": key,
-            "filename": fname,
-            "exists": p.exists(),
-            "url": f"/api/admin/pdfs/{key}",
+    return {
+        "message": "PDF serving not available on Vercel. Host PDFs on a cloud bucket and return URLs here.",
+        "pdfs": []
+    }
+
+
+
+
+# --- Bill Reviews ---
+# Reads/writes claimit_db.bill_manual_reviews - same collection Flutter app writes to.
+
+from pydantic import BaseModel as _BM
+from typing import Literal as _Lit, Optional as _Opt
+
+class _ReviewAction(_BM):
+    action:        _Lit["approve", "reject"]
+    reward_points: _Opt[int]   = None
+    cashback:      _Opt[float] = None
+    admin_note:    _Opt[str]   = None
+
+
+def _serialize_review(r):
+    return {
+        "id":            str(r["_id"]),
+        "user_id":       r.get("user_id", ""),
+        "shop_name":     r.get("shop_name") or "-",
+        "total_amount":  r.get("total_amount", 0),
+        "bill_number":   r.get("bill_number") or "",
+        "bill_date":     str(r["bill_date"])[:10] if r.get("bill_date") else "",
+        "bill_time":     r.get("bill_time") or "",
+        "manual_reason": r.get("manual_reason") or "missing_fields",
+        "status":        r.get("status", "pending"),
+        "reward_points": r.get("reward_points"),
+        "cashback":      r.get("cashback"),
+        "admin_note":    r.get("admin_note") or "",
+        "image_url":     _presign(r.get("image_s3_key")) if r.get("image_s3_key") else None,
+        "submitted_at": (
+            r["submitted_at"].isoformat() if r.get("submitted_at") else
+            r["created_at"].isoformat()   if r.get("created_at")   else ""
+        ),
+        "reviewed_at": r["reviewed_at"].isoformat() if r.get("reviewed_at") else "",
+    }
+
+
+@router.get("/bill-reviews")
+async def admin_list_bill_reviews(status: str = "pending", _admin=Depends(get_current_admin)):
+    query = {} if status == "all" else {"status": status}
+    cursor = app_bill_reviews_collection.find(query).sort(
+        [("submitted_at", -1), ("created_at", -1)]
+    )
+    docs = await cursor.to_list(length=500)
+    return [_serialize_review(d) for d in docs]
+
+
+@router.post("/bill-reviews/{review_id}/action")
+async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=Depends(get_current_admin)):
+    try:
+        oid = ObjectId(review_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid review ID")
+
+    review = await app_bill_reviews_collection.find_one({"_id": oid})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Review already {review.get('status')}")
+
+    now       = datetime.utcnow()
+    uid       = review.get("user_id", "")
+    amount    = float(review.get("total_amount", 0))
+    shop_name = review.get("shop_name") or "Shop"
+    pts = body.reward_points or max(1, int(amount * 0.1))
+    cb  = body.cashback      or round(amount * 0.01, 2)
+
+    _wallets = app_db["user_wallets"]
+    _scans   = app_db["bill_scans"]
+
+    if body.action == "approve":
+        await app_bill_reviews_collection.update_one(
+            {"_id": oid},
+            {"$set": {"status": "approved", "reward_points": pts,
+                      "cashback": cb, "admin_note": body.admin_note or "", "reviewed_at": now}},
+        )
+        wallet = await _wallets.find_one({"user_id": uid})
+        if wallet:
+            await _wallets.update_one(
+                {"user_id": uid},
+                {"$inc": {"reward_points": pts, "cashback_wallet": cb, "lifetime_cashback": cb}},
+            )
+        else:
+            await _wallets.insert_one({
+                "user_id": uid, "reward_points": 1000 + pts,
+                "cashback_wallet": cb, "lifetime_cashback": cb,
+                "total_scans": 0, "created_at": now,
+            })
+        await _scans.insert_one({
+            "user_id": uid, "dup_key": f"review|{review_id}",
+            "shop_name": shop_name, "total_amount": round(amount, 2),
+            "earned_cashback": cb, "earned_points": pts,
+            "source": "manual_review", "review_id": review_id, "scanned_at": now,
         })
-    return out
+        await app_notifications_collection.insert_one({
+            "user_id": uid,
+            "title": "Bill Approved - Rewards Added!",
+            "message": (f"Your bill from {shop_name} (Rs.{int(amount)}) verified. "
+                        f"Rs.{cb:.0f} cashback and {pts} reward points added."),
+            "type": "bill_review_approved",
+            "is_read": False, "review_id": review_id, "created_at": now,
+        })
+        return {"ok": True, "action": "approved", "reward_points": pts, "cashback": cb}
+
+    await app_bill_reviews_collection.update_one(
+        {"_id": oid},
+        {"$set": {"status": "rejected", "admin_note": body.admin_note or "", "reviewed_at": now}},
+    )
+    await app_notifications_collection.insert_one({
+        "user_id": uid,
+        "title": "Bill Review Update",
+        "message": (f"Your bill from {shop_name} (Rs.{int(amount)}) could not be verified"
+                    + (f": {body.admin_note}" if body.admin_note else ".")),
+        "type": "bill_review_rejected",
+        "is_read": False, "review_id": review_id, "created_at": now,
+    })
+    return {"ok": True, "action": "rejected"}
 
 
-@router.get("/pdfs/{key}")
-async def get_pdf(key: str, _admin=Depends(get_current_admin)):
-    fname = PDF_FILES.get(key)
-    if not fname:
-        raise HTTPException(status_code=404, detail="Unknown PDF key")
-    p = PROJECT_ROOT / fname
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"PDF not found at {p}")
-    return FileResponse(str(p), media_type="application/pdf", filename=fname)
+# ── App config: new-user bonus settings ───────────────────────────────────────
+from pydantic import BaseModel as _BM2
+import os as _os
+
+class _AppConfigBody(_BM2):
+    reward_points: int
+    cashback:      float
+
+
+@router.get("/app-config")
+async def get_app_config(_admin=Depends(get_current_admin)):
+    """Return current new-user bonus config."""
+    cfg = await app_db["app_config"].find_one({"key": "new_user_bonus"})
+    default_pts = int(_os.getenv("NEW_USER_REWARD_POINTS", "1000"))
+    default_cb  = float(_os.getenv("NEW_USER_CASHBACK", "10.0"))
+    return {
+        "reward_points": int(cfg.get("reward_points", default_pts)) if cfg else default_pts,
+        "cashback":      float(cfg.get("cashback", default_cb))     if cfg else default_cb,
+    }
+
+
+@router.put("/app-config")
+async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_admin)):
+    """Upsert new-user bonus. Takes effect for every new wallet created after this."""
+    if body.reward_points < 0 or body.cashback < 0:
+        raise HTTPException(status_code=400, detail="Values must be >= 0")
+    await app_db["app_config"].update_one(
+        {"key": "new_user_bonus"},
+        {"$set": {
+            "key":           "new_user_bonus",
+            "reward_points": body.reward_points,
+            "cashback":      body.cashback,
+            "updated_at":    datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}

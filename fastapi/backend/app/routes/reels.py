@@ -49,13 +49,14 @@ def _serialize(doc: dict, user_id: str = "") -> dict:
     doc["like_count"] = len(liked_by)
     doc["liked_by_me"] = user_id in liked_by
 
-    # Resolve S3 keys → presigned URLs so Flutter video_player can stream directly
-    video_key = doc.pop("video_key", None)
-    thumbnail_key = doc.pop("thumbnail_key", None)
+    # Resolve S3 keys → permanent public URLs (bucket is public)
+    video_key = doc.pop("video_s3_key", None) or doc.pop("video_key", None)
+    thumbnail_key = doc.pop("thumbnail_s3_key", None) or doc.pop("thumbnail_key", None)
+    from ..utils.s3 import public_url as _pub
     if video_key:
-        doc["video_url"] = generate_video_url_sync(video_key)
+        doc["video_url"] = _pub(video_key)
     if thumbnail_key:
-        doc["thumbnail_url"] = generate_presigned_url_sync(thumbnail_key)
+        doc["thumbnail_url"] = _pub(thumbnail_key)
     return doc
 
 

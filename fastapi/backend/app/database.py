@@ -129,10 +129,13 @@ async def connect_db():
     await db.redeem.create_index([("user_id", 1), ("reward_id", 1)])
     # Bill scan / wallet
     await db.user_wallets.create_index("user_id", unique=True)
+    # bill_scans — short-lived, used ONLY for duplicate detection within 24 h
     await db.bill_scans.create_index("user_id")
     await db.bill_scans.create_index([("user_id", 1), ("dup_key", 1)], unique=True)
-    # Auto-delete bill scans after 24 hours
     await db.bill_scans.create_index("scanned_at", expireAfterSeconds=86400)
+    # bill_history — permanent record shown to the user in the app; no TTL
+    await db.bill_history.create_index("user_id")
+    await db.bill_history.create_index("scanned_at")
     print("✅ Connected to MongoDB")
 
 

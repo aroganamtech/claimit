@@ -4,9 +4,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()  # loads fastapi/backend/.env into os.environ
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import connect_db, disconnect_db
@@ -74,6 +74,50 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+# ── Facebook Data Deletion ─────────────────────────────────────────────────────
+# Facebook requires this URL in App Settings → Data Deletion.
+# Set the URL to: http://16.170.110.232:8001/facebook/data-deletion
+
+@app.get("/facebook/data-deletion", response_class=HTMLResponse)
+async def fb_data_deletion_instructions():
+    """Human-readable data deletion instructions page (GET)."""
+    return HTMLResponse(content="""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Data Deletion – Claimit</title>
+<style>body{font-family:sans-serif;max-width:600px;margin:60px auto;padding:0 20px;color:#333}
+h1{color:#2563EB}a{color:#2563EB}</style></head>
+<body>
+<h1>Claimit – Data Deletion Instructions</h1>
+<p>If you have used Facebook Login to sign in to the Claimit app and would like to
+delete all data associated with your account, follow these steps:</p>
+<ol>
+  <li>Open the <strong>Claimit</strong> app on your device.</li>
+  <li>Go to <strong>Profile → Settings → Delete Account</strong>.</li>
+  <li>Confirm deletion. All your personal data (profile, bill history, rewards) will be
+      permanently removed from our servers within 30 days.</li>
+</ol>
+<p>Alternatively, email us at <a href="mailto:support@claimit.in">support@claimit.in</a>
+with the subject <em>"Delete My Data"</em> and we will process your request within 30 days.</p>
+<p style="color:#888;font-size:13px">Claimit &copy; 2024</p>
+</body>
+</html>
+""")
+
+
+@app.post("/facebook/data-deletion")
+async def fb_data_deletion_callback(request: Request):
+    """
+    Facebook signed_request callback (POST).
+    Facebook sends a signed_request parameter when a user removes the app
+    from their Facebook account. We acknowledge it and return a status URL.
+    """
+    return JSONResponse({
+        "url": "http://16.170.110.232:8001/facebook/data-deletion",
+        "confirmation_code": "claimit_deletion_acknowledged",
+    })
 
 
 @app.exception_handler(Exception)
