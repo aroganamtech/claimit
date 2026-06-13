@@ -37,7 +37,7 @@ class AppConstants {
   // or replace the defaultValue strings below before release.
   static const String googleClientId =
       String.fromEnvironment('GOOGLE_CLIENT_ID',
-          defaultValue: '665581452240-239kicsrfucc5j2umem8h3fihhhgjv04.apps.googleusercontent.com');
+          defaultValue: '59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com');
   static const String googleClientIdIos =
       String.fromEnvironment('GOOGLE_CLIENT_ID_IOS',
           defaultValue: 'DUMMY_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com');

@@ -1,4 +1,4 @@
-package com.example.claimitapporg
+package in.claimitapp
 
 import io.flutter.embedding.android.FlutterActivity
 

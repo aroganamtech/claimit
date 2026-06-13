@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 
+import '../network/api_client.dart';
 import '../router/app_router.dart' show rootNavigatorKey;
 
 /// Must be a TOP-LEVEL (or static) function — handles pushes that arrive
@@ -84,20 +85,20 @@ class FcmService {
       sound: true,
     );
 
-    // 4. Grab the device token — SEND THIS TO YOUR BACKEND.
-    //    The backend stores it against the logged-in user and uses it (via the
-    //    Firebase Admin SDK / HTTP v1 API) to target push notifications at
-    //    this specific device.
+    // 4. Grab the device token and register it with the backend so the server
+    //    can push to this device. Runs on every app start so if the user is
+    //    already logged in the token stays current in the DB.
     _fcmToken = await _messaging.getToken();
     debugPrint('🔑 FCM device token: $_fcmToken');
-    // TODO: POST _fcmToken to your backend, e.g.:
-    //   await ApiClient().post('/users/fcm-token', data: {'token': _fcmToken});
+    if (_fcmToken != null) {
+      await _registerTokenWithBackend(_fcmToken!);
+    }
 
-    // Token can rotate (app reinstall, data clear, etc.) — re-send when it does.
-    _messaging.onTokenRefresh.listen((newToken) {
+    // Token can rotate (app reinstall, data clear, etc.) — re-register when it does.
+    _messaging.onTokenRefresh.listen((newToken) async {
       _fcmToken = newToken;
       debugPrint('🔄 FCM token refreshed: $newToken');
-      // TODO: POST newToken to your backend again.
+      await _registerTokenWithBackend(newToken);
     });
 
     // 5. FOREGROUND pushes: FCM delivers the data but does NOT show a banner —
@@ -187,6 +188,23 @@ class FcmService {
       body: notification.body ?? '',
       payload: message.data.isNotEmpty ? message.data.toString() : null,
     );
+  }
+
+  /// Sends the FCM token to the backend so the server can push to this device.
+  /// Best-effort — a failure here must never crash the app.
+  Future<void> _registerTokenWithBackend(String token) async {
+    try {
+      await ApiClient().post(
+        '/notifications/fcm-token',
+        data: {
+          'token': token,
+          'platform': Platform.isIOS ? 'ios' : 'android',
+        },
+      );
+      debugPrint('✅ FCM token registered with backend');
+    } catch (e) {
+      debugPrint('⚠️ FCM token registration failed (non-fatal): $e');
+    }
   }
 
   /// Public helper to pop a notification banner directly from app code —

@@ -14,15 +14,15 @@
       },
       "oauth_client": [
         {
-          "client_id": "665581452240-s0pvu3c7hqkpg1oesq2e0fht1tran8a8.apps.googleusercontent.com",
+          "client_id": "59894768932-rciaimm4kh3f7usqgtlonfkrrj02mpdp.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.claimitapporg",
-            "certificate_hash": "02BF61F077308CA1A52BF5BEE99520DC60C76B92"
+            "certificate_hash": "18ca97497aded49b8d2ab607214fab0f26b875a5"
           }
         },
         {
-          "client_id": "665581452240-239kicsrfucc5j2umem8h3fihhhgjv04.apps.googleusercontent.com",
+          "client_id": "59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -35,7 +35,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "665581452240-239kicsrfucc5j2umem8h3fihhhgjv04.apps.googleusercontent.com",
+              "client_id": "59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
