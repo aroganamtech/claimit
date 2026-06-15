@@ -7,6 +7,43 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:59894768932:android:af5e8df2fc255d667a3fb1",
+        "android_client_info": {
+          "package_name": "com.claimitapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "59894768932-b1oeq2sq04orgrr69oqolepddaagnnf5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.claimitapp",
+            "certificate_hash": "18ca97497aded49b8d2ab607214fab0f26b875a5"
+          }
+        },
+        {
+          "client_id": "59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAW5rEggT208F3XdgHlWV9INPj4JAgw7Jo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:59894768932:android:6e470662dbb3d1b87a3fb1",
         "android_client_info": {
           "package_name": "com.example.claimitapporg"
