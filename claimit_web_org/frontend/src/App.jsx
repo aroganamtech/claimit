@@ -45,7 +45,7 @@ import { OfferManagement, StoreDetailsManagement, RatingsAndReviews, ShopSetting
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
-import { AdminUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings } from './pages/admin/AdminPages'
+import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings } from './pages/admin/AdminPages'
 
 // Protected route
 function ProtectedRoute({ children, requiredRole }) {
@@ -224,10 +224,12 @@ export default function App() {
           <Route element={<AdminProtected><AdminLayout /></AdminProtected>}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/users"     element={<AdminUsers />} />
+            <Route path="/admin/app-users" element={<AdminAppUsers />} />
             <Route path="/admin/ads"       element={<AdminAds />} />
             <Route path="/admin/shops"     element={<AdminShops />} />
             <Route path="/admin/reviews"   element={<AdminReviews />} />
             <Route path="/admin/tickets"    element={<AdminTickets />} />
+            <Route path="/admin/feedback"   element={<AdminFeedback />} />
             <Route path="/admin/pdfs"       element={<AdminPDFs />} />
             <Route path="/admin/sales-team"   element={<AdminSalesTeam />} />
             <Route path="/admin/bill-reviews"   element={<AdminBillReviews />} />

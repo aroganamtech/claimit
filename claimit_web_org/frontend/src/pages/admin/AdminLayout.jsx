@@ -3,10 +3,12 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 const NAV = [
   { label: 'Overview',    icon: '📊', path: '/admin/dashboard' },
   { label: 'Users',       icon: '👥', path: '/admin/users' },
+  { label: 'App Users',   icon: '📱', path: '/admin/app-users' },
   { label: 'Ads',         icon: '📢', path: '/admin/ads' },
   { label: 'Shops',       icon: '🏪', path: '/admin/shops' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
+  { label: 'Feedback',    icon: '💬', path: '/admin/feedback' },
   { label: 'Sales Team',  icon: '🏅', path: '/admin/sales-team' },
   { label: 'Bill Reviews',   icon: '🧾', path: '/admin/bill-reviews' },
   { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },

@@ -49,6 +49,8 @@ import '../../features/bill_reader/screens/bill_scanning_progress_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_success_screen.dart';
 import '../../features/bill_reader/screens/bill_reward_wallet_screen.dart';
 import '../../features/bill_reader/screens/bill_review_pending_screen.dart';
+// Feedback / Complaints
+import '../../features/feedback/screens/feedback_screen.dart';
 
 // ── Navigator keys ─────────────────────────────────────────────────────────────
 // Must be module-level finals so they are never recreated on rebuild.
@@ -443,6 +445,10 @@ class AppRouter {
         GoRoute(
           path: '/support',
           builder: (context, state) => const SupportScreen(),
+        ),
+        GoRoute(
+          path: '/feedback',
+          builder: (context, state) => const FeedbackScreen(),
         ),
         GoRoute(
           path: '/policies/:id',

@@ -187,3 +187,8 @@ class AdminShopPatch(BaseModel):
 class AdminTicketPatch(BaseModel):
     status: Optional[str] = None       # open | resolved | closed
     reply: Optional[str] = None
+
+
+class AdminFeedbackReply(BaseModel):
+    reply: str
+    status: Optional[str] = "replied"  # open | replied | closed

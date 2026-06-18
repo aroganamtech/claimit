@@ -14,6 +14,7 @@ from .routes import (
     auth, users, claims, notifications, dashboard,
     policies, locations, deals, shops, rewards,
     redeem, reels, classifieds, admin, bill, banners, advertiser,
+    feedback,
 )
 
 
@@ -64,6 +65,7 @@ app.include_router(admin.router)
 app.include_router(bill.router)
 app.include_router(banners.router)
 app.include_router(advertiser.router)
+app.include_router(feedback.router)
 
 
 @app.get("/")

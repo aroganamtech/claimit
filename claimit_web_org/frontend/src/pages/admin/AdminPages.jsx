@@ -93,6 +93,66 @@ export function AdminUsers() {
   )
 }
 
+// ─── App Users (real Flutter-app end-customers) ───────────────
+export function AdminAppUsers() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  const load = () => { setLoading(true); api.admin.listAppUsers().then(setUsers).finally(() => setLoading(false)) }
+  useEffect(() => { load() }, [])
+
+  const remove = async (id) => {
+    if (!confirm('Delete this app user and ALL their data (claims, wallet, notifications, feedback)? This cannot be undone.')) return
+    await api.admin.deleteAppUser(id)
+    load()
+  }
+
+  const filtered = users.filter(u => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return (u.full_name || '').toLowerCase().includes(q) ||
+      (u.phone || '').includes(q) ||
+      (u.email || '').toLowerCase().includes(q)
+  })
+
+  return (
+    <PageShell title="App Users" subtitle="Real customers using the Claimit mobile app.">
+      <div style={{ display: 'flex', gap: 12, padding: 16, borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
+        <input
+          placeholder="Search by name, phone or email…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, padding: '9px 14px', border: '1px solid #ddd', borderRadius: 8, fontSize: 13, fontFamily: 'Poppins', outline: 'none' }}
+        />
+        <span style={{ fontSize: 12, color: '#888' }}>{filtered.length} user{filtered.length === 1 ? '' : 's'}</span>
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : filtered.length === 0 ? empty('📱', 'No app users found')
+       : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Name</th><th style={th}>Phone</th><th style={th}>Email</th>
+            <th style={th}>City</th><th style={th}>Joined</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(u => (
+              <tr key={u.id}>
+                <td style={td}><strong>{u.full_name || '—'}</strong></td>
+                <td style={td}>{u.phone || '—'}</td>
+                <td style={td}>{u.email || '—'}</td>
+                <td style={td}>{u.city || '—'}</td>
+                <td style={td}>{(u.created_at || '').slice(0, 10) || '—'}</td>
+                <td style={td}><button style={dangerBtn} onClick={() => remove(u.id)}>Delete</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+       )}
+    </PageShell>
+  )
+}
+
 // ─── Ads ─────────────────────────────────────────────────────
 export function AdminAds() {
   const [ads, setAds] = useState([]); const [loading, setLoading] = useState(true)
@@ -270,6 +330,97 @@ export function AdminTickets() {
                   onChange={e => setEditing(prev => ({ ...prev, [t.id]: e.target.value }))}
                 />
                 <button style={ghostBtn} onClick={() => sendReply(t.id)}>Send Reply</button>
+              </div>
+            </div>
+          ))}
+        </div>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Feedback / Complaints (full ticket system, app users) ───
+export function AdminFeedback() {
+  const [items, setItems] = useState([]); const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [editing, setEditing] = useState({})
+  const [sending, setSending] = useState({})
+
+  const load = (status = filter) => {
+    setLoading(true)
+    api.admin.listFeedback(status).then(d => setItems(Array.isArray(d) ? d : [])).finally(() => setLoading(false))
+  }
+  useEffect(() => { load(filter) }, [filter])
+
+  const sendReply = async (id) => {
+    const reply = (editing[id] || '').trim()
+    if (!reply) return
+    setSending(prev => ({ ...prev, [id]: true }))
+    try {
+      await api.admin.replyFeedback(id, { reply, status: 'replied' })
+      setEditing(prev => { const n = { ...prev }; delete n[id]; return n })
+      load()
+    } finally {
+      setSending(prev => ({ ...prev, [id]: false }))
+    }
+  }
+
+  const remove = async (id) => { if (confirm('Delete this feedback?')) { await api.admin.deleteFeedback(id); load() } }
+
+  const CATEGORY_LABEL = { feedback: 'Feedback', complaint: 'Complaint', suggestion: 'Suggestion' }
+  const STATUS_COLOR = { open: '#F57C00', replied: '#2E7D32', closed: '#777' }
+
+  return (
+    <PageShell title="Feedback & Complaints" subtitle="Submissions from real app users — reply here and they'll see it in the app.">
+      <div style={{ display: 'flex', gap: 8, padding: 16, borderBottom: '1px solid #f0f0f0' }}>
+        {['all', 'open', 'replied', 'closed'].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{
+              padding: '6px 14px', border: '1px solid #ddd', borderRadius: 6,
+              background: filter === f ? '#1a237e' : '#fff',
+              color: filter === f ? '#fff' : '#333',
+              fontSize: 12, cursor: 'pointer', fontFamily: 'Poppins', textTransform: 'capitalize',
+            }}>{f}</button>
+        ))}
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : items.length === 0 ? empty('💬', 'No feedback yet')
+       : (
+        <div>
+          {items.map(t => (
+            <div key={t.id} style={{ borderBottom: '1px solid #f0f0f0', padding: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{t.subject}</div>
+                  <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                    {t.user_name || 'App user'} · {(t.user_id || '').slice(-8)}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999' }}>{String(t.created_at || '').slice(0, 16)}</div>
+                </div>
+                <span style={{
+                  background: '#eee', color: STATUS_COLOR[t.status] || '#555',
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize',
+                }}>
+                  {CATEGORY_LABEL[t.category] || t.category} · {t.status}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 10, color: '#333' }}>{t.message}</div>
+              {t.admin_reply && (
+                <div style={{ fontSize: 12, color: '#1a237e', marginTop: 8, background: '#f4f6ff', padding: 8, borderRadius: 6 }}>
+                  ↳ Admin reply: {t.admin_reply}
+                </div>
+              )}
+              <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                <input
+                  className="input-field" placeholder="Reply to user..."
+                  style={{ fontSize: 13, padding: '8px 12px' }}
+                  value={editing[t.id] || ''}
+                  onChange={e => setEditing(prev => ({ ...prev, [t.id]: e.target.value }))}
+                />
+                <button style={ghostBtn} disabled={sending[t.id]} onClick={() => sendReply(t.id)}>
+                  {sending[t.id] ? 'Sending…' : 'Send Reply'}
+                </button>
+                <button style={dangerBtn} onClick={() => remove(t.id)}>Delete</button>
               </div>
             </div>
           ))}

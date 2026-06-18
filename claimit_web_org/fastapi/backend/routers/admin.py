@@ -20,9 +20,11 @@ from database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
     app_bill_reviews_collection, app_db, app_notifications_collection,
+    app_users_collection, app_feedback_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
+    AdminFeedbackReply,
 )
 from utils.auth import create_access_token
 from utils.dependencies import get_current_admin
@@ -98,6 +100,113 @@ async def delete_user(user_id: str, _admin=Depends(get_current_admin)):
     await shops_collection.delete_many({"user_id": user_id})
     await tickets_collection.delete_many({"user_id": user_id})
     await transactions_collection.delete_many({"user_id": user_id})
+    return {"ok": True}
+
+
+# ─── App Users (real Flutter-app end-customers, claimit_db.users) ─────────────
+# Separate from the 3 web-portal roles above — these are the actual people
+# using the mobile app (OTP/phone or social login), not advertisers/sales/shops.
+
+def _serialize_app_user(doc):
+    if not doc:
+        return None
+    out = dict(doc)
+    out["id"] = str(out.pop("_id"))
+    # Never surface sensitive ID-document numbers in the admin list view.
+    out.pop("aadhar_number", None)
+    out.pop("pan_number", None)
+    out.pop("password", None)
+    out.pop("hashed_password", None)
+    for k, v in list(out.items()):
+        if isinstance(v, datetime):
+            out[k] = v.isoformat()
+    return out
+
+
+@router.get("/app-users")
+async def list_app_users(_admin=Depends(get_current_admin)):
+    docs = await app_users_collection.find().sort("created_at", -1).to_list(1000)
+    return [_serialize_app_user(d) for d in docs]
+
+
+@router.delete("/app-users/{user_id}")
+async def delete_app_user(user_id: str, _admin=Depends(get_current_admin)):
+    oid = _id(user_id)
+    res = await app_users_collection.delete_one({"_id": oid})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="App user not found")
+    # Cascade clean-up across claimit_db collections keyed by user_id (string).
+    uid = user_id
+    await app_db["claims"].delete_many({"user_id": uid})
+    await app_db["notifications"].delete_many({"user_id": uid})
+    await app_db["redeem"].delete_many({"user_id": uid})
+    await app_db["user_wallets"].delete_many({"user_id": uid})
+    await app_db["fcm_tokens"].delete_many({"user_id": uid})
+    await app_bill_reviews_collection.delete_many({"user_id": uid})
+    await app_feedback_collection.delete_many({"user_id": uid})
+    return {"ok": True}
+
+
+# ─── Feedback / Complaints (full ticket system, claimit_db.feedback) ──────────
+# Users submit via the app's POST /feedback (main backend). Admin replies here;
+# the reply is written back onto the same document AND pushed to the user as
+# an in-app notification (claimit_db.notifications, is_read:false — matching
+# the schema the app's own GET /notifications / unread-count endpoints expect).
+
+def _serialize_feedback(doc):
+    if not doc:
+        return None
+    out = dict(doc)
+    out["id"] = str(out.pop("_id"))
+    for k, v in list(out.items()):
+        if isinstance(v, datetime):
+            out[k] = v.isoformat()
+    return out
+
+
+@router.get("/feedback")
+async def list_feedback(status: str = "all", _admin=Depends(get_current_admin)):
+    query = {} if status == "all" else {"status": status}
+    docs = await app_feedback_collection.find(query).sort("created_at", -1).to_list(500)
+    return [_serialize_feedback(d) for d in docs]
+
+
+@router.post("/feedback/{feedback_id}/reply")
+async def reply_feedback(feedback_id: str, body: AdminFeedbackReply, _admin=Depends(get_current_admin)):
+    oid = _id(feedback_id)
+    fb = await app_feedback_collection.find_one({"_id": oid})
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+
+    now = datetime.utcnow()
+    await app_feedback_collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "admin_reply": body.reply,
+            "status": body.status or "replied",
+            "replied_at": now,
+        }},
+    )
+
+    uid = fb.get("user_id", "")
+    if uid:
+        await app_notifications_collection.insert_one({
+            "user_id": uid,
+            "title": "Reply to your feedback",
+            "message": body.reply,
+            "type": "feedback_reply",
+            "is_read": False,
+            "feedback_id": feedback_id,
+            "created_at": now,
+        })
+    return {"ok": True}
+
+
+@router.delete("/feedback/{feedback_id}")
+async def delete_feedback(feedback_id: str, _admin=Depends(get_current_admin)):
+    res = await app_feedback_collection.delete_one({"_id": _id(feedback_id)})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Feedback not found")
     return {"ok": True}
 
 

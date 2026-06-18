@@ -41,3 +41,9 @@ app_shops_collection        = app_db["shops"]
 app_banners_collection      = app_db["banners"]
 app_bill_reviews_collection = app_db["bill_manual_reviews"]
 app_notifications_collection = app_db["notifications"]
+
+# Real Flutter-app end-customers (claimit_db.users) — for admin visibility/delete.
+app_users_collection        = app_db["users"]
+# Feedback / complaints ticket system (claimit_db.feedback) — written by the
+# main backend's new POST /feedback endpoint, read/replied-to here.
+app_feedback_collection     = app_db["feedback"]

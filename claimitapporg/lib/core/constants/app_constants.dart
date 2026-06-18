@@ -123,6 +123,10 @@ class AppConstants {
   // Bill scan
   static const String billScan = '/bill/scan';
 
+  // ── Feedback / Complaints ────────────────────────────────────────────────
+  static const String submitFeedback = '/feedback';
+  static const String myFeedback     = '/feedback/my';
+
   // ── Gemini AI Vision (for bill OCR) ──────────────────────────────────────
   // Replace with your Google AI Studio key from https://aistudio.google.com/
   static const String geminiApiKey =

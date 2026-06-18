@@ -83,6 +83,14 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => context.push('/support'),
               ),
               _divider(),
+              // Feedback & Complaints
+              _NavTile(
+                icon: Icons.feedback_outlined,
+                iconColor: const Color(0xFF2563EB),
+                label: 'Feedback & Complaints',
+                onTap: () => context.push('/feedback'),
+              ),
+              _divider(),
               // Language
               _NavTile(
                 icon: Icons.language_rounded,

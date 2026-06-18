@@ -163,6 +163,13 @@ const admin = {
   // New-user bonus config
   getAppConfig:      ()       => get('/admin/app-config'),
   updateAppConfig:   (payload) => put('/admin/app-config', payload),
+  // App Users — real Flutter-app end-customers (claimit_db.users)
+  listAppUsers:      ()       => get('/admin/app-users'),
+  deleteAppUser:     (id)     => del(`/admin/app-users/${id}`),
+  // Feedback / Complaints — full ticket system (claimit_db.feedback)
+  listFeedback:      (status='all') => get('/admin/feedback', { status }),
+  replyFeedback:     (id, payload)  => post(`/admin/feedback/${id}/reply`, payload),
+  deleteFeedback:    (id)           => del(`/admin/feedback/${id}`),
 }
 
 // Default export bundles everything. Pages migrated to the new style

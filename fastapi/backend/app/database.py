@@ -136,6 +136,9 @@ async def connect_db():
     # bill_history — permanent record shown to the user in the app; no TTL
     await db.bill_history.create_index("user_id")
     await db.bill_history.create_index("scanned_at")
+    # Feedback / complaints ticket system
+    await db.feedback.create_index("user_id")
+    await db.feedback.create_index("status")
     print("✅ Connected to MongoDB")
 
 
