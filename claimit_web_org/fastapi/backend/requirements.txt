@@ -10,3 +10,4 @@ pydantic[email]
 httpx
 Pillow
 boto3>=1.34.0
+firebase-admin

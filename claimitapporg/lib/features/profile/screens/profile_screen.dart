@@ -423,7 +423,7 @@ class _RewardsSection extends StatelessWidget {
               Expanded(
                 child: _RewardCard(
                   symbol: '🪙',
-                  value: bill.currentPoints.toString(),
+                  value: BillRewardEntry.fmtPoints(bill.currentPoints),
                   label: 'Reward Points',
                   labelColor: const Color(0xFFD97706),
                   accentColor: const Color(0xFFD97706),
@@ -1256,7 +1256,7 @@ class _HistoryTabState extends State<_HistoryTab> {
               ),
               const SizedBox(height: 2),
               Text(
-                '${entry.rewardPoints} ★',
+                '${BillRewardEntry.fmtPoints(entry.rewardPoints)} ★',
                 style: const TextStyle(
                   color: Color(0xFFD97706),
                   fontWeight: FontWeight.w600,
@@ -1339,7 +1339,7 @@ class _HistoryTabState extends State<_HistoryTab> {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF16A34A))),
-            _billRow('Reward Points', '${entry.rewardPoints} pts ★',
+            _billRow('Reward Points', '${BillRewardEntry.fmtPoints(entry.rewardPoints)} pts ★',
                 valueStyle: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1463,7 +1463,7 @@ class _CashbackWalletPage extends StatelessWidget {
                     ),
                     _WalletStat(
                       label: 'Reward Points',
-                      value: '${bill.currentPoints} ★',
+                      value: '${BillRewardEntry.fmtPoints(bill.currentPoints)} ★',
                     ),
                   ],
                 ),

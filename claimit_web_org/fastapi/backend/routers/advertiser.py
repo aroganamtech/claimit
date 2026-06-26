@@ -25,6 +25,13 @@ AD_PRICES = {
     "nearby_deals": 1400,
 }
 
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm")
+
+
+def _is_video_key(key: str) -> bool:
+    """Best-effort video detection from an S3 key's file extension."""
+    return bool(key) and key.lower().endswith(VIDEO_EXTENSIONS)
+
 
 def serialize_ad(ad):
     ad["id"] = str(ad["_id"])
@@ -109,7 +116,11 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     creative_s3_key  = body.creative_key or ""
     thumbnail_s3_key = body.thumbnail_key or ""
 
-    is_video   = ad_type == "promo_reelz"
+    # home_banner now supports either an image OR a video creative — detect by
+    # the uploaded file's extension (promo_reelz is always video).
+    is_video = ad_type == "promo_reelz" or (
+        ad_type == "home_banner" and _is_video_key(creative_s3_key)
+    )
     creative_url  = (_video_presign(creative_s3_key) if is_video else _presign(creative_s3_key)) if creative_s3_key else ""
     thumbnail_url = _presign(thumbnail_s3_key) if thumbnail_s3_key else ""
 
@@ -138,8 +149,11 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "headline":     body.headline or body.title or "",
             "sub":          body.sub or body.description or "",
             "cta_link":     body.cta_link or "",
-            "image_s3_key": creative_s3_key,
-            "image_url":    creative_url,
+            "media_type":   "video" if is_video else "image",
+            "image_s3_key": "" if is_video else creative_s3_key,
+            "image_url":    "" if is_video else creative_url,
+            "video_s3_key": creative_s3_key if is_video else "",
+            "video_url":    creative_url if is_video else "",
             "title":        body.headline or body.title or "",
         })
 
@@ -185,16 +199,19 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     # Mirror into app-facing collections
     if ad_type == "home_banner":
         await app_banners_collection.insert_one({
-            "web_ad_id":  ad_id,
-            "headline":   ad_doc.get("headline", ""),
-            "sub":        ad_doc.get("sub", ""),
-            "cta_link":   ad_doc.get("cta_link", ""),
-            "image_s3_key": creative_s3_key,
-            "image_url":  creative_url,
-            "pincode":    body.pincode,
-            "status":     ad_status,
-            "end_date":   end_date.strftime("%d/%m/%Y"),
-            "created_at": datetime.utcnow(),
+            "web_ad_id":    ad_id,
+            "headline":     ad_doc.get("headline", ""),
+            "sub":          ad_doc.get("sub", ""),
+            "cta_link":     ad_doc.get("cta_link", ""),
+            "media_type":   ad_doc.get("media_type", "image"),
+            "image_s3_key": ad_doc.get("image_s3_key", ""),
+            "image_url":    ad_doc.get("image_url", ""),
+            "video_s3_key": ad_doc.get("video_s3_key", ""),
+            "video_url":    ad_doc.get("video_url", ""),
+            "pincode":      body.pincode,
+            "status":       ad_status,
+            "end_date":     end_date.strftime("%d/%m/%Y"),
+            "created_at":   datetime.utcnow(),
         })
 
     elif ad_type in ("brand_deals", "nearby_deals"):

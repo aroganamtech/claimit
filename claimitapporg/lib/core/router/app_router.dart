@@ -272,12 +272,17 @@ class AppRouter {
         GoRoute(
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/confirm',
-          pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-confirm'),
-            child: const BillConfirmScreen(),
-            transitionsBuilder: (context, animation, secondary, child) =>
-                FadeTransition(opacity: animation, child: child),
-          ),
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return CustomTransitionPage(
+              key: const ValueKey('bill-reader-confirm'),
+              child: BillConfirmScreen(
+                validationIssue: extra?['issueCode'] as String?,
+              ),
+              transitionsBuilder: (context, animation, secondary, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            );
+          },
         ),
         GoRoute(
           parentNavigatorKey: _rootNavKey,

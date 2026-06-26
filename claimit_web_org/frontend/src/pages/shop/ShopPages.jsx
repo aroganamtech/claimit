@@ -18,7 +18,7 @@ export function OfferManagement() {
   const [selected, setSelected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const options = [10, 15, 20, 25, 30, 35]
+  const options = [5, 10, 15, 20, 25, 30]
 
   useEffect(() => {
     api.shop.getOffer().then(d => {

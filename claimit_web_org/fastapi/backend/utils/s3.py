@@ -131,10 +131,24 @@ def generate_presigned_upload_url(folder: str, filename: str,
 
 
 def generate_video_url_sync(s3_key: str) -> Optional[str]:
+    """
+    Resolve a playable URL for a video S3 key.
+
+    claimit-image-bucket is public-read (confirmed: unsigned GETs return 200).
+    When no dedicated AWS_VIDEO_BUCKET_NAME is configured, videos live in that
+    same public bucket, so signing the request is actively harmful: a SigV4
+    signature forces S3 to authenticate the request against this IAM user's
+    identity policy, which lacks a GetObject grant and returns 403 -- even
+    though the bucket's public-read policy would allow the identical
+    unsigned request. Only presign when a separate (presumably private)
+    video bucket has explicitly been configured.
+    """
     if not s3_key:
         return None
     try:
         key = _normalize_key(s3_key)
+        if not os.getenv("AWS_VIDEO_BUCKET_NAME"):
+            return public_url(key)
         return _s3_client().generate_presigned_url(
             "get_object",
             Params={"Bucket": _video_bucket(), "Key": key},

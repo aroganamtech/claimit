@@ -10,7 +10,7 @@ from datetime import datetime
 
 from ..database import get_db
 from ..utils.helpers import serialize_doc
-from ..utils.s3 import public_url
+from ..utils.s3 import public_url, generate_video_url_sync
 
 router = APIRouter(prefix="/banners", tags=["Banners"])
 
@@ -42,5 +42,13 @@ async def get_banners():
         key = doc.get("image_s3_key") or doc.get("image_key") or ""
         if key:
             doc["image_url"] = public_url(key)
+        # Video banner support — media_type discriminates image vs video.
+        video_key = doc.get("video_s3_key") or doc.get("video_key") or ""
+        media_type = doc.get("media_type") or ("video" if video_key else "image")
+        doc["media_type"] = media_type
+        if video_key:
+            doc["video_url"] = generate_video_url_sync(video_key) or public_url(video_key)
+        else:
+            doc.setdefault("video_url", "")
         active.append(doc)
     return {"success": True, "banners": active}

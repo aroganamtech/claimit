@@ -14,11 +14,19 @@
       },
       "oauth_client": [
         {
-          "client_id": "59894768932-b1oeq2sq04orgrr69oqolepddaagnnf5.apps.googleusercontent.com",
+          "client_id": "59894768932-jqrj0p7dcngieccom2vbvap9ejrr4e00.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.claimitapp",
-            "certificate_hash": "18ca97497aded49b8d2ab607214fab0f26b875a5"
+            "certificate_hash": "6dcba94b3d59202d489906280c98d4ee6e0defc8"
+          }
+        },
+        {
+          "client_id": "59894768932-o23n7231qimt0uumj7076l9o22bgnuh1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.claimitapp",
+            "certificate_hash": "02bf61f077308ca1a52bf5bee99520dc60c76b92"
           }
         },
         {
@@ -50,14 +58,6 @@
         }
       },
       "oauth_client": [
-        {
-          "client_id": "59894768932-rciaimm4kh3f7usqgtlonfkrrj02mpdp.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.claimitapporg",
-            "certificate_hash": "18ca97497aded49b8d2ab607214fab0f26b875a5"
-          }
-        },
         {
           "client_id": "59894768932-mskuovv56sreqe249j04vcmjoib28v66.apps.googleusercontent.com",
           "client_type": 3

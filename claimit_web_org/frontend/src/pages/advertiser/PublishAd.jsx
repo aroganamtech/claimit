@@ -53,7 +53,10 @@ export default function PublishAd() {
     setLoading(true)
     try {
       // ── Upload files directly to S3 ───────────────────────────
-      const isVideo = (adType === 'promo_reelz')
+      // promo_reelz is always video; home_banner can be either — detect by
+      // the actual uploaded file's content type so home_banner videos route
+      // to the video S3 folder/bucket correctly.
+      const isVideo = adType === 'promo_reelz' || !!(creative && creative.type && creative.type.startsWith('video/'))
       let creativeKey = null
       let thumbnailKey = null
 

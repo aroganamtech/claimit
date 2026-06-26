@@ -141,42 +141,6 @@ class _BillScanningProgressScreenState
     await Future.delayed(const Duration(milliseconds: 3800));
     if (!mounted) return;
 
-    // ── Date validation ──────────────────────────────────────────────────────
-    // Bill date must match today's date.
-    if (billDate != null) {
-      final today = DateTime.now();
-      final isSameDay = billDate.year  == today.year &&
-                        billDate.month == today.month &&
-                        billDate.day   == today.day;
-
-      if (!isSameDay) {
-        // Go back to scanner and show error
-        if (!mounted) return;
-        context.pop(); // back to scanner
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFB71C1C),
-            duration: const Duration(seconds: 4),
-            content: Row(
-              children: [
-                const Icon(Icons.event_busy_rounded,
-                    color: Colors.white, size: 22),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Bill date (${_fmtDate(billDate)}) must be today\'s date. '
-                    'Only today\'s bills can be scanned.',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-        return;
-      }
-    }
-
     setState(() {
       _extractedTotal      = total;
       _extractedShop       = shopName;
@@ -197,7 +161,7 @@ class _BillScanningProgressScreenState
       billTime:    billTime,
     );
 
-    // ── Early duplicate check ─────────────────────────────────────────────────
+    // ── Duplicate check (hard stop — each bill can only be claimed once) ─────
     // Only check when OCR extracted enough data (shop + amount + date).
     // This blocks both normal scan AND manual review before the user wastes time.
     if (total != null && shopName != null && shopName.isNotEmpty && billDate != null) {
@@ -234,7 +198,35 @@ class _BillScanningProgressScreenState
       }
     }
 
-    context.pushReplacement('/bill-reader/confirm');
+    // ── Validation: bill date must be today ───────────────────────────────────
+    // No longer a hard stop — flag it and let the confirm screen route the
+    // user to manual (admin) review instead of bouncing back to the camera.
+    String? issueCode;
+    if (billDate != null) {
+      final today = DateTime.now();
+      final isSameDay = billDate.year  == today.year &&
+                        billDate.month == today.month &&
+                        billDate.day   == today.day;
+      if (!isSameDay) issueCode = 'date_mismatch';
+    }
+
+    // ── Validation: scanned shop must match the Redeem Zone shop (if any) ─────
+    // Only applies when this scan is tied to a specific Redeem Zone shop
+    // (pendingShopId != null). The generic "Scan Bill" shortcut has no
+    // target shop, so it's skipped entirely there.
+    if (issueCode == null &&
+        provider.pendingShopId != null &&
+        shopName != null &&
+        shopName.isNotEmpty &&
+        !provider.matchesExpectedShop(shopName)) {
+      issueCode = 'shop_mismatch';
+    }
+
+    if (!mounted) return;
+    context.pushReplacement(
+      '/bill-reader/confirm',
+      extra: issueCode != null ? {'issueCode': issueCode} : null,
+    );
   }
 
   // ── Extract: Total amount ───────────────────────────────────────────────────
@@ -661,6 +653,11 @@ class _BillScanningProgressScreenState
 
   @override
   Widget build(BuildContext context) {
+    final billProvider  = context.watch<BillRewardProvider>();
+    final isRedeemZone  = billProvider.pendingShopId != null;
+    final redeemShop    = billProvider.pendingExpectedShopName ?? 'Redeem Shop';
+    final redeemDiscount = billProvider.pendingDiscount ?? 0;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -690,6 +687,46 @@ class _BillScanningProgressScreenState
                 color: Color(0xFF1A1A1A),
               ),
             ),
+            if (isRedeemZone) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE3F2FD),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBBDEFB)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.storefront_rounded,
+                        color: _blue, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        redeemShop,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _blue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (redeemDiscount > 0)
+                      Text(
+                        '$redeemDiscount% OFF',
+                        style: const TextStyle(
+                          color: Color(0xFF2E7D32),
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
 
             // Progress bar

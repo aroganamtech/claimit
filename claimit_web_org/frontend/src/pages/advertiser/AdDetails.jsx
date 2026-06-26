@@ -184,6 +184,7 @@ function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
   // Generate object URLs so we can show the actual uploaded image/video thumbnail
   const creativePreview  = creativeFile  ? URL.createObjectURL(creativeFile)  : null
   const thumbnailPreview = thumbnailFile ? URL.createObjectURL(thumbnailFile) : null
+  const creativeIsVideo  = !!(creativeFile && creativeFile.type && creativeFile.type.startsWith('video/'))
 
   return (
     <div style={{ background: '#e8f0fe', borderRadius: 12, padding: 20, border: '1px solid #c5d5f0' }}>
@@ -202,7 +203,10 @@ function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
           {adType === 'home_banner' && (
             creativePreview
               ? <div style={{ position: 'relative', height: 120, overflow: 'hidden' }}>
-                  <img src={creativePreview} alt="banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {creativeIsVideo
+                    ? <video src={creativePreview} muted autoPlay loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <img src={creativePreview} alt="banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  }
                   <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.38)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '12px 14px' }}>
                     <div style={{ color: '#fff', fontWeight: 800, fontSize: 13, marginBottom: 3 }}>{data.headline || 'BANNER HEADLINE!'}</div>
                     <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{data.sub || 'Your sub-text appears here'}</div>
@@ -355,14 +359,32 @@ export default function AdDetails() {
             {/* Creative upload */}
             <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: 24, marginBottom: 20 }}>
               <h3 style={{ fontWeight: 600, marginBottom: 16 }}>
-                {adType === 'promo_reelz' ? 'Video Upload' : 'Creative Upload'}
+                {(adType === 'promo_reelz' || adType === 'home_banner') ? 'Video / Image Upload' : 'Creative Upload'}
               </h3>
               <UploadBox
-                accept={adType === 'promo_reelz' ? 'video/mp4,video/quicktime' : 'image/jpeg,image/png'}
+                accept={
+                  adType === 'promo_reelz'
+                    ? 'video/mp4,video/quicktime'
+                    : adType === 'home_banner'
+                      ? 'video/mp4,video/quicktime,image/jpeg,image/png'
+                      : 'image/jpeg,image/png'
+                }
                 file={creative}
                 onChange={setCreative}
-                hint={adType === 'promo_reelz' ? 'MP4 video (Max 100MB)' : 'JPG, PNG (Max 10MB)'}
-                label={adType === 'promo_reelz' ? 'Reel Video' : 'Ad Image / Banner'}
+                hint={
+                  adType === 'promo_reelz'
+                    ? 'MP4 video (Max 100MB)'
+                    : adType === 'home_banner'
+                      ? 'Image (JPG/PNG, max 10MB) or Video (MP4, ~14s recommended, max 100MB)'
+                      : 'JPG, PNG (Max 10MB)'
+                }
+                label={
+                  adType === 'promo_reelz'
+                    ? 'Reel Video'
+                    : adType === 'home_banner'
+                      ? 'Banner Image or Video'
+                      : 'Ad Image / Banner'
+                }
               />
               {adType === 'promo_reelz' && (
                 <UploadBox

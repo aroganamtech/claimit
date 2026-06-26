@@ -38,6 +38,14 @@ from ..utils.s3 import (
 
 router = APIRouter(prefix="/advertiser", tags=["Advertiser"])
 
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm")
+
+
+def _is_video_key(key: Optional[str]) -> bool:
+    """Best-effort video detection from an S3 key's file extension."""
+    return bool(key) and key.lower().endswith(VIDEO_EXTENSIONS)
+
+
 AD_PRICES = {
     "home_banner":  840,
     "promo_reelz":  1400,
@@ -185,14 +193,17 @@ async def create_ad(
         }
         await db.reels.insert_one(reel_doc)
 
-    # Also insert into banners if home_banner
+    # Also insert into banners if home_banner — supports both image and video creatives.
     if body.ad_type == "home_banner" and body.creative_key:
+        is_video = _is_video_key(body.creative_key)
         banner_doc = {
             "ad_type": "home_banner",
             "headline": body.headline or "",
             "sub": body.sub or "",
             "cta_link": body.cta_link or "",
-            "image_key": body.creative_key,
+            "media_type": "video" if is_video else "image",
+            "image_key": "" if is_video else body.creative_key,
+            "video_key": body.creative_key if is_video else "",
             "status": doc["status"],
             "publish_date": doc["publish_date"],
             "end_date": doc["end_date"],

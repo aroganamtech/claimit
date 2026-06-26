@@ -1,9 +1,8 @@
-import 'dart:convert';
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
 
@@ -24,9 +23,12 @@ class ClassifiedListScreen extends StatefulWidget {
 }
 
 class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
+  static const int _pageSize = 6;
+
   List<ClassifiedPost> _all = [];
   List<ClassifiedPost> _filtered = [];
   bool _loading = true;
+  int _visibleCount = _pageSize;
 
   final _searchCtrl = TextEditingController();
   bool _showSearch = false;
@@ -53,6 +55,7 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
         _all = posts;
         _filtered = posts;
         _loading = false;
+        _visibleCount = _pageSize;
       });
     }
   }
@@ -65,6 +68,7 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
             p.title.toLowerCase().contains(lower) ||
             p.area.toLowerCase().contains(lower);
       }).toList();
+      _visibleCount = _pageSize;
     });
   }
 
@@ -72,6 +76,16 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
     if (widget.title.isNotEmpty) return widget.title;
     if (widget.subcategory.isNotEmpty) return widget.subcategory;
     return 'Classifieds';
+  }
+
+  /// Other "Local Helpers" categories under the same parent group, used to
+  /// power the small dropdown next to the title (e.g. switching from
+  /// "Electrician" to "Plumbing" without going back to the grid).
+  List<ClassifiedTopCategory> get _siblingHelperCategories {
+    if (widget.subcategory.isEmpty) return const [];
+    return localHelperCategories
+        .where((c) => c.category == widget.category)
+        .toList();
   }
 
   @override
@@ -97,9 +111,9 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
                   hintStyle: TextStyle(color: Colors.grey),
                 ),
               )
-            : Text(
+            : const Text(
                 'Classified',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Color(0xFF1E293B),
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
@@ -123,6 +137,7 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
                 if (!_showSearch) {
                   _searchCtrl.clear();
                   _filtered = _all;
+                  _visibleCount = _pageSize;
                 }
               });
             },
@@ -149,31 +164,57 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── "Top N SUBCATEGORY" title ──────────────────────────────
+                // ── "Top N TITLE [v]" header row ────────────────────────────
                 Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: RichText(
-                    text: TextSpan(
-                      style: const TextStyle(
-                          fontSize: 18, color: Color(0xFF1E293B)),
-                      children: [
-                        const TextSpan(
-                          text: 'Top ',
-                          style: TextStyle(fontWeight: FontWeight.w500),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(
+                                fontSize: 18, color: Color(0xFF1E293B)),
+                            children: [
+                              const TextSpan(
+                                text: 'Top ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: '${_filtered.length} ',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2563EB)),
+                              ),
+                              TextSpan(
+                                text: _displayTitle.toUpperCase(),
+                                style:
+                                    const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
-                        TextSpan(
-                          text: '${_filtered.length} ',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2563EB)),
+                      ),
+                      if (_siblingHelperCategories.length > 1)
+                        PopupMenuButton<ClassifiedTopCategory>(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Color(0xFF1E293B)),
+                          onSelected: (c) => context.pushReplacement(
+                            '/classified/list',
+                            extra: {
+                              'category': c.category,
+                              'subcategory': c.subcategory,
+                              'title': c.name,
+                            },
+                          ),
+                          itemBuilder: (context) => _siblingHelperCategories
+                              .map((c) => PopupMenuItem(
+                                    value: c,
+                                    child: Text(c.name),
+                                  ))
+                              .toList(),
                         ),
-                        TextSpan(
-                          text: _displayTitle.toUpperCase(),
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
 
@@ -207,195 +248,164 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
                         )
                       : RefreshIndicator(
                           onRefresh: _load,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                            itemCount: _filtered.length,
-                            itemBuilder: (context, i) => GestureDetector(
-                              onTap: () => context.push(
-                                '/classified/detail',
-                                extra: _filtered[i],
-                              ),
-                              child: _WorkerCard(post: _filtered[i]),
-                            ),
-                          ),
+                          color: const Color(0xFF2563EB),
+                          child: _buildList(),
                         ),
                 ),
               ],
             ),
     );
   }
+
+  Widget _buildList() {
+    final visible = _filtered.take(_visibleCount).toList();
+    final remaining = _filtered.length - visible.length;
+    final hasMore = remaining > 0;
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      itemCount: visible.length + (hasMore ? 1 : 0),
+      separatorBuilder: (context, i) =>
+          const Divider(color: Color(0xFFE2E8F0), height: 1),
+      itemBuilder: (context, i) {
+        if (i == visible.length) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () =>
+                    setState(() => _visibleCount += _pageSize),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                child: Text('Load more $remaining+'),
+              ),
+            ),
+          );
+        }
+        final post = visible[i];
+        return GestureDetector(
+          onTap: () => context.push('/classified/detail', extra: post),
+          child: _ListingRow(post: post),
+        );
+      },
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker/service provider card
+// Flat listing row — title / area / description (or experience) + call & chat
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _WorkerCard extends StatelessWidget {
-  const _WorkerCard({required this.post});
+class _ListingRow extends StatelessWidget {
+  const _ListingRow({required this.post});
   final ClassifiedPost post;
 
-  Color _avatarColor(String name) {
-    final colors = [
-      const Color(0xFF2563EB), const Color(0xFF059669), const Color(0xFFD97706),
-      const Color(0xFFDC2626), const Color(0xFF7C3AED), const Color(0xFF0891B2),
-    ];
-    final index = name.isEmpty ? 0 : name.codeUnitAt(0) % colors.length;
-    return colors[index];
+  Future<void> _call() async {
+    if (post.userPhone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: post.userPhone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _whatsapp() async {
+    if (post.userPhone.isEmpty) return;
+    final phone = post.userPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    final uri = Uri.parse('https://wa.me/91$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasPhoto = post.photos.isNotEmpty && post.photos.first.isNotEmpty;
-    final initials = post.userName.isNotEmpty
-        ? post.userName[0].toUpperCase()
-        : '?';
+    final heading = post.title.isNotEmpty ? post.title : post.userName;
+    final descLine = post.description.isNotEmpty
+        ? post.description
+        : (post.yearsOfExp > 0 ? '${post.yearsOfExp}+ Exp' : '');
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Avatar ───────────────────────────────────────────────────
-            ClipOval(
-              child: hasPhoto
-                  ? Image.memory(
-                      base64Decode(post.photos.first),
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _InitialsAvatar(initials: initials, color: _avatarColor(post.userName)),
-                    )
-                  : _InitialsAvatar(
-                      initials: initials,
-                      color: _avatarColor(post.userName),
-                    ),
-            ),
-            const SizedBox(width: 12),
-
-            // ── Info ─────────────────────────────────────────────────────
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post.userName.toUpperCase(),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF1E293B),
-                      letterSpacing: 0.3,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  heading,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Color(0xFF1E293B),
                   ),
+                ),
+                if (post.area.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
-                    post.address.isNotEmpty ? post.address : post.area,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF64748B), height: 1.4),
-                    maxLines: 2,
+                    post.area,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // Experience badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          post.yearsOfExp > 0
-                              ? '${post.yearsOfExp}+ Exp'
-                              : 'Experienced',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF475569),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      // Availability
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: post.isAvailable
-                                  ? const Color(0xFF22C55E)
-                                  : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            post.isAvailable ? 'Available' : 'Unavailable',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: post.isAvailable
-                                  ? const Color(0xFF22C55E)
-                                  : Colors.grey,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF2563EB),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
-              ),
+                if (descLine.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    descLine,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ],
             ),
-
-            // ── Star / bookmark ──────────────────────────────────────────
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Icon(Icons.star_rounded,
-                  color: Color(0xFFFBBF24), size: 22),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          _ActionIcon(icon: Icons.call_rounded, onTap: _call),
+          const SizedBox(width: 8),
+          _ActionIcon(icon: Icons.chat_bubble_rounded, onTap: _whatsapp),
+        ],
       ),
     );
   }
 }
 
-class _InitialsAvatar extends StatelessWidget {
-  const _InitialsAvatar({required this.initials, required this.color});
-  final String initials;
-  final Color color;
+class _ActionIcon extends StatelessWidget {
+  const _ActionIcon({required this.icon, required this.onTap});
+  final IconData icon;
+  final Future<void> Function() onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      height: 56,
-      color: color,
-      child: Center(
-        child: Text(
-          initials,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: const Color(0xFFD1FAE5),
+          borderRadius: BorderRadius.circular(8),
         ),
+        child: Icon(icon, size: 17, color: const Color(0xFF059669)),
       ),
     );
   }

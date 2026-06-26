@@ -159,14 +159,33 @@ def _sync_video_presign(key: str) -> str:
     )
 
 
+def _video_url_for(key: str) -> str:
+    """
+    Resolve a playable URL for a video S3 key.
+
+    The bucket (claimit-image-bucket) is configured for public read --
+    confirmed working for images via plain unsigned URLs. When no dedicated
+    AWS_VIDEO_BUCKET_NAME is configured, videos live in that SAME public
+    bucket, so we must NOT sign the request: a SigV4-signed GET forces S3 to
+    evaluate the request as authenticated under this IAM user's identity
+    policy, which lacks a GetObject grant here and returns 403 -- even
+    though the bucket's public-read policy would have allowed the identical
+    unsigned request. Only fall back to presigning if a separate (presumably
+    private) video bucket is explicitly configured.
+    """
+    if not os.getenv("AWS_VIDEO_BUCKET_NAME"):
+        return public_url(key)
+    return _sync_video_presign(key)
+
+
 async def generate_video_url(s3_key: str) -> Optional[str]:
-    """Return a 7-day presigned GET URL for a video stored in the video bucket."""
+    """Return a playable URL for a video stored in the video bucket."""
     if not s3_key:
         return None
     try:
         key = _normalize_key(s3_key)
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, partial(_sync_video_presign, key))
+        return await loop.run_in_executor(None, partial(_video_url_for, key))
     except Exception:
         return None
 
@@ -176,6 +195,6 @@ def generate_video_url_sync(s3_key: str) -> Optional[str]:
         return None
     try:
         key = _normalize_key(s3_key)
-        return _sync_video_presign(key)
+        return _video_url_for(key)
     except Exception:
         return None

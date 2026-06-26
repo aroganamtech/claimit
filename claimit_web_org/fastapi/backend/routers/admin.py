@@ -20,7 +20,7 @@ from database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
     app_bill_reviews_collection, app_db, app_notifications_collection,
-    app_users_collection, app_feedback_collection,
+    app_users_collection, app_feedback_collection, app_shops_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -28,6 +28,7 @@ from models.schemas import (
 )
 from utils.auth import create_access_token
 from utils.dependencies import get_current_admin
+from utils.notify import notify_user
 
 router = APIRouter()
 
@@ -190,15 +191,13 @@ async def reply_feedback(feedback_id: str, body: AdminFeedbackReply, _admin=Depe
 
     uid = fb.get("user_id", "")
     if uid:
-        await app_notifications_collection.insert_one({
-            "user_id": uid,
-            "title": "Reply to your feedback",
-            "message": body.reply,
-            "type": "feedback_reply",
-            "is_read": False,
-            "feedback_id": feedback_id,
-            "created_at": now,
-        })
+        await notify_user(
+            uid,
+            "Reply to your feedback",
+            body.reply,
+            type="feedback_reply",
+            feedback_id=feedback_id,
+        )
     return {"ok": True}
 
 
@@ -260,6 +259,25 @@ async def delete_shop(shop_id: str, _admin=Depends(get_current_admin)):
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Shop not found")
     return {"ok": True}
+
+
+@router.get("/shops/grouped")
+async def list_shops_grouped_by_discount(_admin=Depends(get_current_admin)):
+    """
+    Redeem Zone merchant categorization — groups every shop by its registered
+    discount tier (5% / 10% / 15% / 20% / 25% / 30%) for admin visibility.
+    """
+    docs = await shops_collection.find().sort("created_at", -1).to_list(1000)
+    groups: dict = {}
+    for d in docs:
+        pct = d.get("discount_percentage", 0) or 0
+        groups.setdefault(pct, []).append(_serialize(d))
+    return {
+        "groups": [
+            {"discount_percentage": pct, "count": len(shops), "shops": shops}
+            for pct, shops in sorted(groups.items())
+        ]
+    }
 
 
 # ─── Reviews ──────────────────────────────────────────────────
@@ -370,27 +388,48 @@ async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=D
     uid       = review.get("user_id", "")
     amount    = float(review.get("total_amount", 0))
     shop_name = review.get("shop_name") or "Shop"
-    pts = body.reward_points or max(1, int(amount * 0.1))
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    pts = body.reward_points or round(amount / 10, 1)
     cb  = body.cashback      or round(amount * 0.01, 2)
+
+    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
+    shop_id      = review.get("shop_id")
+    discount_pct = 0
+    if shop_id:
+        try:
+            shop_doc = await app_shops_collection.find_one({"_id": ObjectId(shop_id)})
+        except Exception:
+            shop_doc = None
+        discount_pct = (shop_doc or {}).get("discount") or 0
+
+    # Discount value = the shop's registered discount % applied directly to
+    # the bill total (kept in sync with /bill/scan in the Flutter backend).
+    discount_value = 0.0
+    if discount_pct:
+        discount_value = round(amount * discount_pct / 100, 2)
 
     _wallets = app_db["user_wallets"]
     _scans   = app_db["bill_scans"]
 
     if body.action == "approve":
+        wallet = await _wallets.find_one({"user_id": uid})
+        existing_pts    = wallet.get("reward_points", 0) if wallet else 0
+        deducted_points = min(discount_value, existing_pts) if discount_value else 0
+        net_pts         = pts - deducted_points
+
         await app_bill_reviews_collection.update_one(
             {"_id": oid},
             {"$set": {"status": "approved", "reward_points": pts,
                       "cashback": cb, "admin_note": body.admin_note or "", "reviewed_at": now}},
         )
-        wallet = await _wallets.find_one({"user_id": uid})
         if wallet:
             await _wallets.update_one(
                 {"user_id": uid},
-                {"$inc": {"reward_points": pts, "cashback_wallet": cb, "lifetime_cashback": cb}},
+                {"$inc": {"reward_points": net_pts, "cashback_wallet": cb, "lifetime_cashback": cb}},
             )
         else:
             await _wallets.insert_one({
-                "user_id": uid, "reward_points": 1000 + pts,
+                "user_id": uid, "reward_points": 1000 + net_pts,
                 "cashback_wallet": cb, "lifetime_cashback": cb,
                 "total_scans": 0, "created_at": now,
             })
@@ -398,30 +437,35 @@ async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=D
             "user_id": uid, "dup_key": f"review|{review_id}",
             "shop_name": shop_name, "total_amount": round(amount, 2),
             "earned_cashback": cb, "earned_points": pts,
+            "discount_percent": discount_pct, "discount_value": discount_value,
+            "deducted_points": deducted_points,
             "source": "manual_review", "review_id": review_id, "scanned_at": now,
         })
-        await app_notifications_collection.insert_one({
-            "user_id": uid,
-            "title": "Bill Approved - Rewards Added!",
-            "message": (f"Your bill from {shop_name} (Rs.{int(amount)}) verified. "
-                        f"Rs.{cb:.0f} cashback and {pts} reward points added."),
-            "type": "bill_review_approved",
-            "is_read": False, "review_id": review_id, "created_at": now,
-        })
-        return {"ok": True, "action": "approved", "reward_points": pts, "cashback": cb}
+        note_suffix = (f" ₹{discount_value:.0f} redeem-discount deducted from points."
+                       if discount_value else "")
+        await notify_user(
+            uid,
+            "Bill Approved - Rewards Added!",
+            (f"Your bill from {shop_name} (Rs.{int(amount)}) verified. "
+             f"Rs.{cb:.0f} cashback and {pts} reward points added.{note_suffix}"),
+            type="bill_review_approved",
+            review_id=review_id,
+        )
+        return {"ok": True, "action": "approved", "reward_points": pts, "cashback": cb,
+                "deducted_points": deducted_points, "discount_value": discount_value}
 
     await app_bill_reviews_collection.update_one(
         {"_id": oid},
         {"$set": {"status": "rejected", "admin_note": body.admin_note or "", "reviewed_at": now}},
     )
-    await app_notifications_collection.insert_one({
-        "user_id": uid,
-        "title": "Bill Review Update",
-        "message": (f"Your bill from {shop_name} (Rs.{int(amount)}) could not be verified"
-                    + (f": {body.admin_note}" if body.admin_note else ".")),
-        "type": "bill_review_rejected",
-        "is_read": False, "review_id": review_id, "created_at": now,
-    })
+    await notify_user(
+        uid,
+        "Bill Review Update",
+        (f"Your bill from {shop_name} (Rs.{int(amount)}) could not be verified"
+         + (f": {body.admin_note}" if body.admin_note else ".")),
+        type="bill_review_rejected",
+        review_id=review_id,
+    )
     return {"ok": True, "action": "rejected"}
 
 

@@ -26,6 +26,7 @@ class BillService {
     required double totalAmount,
     String? imagePath,
     String? shopName,
+    String? shopId,      // Redeem Zone shop id — enables server-side discount calc
     String? billNumber,
     DateTime? billDate,
     String? billTime,   // "HH:MM" from receipt OCR
@@ -48,6 +49,7 @@ class BillService {
     final body = <String, dynamic>{
       'total_amount': totalAmount,
       if (shopName?.isNotEmpty   == true) 'shop_name':   shopName,
+      if (shopId?.isNotEmpty     == true) 'shop_id':     shopId,
       if (billNumber?.isNotEmpty == true) 'bill_number': billNumber,
       if (billTime?.isNotEmpty   == true) 'bill_time':   billTime,
       if (billDate != null)
@@ -95,6 +97,7 @@ class BillService {
     required double totalAmount,
     required String imagePath,
     String? shopName,
+    String? shopId,      // Redeem Zone shop id — enables admin discount calc
     String? billNumber,
     DateTime? billDate,
     String? billTime,
@@ -116,6 +119,7 @@ class BillService {
       'image_base64':  imageBase64,
       'manual_reason': manualReason,
       if (shopName?.isNotEmpty   == true) 'shop_name':   shopName,
+      if (shopId?.isNotEmpty     == true) 'shop_id':     shopId,
       if (billNumber?.isNotEmpty == true) 'bill_number': billNumber,
       if (billTime?.isNotEmpty   == true) 'bill_time':   billTime,
       if (billDate != null)

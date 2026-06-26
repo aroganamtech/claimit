@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:video_player/video_player.dart';
 import '../../../core/network/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,13 +14,19 @@ class _AdItem {
   final Color fallbackColor;
   final String brand;
   final String tag;
+  final String mediaType;   // 'image' or 'video'
+  final String videoUrl;
   const _AdItem({
     required this.imageUrl,
     this.imageData = '',
     required this.fallbackColor,
     required this.brand,
     required this.tag,
+    this.mediaType = 'image',
+    this.videoUrl = '',
   });
+
+  bool get isVideo => mediaType == 'video' && videoUrl.isNotEmpty;
 }
 
 const _staticAds = [
@@ -84,13 +91,21 @@ class _NationalAdsScreenState extends State<NationalAdsScreen> {
       final resp = await ApiClient().get('/banners');
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['banners'] as List? ?? [];
-        final parsed = list.map((b) => _AdItem(
-          imageUrl:  (b['image_url']  as String? ?? '').trim(),
-          imageData: (b['image_data'] as String? ?? '').trim(),
-          fallbackColor: const Color(0xFF1565C0),
-          brand: b['headline'] as String? ?? '',
-          tag:   b['sub']      as String? ?? '',
-        )).toList();
+        final parsed = list.map((b) {
+          final videoUrl = (b['video_url'] as String? ?? '').trim();
+          final mediaType = (b['media_type'] as String? ??
+                  (videoUrl.isNotEmpty ? 'video' : 'image'))
+              .trim();
+          return _AdItem(
+            imageUrl:  (b['image_url']  as String? ?? '').trim(),
+            imageData: (b['image_data'] as String? ?? '').trim(),
+            fallbackColor: const Color(0xFF1565C0),
+            brand: b['headline'] as String? ?? '',
+            tag:   b['sub']      as String? ?? '',
+            mediaType: mediaType,
+            videoUrl: videoUrl,
+          );
+        }).toList();
         if (mounted) setState(() { _apiAds = parsed; _loading = false; });
         return;
       }
@@ -220,40 +235,122 @@ class _NationalAdsScreenState extends State<NationalAdsScreen> {
 // Ad card
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AdCard extends StatelessWidget {
+class _AdCard extends StatefulWidget {
   final _AdItem ad;
   const _AdCard({required this.ad});
 
+  @override
+  State<_AdCard> createState() => _AdCardState();
+}
+
+class _AdCardState extends State<_AdCard> {
+  VideoPlayerController? _ctrl;
+  bool _videoReady = false;
+  bool _videoFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.ad.isVideo) _initVideo();
+  }
+
+  void _initVideo() {
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.ad.videoUrl));
+    _ctrl = ctrl;
+    ctrl.initialize().then((_) {
+      if (!mounted) return;
+      ctrl.setLooping(true);
+      ctrl.setVolume(0); // muted inline preview
+      ctrl.play();
+      setState(() => _videoReady = true);
+    }).catchError((e) {
+      debugPrint('Ad video init error: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
   Widget _fallback() => Container(
-    color: ad.fallbackColor,
-    child: Center(child: Text(ad.brand,
+    color: widget.ad.fallbackColor,
+    child: Center(child: Text(widget.ad.brand,
         style: const TextStyle(color: Colors.white,
             fontWeight: FontWeight.bold, fontSize: 22, letterSpacing: 2))),
   );
 
+  Widget _buildImage() {
+    final ad = widget.ad;
+    return ad.imageUrl.isNotEmpty
+        ? CachedNetworkImage(
+            imageUrl: ad.imageUrl,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => _fallback(),
+            errorWidget: (_, __, ___) => ad.imageData.isNotEmpty
+                ? Image.memory(base64Decode(ad.imageData), fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _fallback())
+                : _fallback(),
+          )
+        : ad.imageData.isNotEmpty
+            ? Image.memory(base64Decode(ad.imageData), fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _fallback())
+            : _fallback();
+  }
+
+  Widget _buildVideo() {
+    if (_videoFailed) return _fallback();
+    if (!_videoReady || _ctrl == null) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _fallback(),
+          const Center(
+            child: CircularProgressIndicator(
+                color: Colors.white70, strokeWidth: 2),
+          ),
+        ],
+      );
+    }
+    return GestureDetector(
+      onTap: () => setState(() {
+        _ctrl!.value.isPlaying ? _ctrl!.pause() : _ctrl!.play();
+      }),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _ctrl!.value.size.width,
+              height: _ctrl!.value.size.height,
+              child: VideoPlayer(_ctrl!),
+            ),
+          ),
+          if (!_ctrl!.value.isPlaying)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: const BoxDecoration(
+                    color: Colors.black38, shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Colors.white, size: 38),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {},
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: ad.imageUrl.isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: ad.imageUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => _fallback(),
-                  errorWidget: (_, __, ___) => ad.imageData.isNotEmpty
-                      ? Image.memory(base64Decode(ad.imageData), fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _fallback())
-                      : _fallback(),
-                )
-              : ad.imageData.isNotEmpty
-                  ? Image.memory(base64Decode(ad.imageData), fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _fallback())
-                  : _fallback(),
-        ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: widget.ad.isVideo ? _buildVideo() : _buildImage(),
       ),
     );
   }

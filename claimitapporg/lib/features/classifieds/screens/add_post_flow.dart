@@ -357,13 +357,20 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.92,
+            ),
             itemCount: classifiedCategories.length,
             itemBuilder: (context, i) {
               final cat = classifiedCategories[i];
-              return _CategoryTile(
-                category: cat,
+              return _SelectGridBox(
+                icon: cat.icon,
+                name: cat.name,
                 onTap: () {
                   setState(() {
                     _selectedCategory = cat;
@@ -397,14 +404,20 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.92,
+            ),
             itemCount: subs.length,
             itemBuilder: (context, i) {
               final sub = subs[i];
-              return _SubcategoryTile(
-                subcategory: sub,
-                categoryIcon: _selectedCategory!.icon,
+              return _SelectGridBox(
+                icon: sub.icon,
+                name: sub.name,
                 onTap: () {
                   setState(() {
                     _selectedSubcategory = sub;
@@ -1025,9 +1038,12 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
 // Reusable widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.category, required this.onTap});
-  final ClassifiedCategory category;
+// Same flat icon-card design used on the Classified home screen's
+// "Local Classified" / "Local Helpers" grid (_TopCategoryBox).
+class _SelectGridBox extends StatelessWidget {
+  const _SelectGridBox({required this.icon, required this.name, required this.onTap});
+  final IconData icon;
+  final String name;
   final VoidCallback onTap;
 
   @override
@@ -1035,100 +1051,29 @@ class _CategoryTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
-        child: Row(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFBBF24),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(category.icon, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    category.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    category.subtitle,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF94A3B8)),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: Color(0xFFCBD5E1)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SubcategoryTile extends StatelessWidget {
-  const _SubcategoryTile({
-    required this.subcategory,
-    required this.categoryIcon,
-    required this.onTap,
-  });
-  final ClassifiedSubcategory subcategory;
-  final IconData categoryIcon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFBBF24),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(subcategory.icon, color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 14),
+            Icon(icon, size: 30, color: const Color(0xFF334155)),
+            const SizedBox(height: 8),
             Text(
-              subcategory.name,
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: Color(0xFF1E293B),
+                color: Color(0xFF334155),
+                height: 1.2,
               ),
             ),
-            const Spacer(),
-            const Icon(Icons.chevron_right_rounded,
-                color: Color(0xFFCBD5E1)),
           ],
         ),
       ),

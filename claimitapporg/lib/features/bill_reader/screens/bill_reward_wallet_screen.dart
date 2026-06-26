@@ -93,7 +93,7 @@ class _BillRewardWalletScreenState extends State<BillRewardWalletScreen> {
                     _WalletRow(
                       label: 'Current Reward points',
                       prefixWidget: _CoinBadge(),
-                      value: '${provider.currentPoints}',
+                      value: BillRewardEntry.fmtPoints(provider.currentPoints),
                       valueFontSize: 22,
                     ),
                     const Divider(
@@ -422,7 +422,7 @@ class _HistoryTile extends StatelessWidget {
                   _CoinBadge(),
                   const SizedBox(width: 4),
                   Text(
-                    '${entry.rewardPoints} pts',
+                    '${BillRewardEntry.fmtPoints(entry.rewardPoints)} pts',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
@@ -511,7 +511,7 @@ class _ReviewTile extends StatelessWidget {
               style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
           if (status == 'approved' && pts != null) ...[
             const SizedBox(height: 4),
-            Text('Earned: $pts pts  •  ₹${(cb as num).toStringAsFixed(2)} cashback',
+            Text('Earned: ${BillRewardEntry.fmtPoints(pts as num)} pts  •  ₹${(cb as num).toStringAsFixed(2)} cashback',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: statusColor)),
           ],
           if (status == 'rejected' && note.isNotEmpty) ...[

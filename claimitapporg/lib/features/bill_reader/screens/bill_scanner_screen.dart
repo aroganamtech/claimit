@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
+import '../providers/bill_reward_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillScannerScreen — live camera viewfinder with real flash + capture
@@ -174,6 +176,11 @@ class _BillScannerScreenState extends State<BillScannerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final billProvider = context.watch<BillRewardProvider>();
+    final isRedeemZone  = billProvider.pendingShopId != null;
+    final redeemShop    = billProvider.pendingExpectedShopName ?? 'Redeem Shop';
+    final redeemDiscount = billProvider.pendingDiscount ?? 0;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -269,20 +276,68 @@ class _BillScannerScreenState extends State<BillScannerScreen>
             ),
           ),
 
-          // ── Hint text ──────────────────────────────────────────────────
-          const Positioned(
+          // ── Hint text / Redeem Zone shop + discount banner ──────────────
+          Positioned(
             top: 16,
-            left: 0,
-            right: 0,
-            child: Text(
-              'Tap on the paper to focus · Align total inside frame',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
+            left: isRedeemZone ? 16 : 0,
+            right: isRedeemZone ? 16 : 0,
+            child: isRedeemZone
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.storefront_rounded,
+                            color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            redeemShop,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (redeemDiscount > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2E7D32),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$redeemDiscount% OFF',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const Text(
+                    'Tap on the paper to focus · Align total inside frame',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
           ),
 
           // ── Gallery button ─────────────────────────────────────────────

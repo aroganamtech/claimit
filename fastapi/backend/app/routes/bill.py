@@ -84,6 +84,7 @@ class BillScanRequest(BaseModel):
     total_amount:  float          = Field(..., gt=0)
     reward_points: Optional[int]  = None
     shop_name:     Optional[str]  = None
+    shop_id:       Optional[str]  = None   # Redeem Zone shop — enables discount-aware calc
     bill_number:   Optional[str]  = None
     bill_date:     Optional[str]  = None
     bill_time:     Optional[str]  = None
@@ -95,6 +96,7 @@ class ManualReviewRequest(BaseModel):
     total_amount:  float  = Field(..., gt=0)
     image_base64:  str    = Field(..., description="Base64-encoded bill image")
     shop_name:     Optional[str] = None
+    shop_id:       Optional[str] = None   # Redeem Zone shop — enables discount-aware calc
     bill_number:   Optional[str] = None
     bill_date:     Optional[str] = None
     bill_time:     Optional[str] = None
@@ -118,6 +120,26 @@ def _dup_key(shop: str, bill_date: str, amount: float,
     if t:
         return f"{s}|{bill_date}|{t}|{amt}"
     return f"{s}|{bill_date}|{amt}"
+
+
+def _names_match(expected: Optional[str], scanned: Optional[str]) -> bool:
+    """
+    Lenient shop-name match — mirrors BillRewardProvider.matchesExpectedShop
+    on the Flutter client. Normalizes both names to lowercase alphanumerics
+    and checks bidirectional substring containment, so OCR noise (extra
+    branch/address words, punctuation, case) doesn't trip a false mismatch.
+    Returns True when there's no expected name to check against.
+    """
+    if not expected or not expected.strip():
+        return True
+    if not scanned or not scanned.strip():
+        return False
+    import re
+    norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+    e, s = norm(expected), norm(scanned)
+    if not e or not s:
+        return False
+    return e in s or s in e
 
 
 async def _get_or_create_wallet(db, uid: str) -> tuple:
@@ -165,10 +187,46 @@ async def scan_bill(data: BillScanRequest, request: Request):
     if await db.bill_scans.find_one({"user_id": uid, "dup_key": key}):
         raise HTTPException(status_code=409, detail="Bill already scanned")
 
-    earned_cb  = round(total * 0.01, 2)
-    earned_pts = round(total * 0.10)
+    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
+    discount_pct = 0
+    if data.shop_id:
+        try:
+            shop_doc = await db.shops.find_one({"_id": ObjectId(data.shop_id)})
+        except Exception:
+            shop_doc = None
+        discount_pct = (shop_doc or {}).get("discount") or 0
 
-    new_pts       = wallet["reward_points"]     + earned_pts
+        # Safety net — the client already checks this before submitting, but
+        # the server re-checks in case the client check was bypassed/stale.
+        # A clear mismatch is rejected; the app then routes the user to
+        # manual review instead of silently auto-crediting the wrong shop.
+        expected_name = (shop_doc or {}).get("name")
+        if expected_name and not _names_match(expected_name, data.shop_name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":          "shop_mismatch",
+                    "message":       f"Scanned shop name does not match the "
+                                     f"selected Redeem Zone shop ({expected_name}).",
+                    "expected_shop": expected_name,
+                    "scanned_shop":  data.shop_name,
+                },
+            )
+
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    earned_cb  = round(total * 0.01, 2)
+    earned_pts = round(total / 10, 1)
+
+    # Redeem Zone math: the shop's registered discount % applies directly to
+    # the scanned bill total — e.g. 1000 pts wallet, 10% discount shop,
+    # ₹2000 bill → discount value = ₹200 → 200 pts deducted → 800 pts left.
+    discount_value  = 0.0
+    deducted_points = 0
+    if discount_pct:
+        discount_value  = round(total * discount_pct / 100, 2)
+        deducted_points = min(discount_value, wallet["reward_points"])
+
+    new_pts       = wallet["reward_points"]     - deducted_points + earned_pts
     new_cb_wallet = wallet["cashback_wallet"]   + earned_cb
     new_lifetime  = wallet["lifetime_cashback"] + earned_cb
     new_scans     = wallet.get("total_scans", 0) + 1
@@ -189,9 +247,13 @@ async def scan_bill(data: BillScanRequest, request: Request):
         "user_id":         uid,
         "dup_key":         key,
         "shop_name":       shop_name,
+        "shop_id":         data.shop_id,
         "total_amount":    total,
         "earned_cashback": earned_cb,
         "earned_points":   earned_pts,
+        "discount_percent": discount_pct,
+        "discount_value":  discount_value,
+        "deducted_points": deducted_points,
         "bill_number":     data.bill_number,
         "bill_date":       bill_date,
         "bill_time":       data.bill_time,
@@ -204,9 +266,13 @@ async def scan_bill(data: BillScanRequest, request: Request):
     await db.bill_history.insert_one({
         "user_id":         uid,
         "shop_name":       shop_name,
+        "shop_id":         data.shop_id,
         "total_amount":    total,
         "earned_cashback": earned_cb,
         "earned_points":   earned_pts,
+        "discount_percent": discount_pct,
+        "discount_value":  discount_value,
+        "deducted_points": deducted_points,
         "bill_number":     data.bill_number,
         "bill_date":       bill_date,
         "bill_time":       data.bill_time,
@@ -220,8 +286,13 @@ async def scan_bill(data: BillScanRequest, request: Request):
         "ok":               True,
         "scan_id":          str(res.inserted_id),
         "shop_name":        shop_name,
+        # Earned this scan
         "earned_cashback":  earned_cb,
         "earned_points":    earned_pts,
+        # Redeem Zone discount audit (0 / 0.0 when this wasn't a redeem-zone bill)
+        "discount_percent": discount_pct,
+        "discount_value":   discount_value,
+        "deducted_points":  deducted_points,
         "is_new_user_bonus": is_first,
         "bonus_points":     bonus["reward_points"] if is_first else 0,
         "bonus_cashback":   bonus["cashback"]      if is_first else 0.0,
@@ -285,6 +356,7 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
         "user_id":       uid,
         "total_amount":  round(data.total_amount, 2),
         "shop_name":     (data.shop_name or "").strip() or None,
+        "shop_id":       data.shop_id,
         "bill_number":   (data.bill_number or "").strip() or None,
         "bill_date":     parsed_date,
         "bill_time":     (data.bill_time or "").strip() or None,
@@ -358,8 +430,25 @@ async def admin_action_review(
     uid       = review.get("user_id", "")
     amount    = float(review.get("total_amount", 0))
     shop_name = review.get("shop_name") or "Shop"
-    pts = data.reward_points if data.reward_points is not None else max(1, int(amount * 0.1))
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
     cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
+
+    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
+    shop_id      = review.get("shop_id")
+    discount_pct = 0
+    if shop_id:
+        try:
+            shop_doc = await db.shops.find_one({"_id": ObjectId(shop_id)})
+        except Exception:
+            shop_doc = None
+        discount_pct = (shop_doc or {}).get("discount") or 0
+
+    # Same direct-percentage formula as /bill/scan — discount value is the
+    # shop's discount % applied straight to the bill total (see scan_bill).
+    discount_value = 0.0
+    if discount_pct:
+        discount_value = round(amount * discount_pct / 100, 2)
 
     update_fields = {"status": data.action, "reviewed_at": now, "review_note": data.admin_note or ""}
     if data.action == "approve":
@@ -367,12 +456,15 @@ async def admin_action_review(
         update_fields["cashback"]      = cb
     await db.bill_manual_reviews.update_one({"_id": oid}, {"$set": update_fields})
 
+    deducted_points = 0
     if data.action == "approve":
         wallet, _ = await _get_or_create_wallet(db, uid)
+        deducted_points = min(discount_value, wallet["reward_points"]) if discount_value else 0
+        net_pts         = pts - deducted_points
         await db.user_wallets.update_one(
             {"user_id": uid},
             {"$set": {
-                "reward_points":     wallet["reward_points"]     + pts,
+                "reward_points":     wallet["reward_points"]     + net_pts,
                 "cashback_wallet":   wallet["cashback_wallet"]   + cb,
                 "lifetime_cashback": wallet["lifetime_cashback"] + cb,
                 "updated_at":        now,
@@ -381,8 +473,10 @@ async def admin_action_review(
         scan_now = now
         await db.bill_scans.insert_one({
             "user_id": uid, "dup_key": f"review|{review_id}",
-            "shop_name": shop_name, "total_amount": round(amount, 2),
+            "shop_name": shop_name, "shop_id": shop_id, "total_amount": round(amount, 2),
             "earned_cashback": cb, "earned_points": pts,
+            "discount_percent": discount_pct, "discount_value": discount_value,
+            "deducted_points": deducted_points,
             "bill_number": review.get("bill_number"),
             "bill_date":   str(review.get("bill_date", "")),
             "bill_time":   review.get("bill_time"),
@@ -392,9 +486,13 @@ async def admin_action_review(
         await db.bill_history.insert_one({
             "user_id":         uid,
             "shop_name":       shop_name,
+            "shop_id":         shop_id,
             "total_amount":    round(amount, 2),
             "earned_cashback": cb,
             "earned_points":   pts,
+            "discount_percent": discount_pct,
+            "discount_value":  discount_value,
+            "deducted_points": deducted_points,
             "bill_number":     review.get("bill_number"),
             "bill_date":       str(review.get("bill_date", "")),
             "bill_time":       review.get("bill_time"),
@@ -424,4 +522,6 @@ async def admin_action_review(
         "success": True, "action": data.action, "review_id": review_id,
         "reward_points": pts if data.action == "approve" else 0,
         "cashback":      cb  if data.action == "approve" else 0,
+        "discount_value":  discount_value  if data.action == "approve" else 0.0,
+        "deducted_points": deducted_points if data.action == "approve" else 0,
     }

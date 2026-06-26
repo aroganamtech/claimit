@@ -3,8 +3,19 @@ import 'package:go_router/go_router.dart';
 
 import '../data/classified_categories.dart';
 
-class ClassifiedHomeScreen extends StatelessWidget {
+class ClassifiedHomeScreen extends StatefulWidget {
   const ClassifiedHomeScreen({super.key});
+
+  @override
+  State<ClassifiedHomeScreen> createState() => _ClassifiedHomeScreenState();
+}
+
+class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
+  // 0 = Local Classified, 1 = Local Helpers
+  int _tab = 0;
+
+  List<ClassifiedTopCategory> get _items =>
+      _tab == 0 ? localClassifiedCategories : localHelperCategories;
 
   @override
   Widget build(BuildContext context) {
@@ -37,256 +48,44 @@ class ClassifiedHomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          // ── Explore header ──────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Explore Local Services & Classifieds',
-                    style: TextStyle(
-                      color: Color(0xFF1E293B),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── ADD card ────────────────────────────────────────────
-                  GestureDetector(
-                    onTap: () => context.push('/classified/add'),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2563EB),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'ADD',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'LOCAL CLASSIFIED POSTINGS',
-                                  style: TextStyle(
-                                    color: Color(0xFF1E40AF),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                                SizedBox(height: 3),
-                                Text(
-                                  'Post your local requirements.',
-                                  style: TextStyle(
-                                    color: Color(0xFF2563EB),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded,
-                              color: Color(0xFF2563EB)),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── OR divider ──────────────────────────────────────────
-                  Row(
-                    children: [
-                      const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          'OR',
-                          style: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── Local Helpers heading ───────────────────────────────
-                  const Text(
-                    'Local Helpers',
-                    style: TextStyle(
-                      color: Color(0xFF1E40AF),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Find trusted local service providers near your location.',
-                    style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Category sections ────────────────────────────────────────────
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _CategorySection(
-                category: classifiedCategories[index],
-              ),
-              childCount: classifiedCategories.length,
-            ),
-          ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// One category section — 4-icon grid, expandable to show all
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CategorySection extends StatefulWidget {
-  const _CategorySection({required this.category});
-  final ClassifiedCategory category;
-
-  @override
-  State<_CategorySection> createState() => _CategorySectionState();
-}
-
-class _CategorySectionState extends State<_CategorySection> {
-  static const int _initialCount = 4;
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final subs = widget.category.subcategories;
-    final hasMore = subs.length > _initialCount;
-    final visible = _expanded ? subs : subs.take(_initialCount).toList();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
         children: [
-          // ── Section header ────────────────────────────────────────────
+          // ── Local Classified / Local Helpers toggle ───────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              widget.category.name,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: Color(0xFF1E293B),
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _ClassifiedTabToggle(
+              selected: _tab,
+              onChanged: (i) => setState(() => _tab = i),
             ),
           ),
-          const SizedBox(height: 10),
 
-          // ── 4-column icon grid ────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          // ── Category grid ──────────────────────────────────────────────
+          Expanded(
             child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 0,
-                childAspectRatio: 0.82, // icon circle + label
+                crossAxisCount: 3,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.92,
               ),
-              itemCount: visible.length,
+              itemCount: _items.length,
               itemBuilder: (context, i) {
-                final sub = visible[i];
-                return _SubcategoryIcon(
-                  subcategory: sub,
+                final item = _items[i];
+                return _TopCategoryBox(
+                  item: item,
                   onTap: () => context.push(
                     '/classified/list',
                     extra: {
-                      'category': widget.category.id,
-                      'subcategory': sub.name,
-                      'title': sub.name,
+                      'category': item.category,
+                      'subcategory': item.subcategory,
+                      'title': item.name,
                     },
                   ),
                 );
               },
             ),
           ),
-
-          // ── View all / Show less toggle ───────────────────────────────
-          if (hasMore) ...[
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _expanded
-                          ? 'Show less'
-                          : 'View all ${subs.length}',
-                      style: const TextStyle(
-                        color: Color(0xFF2563EB),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: const Color(0xFF2563EB),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 4),
-          const Divider(
-              color: Color(0xFFE2E8F0), thickness: 1, height: 1),
         ],
       ),
     );
@@ -294,46 +93,114 @@ class _CategorySectionState extends State<_CategorySection> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Individual subcategory icon circle + label
+// Local Classified / Local Helpers pill toggle
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SubcategoryIcon extends StatelessWidget {
-  const _SubcategoryIcon({required this.subcategory, required this.onTap});
-  final ClassifiedSubcategory subcategory;
+class _ClassifiedTabToggle extends StatelessWidget {
+  const _ClassifiedTabToggle({required this.selected, required this.onChanged});
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF1F5),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleSegment(
+            label: 'Local Classified',
+            active: selected == 0,
+            onTap: () => onChanged(0),
+          ),
+          _ToggleSegment(
+            label: 'Local Helpers',
+            active: selected == 1,
+            onTap: () => onChanged(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleSegment extends StatelessWidget {
+  const _ToggleSegment({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+  final String label;
+  final bool active;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
-            ),
-            child: Icon(subcategory.icon,
-                size: 28, color: const Color(0xFF2563EB)),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF2563EB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : const Color(0xFF64748B),
           ),
-          const SizedBox(height: 5),
-          Text(
-            subcategory.name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF334155),
-              height: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flat grid box — icon + label inside a single outlined card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TopCategoryBox extends StatelessWidget {
+  const _TopCategoryBox({required this.item, required this.onTap});
+  final ClassifiedTopCategory item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(item.icon, size: 30, color: const Color(0xFF334155)),
+            const SizedBox(height: 8),
+            Text(
+              item.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF334155),
+                height: 1.2,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

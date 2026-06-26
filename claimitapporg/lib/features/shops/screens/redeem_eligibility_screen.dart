@@ -358,6 +358,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../bill_reader/providers/bill_reward_provider.dart';
 import 'shop_list_screen.dart';
 
 class RedeemEligibilityScreen extends StatefulWidget {
@@ -706,7 +708,17 @@ class _RedeemEligibilityScreenState extends State<RedeemEligibilityScreen>
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: () => context.push('/bill-reader/scanner'),
+                    onPressed: () {
+                      // Redeem Zone: carry shop + discount context into the
+                      // scanner so /bill/scan can deduct the discount value,
+                      // and so the OCR step can verify the bill is from this shop.
+                      context.read<BillRewardProvider>().setRedeemContext(
+                            shopId: s.id,
+                            discountPercent: widget.discount,
+                            expectedShopName: s.name,
+                          );
+                      context.push('/bill-reader/scanner');
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
                       foregroundColor: Colors.white,

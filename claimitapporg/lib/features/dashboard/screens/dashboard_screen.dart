@@ -1111,6 +1111,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:video_player/video_player.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/network/api_client.dart';
@@ -1357,13 +1358,19 @@ class _BannerData {
   final LinearGradient gradient;
   final String headline;
   final String sub;
+  final String mediaType;   // 'image' or 'video'
+  final String videoUrl;
   const _BannerData({
     required this.imageUrl,
     this.imageData = '',
     required this.gradient,
     required this.headline,
     required this.sub,
+    this.mediaType = 'image',
+    this.videoUrl = '',
   });
+
+  bool get isVideo => mediaType == 'video' && videoUrl.isNotEmpty;
 }
 
 class _CatData {
@@ -1422,16 +1429,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Auto-scroll banner every 4 seconds
-    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!_bannerCtrl.hasClients) return;
-      final next = (_currentBanner + 1) % _activeBanners.length;
-      _bannerCtrl.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-      );
-    });
+    // Auto-scroll banner — images advance after 5s, videos advance when
+    // playback finishes (with a safety-timeout fallback). See
+    // _scheduleNextBannerAdvance().
+    _scheduleNextBannerAdvance();
     _loadDeals();
     _loadNearbyShopsFromGPS();
     _loadBanners();
@@ -1445,6 +1446,35 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<_BannerData> get _activeBanners =>
       _apiBanners.isNotEmpty ? _apiBanners : _banners;
 
+  /// Schedules the next auto-advance for the currently-shown banner.
+  /// Images advance after a fixed 5s. Videos are normally advanced by
+  /// _BannerSlide calling onVideoEnded() when playback finishes — this timer
+  /// is just a safety fallback in case a video fails to load/play, capped
+  /// generously above the expected ~14s banner-video length.
+  void _scheduleNextBannerAdvance() {
+    _bannerTimer?.cancel();
+    final banners = _activeBanners;
+    if (banners.isEmpty) return;
+    final current = banners[_currentBanner % banners.length];
+    final delay = current.isVideo
+        ? const Duration(seconds: 20)
+        : const Duration(seconds: 5);
+    _bannerTimer = Timer(delay, _advanceBanner);
+  }
+
+  void _advanceBanner() {
+    _bannerTimer?.cancel();
+    if (!_bannerCtrl.hasClients) return;
+    final banners = _activeBanners;
+    if (banners.isEmpty) return;
+    final next = (_currentBanner + 1) % banners.length;
+    _bannerCtrl.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+  }
+
   /// Fetch banners from /banners API; fall back to static if empty/error.
   Future<void> _loadBanners() async {
     try {
@@ -1454,6 +1484,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         final parsed = list.map((b) {
           final imageUrl = (b['image_url'] as String? ?? '').trim();
           final imageData = (b['image_data'] as String? ?? '').trim();
+          final videoUrl = (b['video_url'] as String? ?? '').trim();
+          final mediaType = (b['media_type'] as String? ??
+                  (videoUrl.isNotEmpty ? 'video' : 'image'))
+              .trim();
           return _BannerData(
             imageUrl: imageUrl,
             imageData: imageData,
@@ -1461,10 +1495,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                 colors: [Color(0xFF1565C0), Color(0xFF2563EB)]),
             headline: b['headline'] as String? ?? '',
             sub: b['sub'] as String? ?? '',
+            mediaType: mediaType,
+            videoUrl: videoUrl,
           );
         }).toList();
         if (mounted && parsed.isNotEmpty) {
           setState(() => _apiBanners = parsed);
+          _scheduleNextBannerAdvance();
         }
       }
     } catch (e) {
@@ -1789,7 +1826,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   PageView.builder(
                     controller: _bannerCtrl,
-                    onPageChanged: (i) => setState(() => _currentBanner = i),
+                    onPageChanged: (i) {
+                      setState(() => _currentBanner = i);
+                      _scheduleNextBannerAdvance();
+                    },
                     itemCount: _activeBanners.length,
                     itemBuilder: (ctx, i) => Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1797,7 +1837,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                         borderRadius: BorderRadius.circular(20),
                         child: GestureDetector(
                           onTap: () => context.push('/national-ads'),
-                          child: _BannerSlide(data: _activeBanners[i]),
+                          child: _BannerSlide(
+                            key: ValueKey(
+                                'banner_${i}_${_activeBanners[i].imageUrl}${_activeBanners[i].videoUrl}'),
+                            data: _activeBanners[i],
+                            isActive: i == _currentBanner,
+                            onVideoEnded: () {
+                              if (i == _currentBanner) _advanceBanner();
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -1949,18 +1997,94 @@ class _DashboardScreenState extends State<DashboardScreen>
 // Banner slide  (network image with gradient fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _BannerSlide extends StatelessWidget {
+class _BannerSlide extends StatefulWidget {
   final _BannerData data;
-  const _BannerSlide({required this.data});
+  final bool isActive;
+  final VoidCallback? onVideoEnded;
+  const _BannerSlide({
+    super.key,
+    required this.data,
+    this.isActive = false,
+    this.onVideoEnded,
+  });
+
+  @override
+  State<_BannerSlide> createState() => _BannerSlideState();
+}
+
+class _BannerSlideState extends State<_BannerSlide> {
+  VideoPlayerController? _ctrl;
+  bool _videoReady = false;
+  bool _videoFailed = false;
+  bool _endedFired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.data.isVideo) _initVideo();
+  }
+
+  void _initVideo() {
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.data.videoUrl));
+    _ctrl = ctrl;
+    ctrl.initialize().then((_) {
+      if (!mounted) return;
+      ctrl.setLooping(false);
+      ctrl.setVolume(0); // muted autoplay — this is a background ad banner
+      if (widget.isActive) ctrl.play();
+      setState(() => _videoReady = true);
+    }).catchError((e) {
+      debugPrint('Banner video init error: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    });
+    ctrl.addListener(() {
+      if (!mounted || _endedFired) return;
+      final v = ctrl.value;
+      if (v.duration > Duration.zero && v.position >= v.duration) {
+        _endedFired = true;
+        widget.onVideoEnded?.call();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(_BannerSlide old) {
+    super.didUpdateWidget(old);
+    if (old.data.videoUrl != widget.data.videoUrl) {
+      // Different banner reused this slot — rebuild the controller.
+      _ctrl?.dispose();
+      _ctrl = null;
+      _videoReady = false;
+      _videoFailed = false;
+      _endedFired = false;
+      if (widget.data.isVideo) _initVideo();
+      return;
+    }
+    if (widget.isActive != old.isActive && _ctrl != null && _videoReady) {
+      if (widget.isActive) {
+        _endedFired = false;
+        _ctrl!.seekTo(Duration.zero);
+        _ctrl!.play();
+      } else {
+        _ctrl!.pause();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
 
   Widget _fallback() => Container(
-        decoration: BoxDecoration(gradient: data.gradient),
+        decoration: BoxDecoration(gradient: widget.data.gradient),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                data.headline,
+                widget.data.headline,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -1971,7 +2095,7 @@ class _BannerSlide extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                data.sub,
+                widget.data.sub,
                 style: TextStyle(
                     color: Colors.white.withOpacity(0.9), fontSize: 14),
               ),
@@ -1980,8 +2104,8 @@ class _BannerSlide extends StatelessWidget {
         ),
       );
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildImage() {
+    final data = widget.data;
     // Use base64 image if no URL available
     if (data.imageUrl.isEmpty && data.imageData.isNotEmpty) {
       try {
@@ -1998,6 +2122,33 @@ class _BannerSlide extends StatelessWidget {
       width: double.infinity,
       placeholder: (_, __) => _fallback(),
       errorWidget: (_, __, ___) => _fallback(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.data.isVideo) return _buildImage();
+
+    if (_videoFailed) return _fallback();
+    if (!_videoReady || _ctrl == null) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _fallback(),
+          const Center(
+            child: CircularProgressIndicator(
+                color: Colors.white70, strokeWidth: 2),
+          ),
+        ],
+      );
+    }
+    return FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(
+        width: _ctrl!.value.size.width,
+        height: _ctrl!.value.size.height,
+        child: VideoPlayer(_ctrl!),
+      ),
     );
   }
 }

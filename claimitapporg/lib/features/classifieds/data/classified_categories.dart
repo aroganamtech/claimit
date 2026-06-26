@@ -173,3 +173,64 @@ ClassifiedCategory? categoryById(String id) {
     return null;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flat (single-level) category model used by the Classified home screen's
+// "Local Classified" / "Local Helpers" toggle. Unlike ClassifiedCategory above
+// (which nests subcategories under a parent for the Add-Post flow), each of
+// these is directly tappable and goes straight to the listings screen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ClassifiedTopCategory {
+  final String id;          // unique key for this grid item
+  final String name;        // display label
+  final IconData icon;
+  final String category;    // value sent as ?category= to the list screen
+  final String subcategory; // value sent as ?subcategory= (may be empty)
+
+  const ClassifiedTopCategory({
+    required this.id,
+    required this.name,
+    required this.icon,
+    required this.category,
+    this.subcategory = '',
+  });
+}
+
+/// "Local Classified" tab — top-level posting categories
+/// (property, rentals, jobs, buy & sell, etc).
+const List<ClassifiedTopCategory> localClassifiedCategories = [
+  ClassifiedTopCategory(id: 'property',    name: 'Property',    icon: Icons.apartment_rounded,      category: 'property'),
+  ClassifiedTopCategory(id: 'home_needs',  name: 'Home Needs',  icon: Icons.home_rounded,            category: 'home_needs'),
+  ClassifiedTopCategory(id: 'rental',      name: 'Rental',      icon: Icons.house_rounded,           category: 'rental'),
+  ClassifiedTopCategory(id: 'job',         name: 'Job',         icon: Icons.work_rounded,             category: 'job'),
+  ClassifiedTopCategory(id: 'buy_sell',    name: 'Buy & Sell',  icon: Icons.shopping_bag_rounded,     category: 'buy_sell'),
+  ClassifiedTopCategory(id: 'community',   name: 'Community',   icon: Icons.groups_rounded,          category: 'community'),
+  ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicle',     icon: Icons.directions_car_rounded,  category: 'vehicle'),
+  ClassifiedTopCategory(id: 'tuition',     name: 'Tuition',     icon: Icons.school_rounded,           category: 'tuition'),
+  ClassifiedTopCategory(id: 'electronics', name: 'Electronics', icon: Icons.devices_rounded,          category: 'electronics'),
+  ClassifiedTopCategory(id: 'hostel',      name: 'Hostel',      icon: Icons.bed_rounded,              category: 'hostel'),
+  ClassifiedTopCategory(id: 'furniture',   name: 'Furniture',   icon: Icons.chair_rounded,            category: 'furniture'),
+  ClassifiedTopCategory(id: 'others',      name: 'Others',      icon: Icons.more_horiz_rounded,       category: 'others'),
+];
+
+/// "Local Helpers" tab — every existing service subcategory flattened into
+/// one grid (no nested "view all" grouping). Reuses the existing nested
+/// category/subcategory ids so already-submitted posts stay filterable.
+/// The product-selling group ("Buy/Sell – Household") is excluded here since
+/// it's covered by the "Local Classified" tab instead (Buy & Sell, Furniture,
+/// Electronics, Others).
+final List<ClassifiedTopCategory> localHelperCategories = classifiedCategories
+    .where((c) => c.id != 'buy_sell_household')
+    .expand(
+      (c) => c.subcategories.map(
+        (s) => ClassifiedTopCategory(
+          id: '${c.id}_${s.name}',
+          name: s.name,
+          icon: s.icon,
+          category: c.id,
+          subcategory: s.name,
+        ),
+      ),
+    )
+    .toList();

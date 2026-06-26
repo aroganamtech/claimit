@@ -9,7 +9,10 @@ used by the Flutter dashboard screen.
 from fastapi import APIRouter
 from database import ads_collection
 from datetime import datetime
-from utils.s3 import generate_presigned_url_sync as _presign
+from utils.s3 import (
+    generate_presigned_url_sync as _presign,
+    generate_video_url_sync as _video_presign,
+)
 
 router = APIRouter()
 
@@ -31,10 +34,23 @@ def _image_url(ad: dict) -> str:
     return stored
 
 
+def _video_url(ad: dict) -> str:
+    """Freshly-presigned video URL from the stored S3 key (videos live in the
+    video bucket and need the long-lived video presign, not the image one)."""
+    key = ad.get("video_s3_key") or ""
+    if not key:
+        return ""
+    return _video_presign(key) or ad.get("video_url") or ""
+
+
 def _serialize_banner(ad: dict) -> dict:
+    video_key = ad.get("video_s3_key") or ""
+    media_type = ad.get("media_type") or ("video" if video_key else "image")
     return {
         "id": str(ad["_id"]),
+        "media_type": media_type,
         "image_url": _image_url(ad),
+        "video_url": _video_url(ad),
         "headline": ad.get("headline") or ad.get("title") or "EXCLUSIVE OFFERS!",
         "sub": ad.get("sub") or ad.get("description") or "Shop and save big",
         "cta_link": ad.get("cta_link") or "",

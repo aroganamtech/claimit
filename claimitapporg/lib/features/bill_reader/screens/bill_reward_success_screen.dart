@@ -283,7 +283,7 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '+ ${entry.rewardPoints} pts',
+                            '+ ${BillRewardEntry.fmtPoints(entry.rewardPoints)} pts',
                             style: const TextStyle(
                                 color: Color(0xFFFFD700),
                                 fontSize: 18,
@@ -299,7 +299,7 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
 
               Text(
                 entry != null
-                    ? '₹${entry.cashback.toStringAsFixed(0)} cashback & ${entry.rewardPoints} points added to your wallet.'
+                    ? '₹${entry.cashback.toStringAsFixed(0)} cashback & ${BillRewardEntry.fmtPoints(entry.rewardPoints)} points added to your wallet.'
                     : 'Your rewards have been added to your wallet.',
                 textAlign: TextAlign.center,
                 maxLines: 3,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../models/bill_reward_model.dart';
 import '../providers/bill_reward_provider.dart';
 import '../services/bill_service.dart';
 
@@ -17,7 +18,12 @@ import '../services/bill_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BillConfirmScreen extends StatefulWidget {
-  const BillConfirmScreen({super.key});
+  // Set by the scanning screen when OCR validation found a problem
+  // ('date_mismatch' or 'shop_mismatch'). When non-null, this screen forces
+  // manual-review mode and blocks the auto "Confirm & Claim" path.
+  final String? validationIssue;
+
+  const BillConfirmScreen({super.key, this.validationIssue});
 
   @override
   State<BillConfirmScreen> createState() => _BillConfirmScreenState();
@@ -34,6 +40,23 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   bool _manualMode       = false;   // user chose to enter/fix manually
   bool _submittingManual = false;
 
+  String? get _issue => widget.validationIssue;
+
+  String get _issueMessage {
+    switch (_issue) {
+      case 'date_mismatch':
+        return 'The bill date doesn\'t match today\'s date. Please review '
+            'the details below and submit for manual review.';
+      case 'shop_mismatch':
+        return 'The shop name on the bill doesn\'t match the Redeem Zone '
+            'shop you selected. Please review the details below and submit '
+            'for manual review.';
+      default:
+        return 'We couldn\'t fully verify this bill automatically. Please '
+            'review the details below and submit for manual review.';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +69,11 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     _shopCtrl = TextEditingController(
       text: provider.pendingShopName ?? '',
     );
+    // Validation failures always force manual-review mode — the user can
+    // still correct fields, but auto-claim is disabled (see _confirmAndClaim).
+    if (_issue != null) {
+      _manualMode = true;
+    }
   }
 
   @override
@@ -58,6 +86,13 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   // ── Confirm & claim ─────────────────────────────────────────────────────────
 
   Future<void> _confirmAndClaim() async {
+    // Validation failure from OCR (date/shop mismatch) — block auto-claim
+    // and push the user toward manual/admin review instead.
+    if (_issue != null) {
+      _snack('Please submit for review — this bill needs a manual check.');
+      return;
+    }
+
     final raw = _amtCtrl.text.trim();
     if (raw.isEmpty) {
       _snack('Please enter the total bill amount');
@@ -206,11 +241,12 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     try {
       final amount   = double.parse(raw);
       final shopName = _shopCtrl.text.trim();
-      final reason   = _manualMode ? 'wrong_data' : 'missing_fields';
+      final reason   = _issue ?? (_manualMode ? 'wrong_data' : 'missing_fields');
       await BillService.instance.submitManualReview(
         totalAmount:  amount,
         imagePath:    imagePath,
         shopName:     shopName.isNotEmpty ? shopName : null,
+        shopId:       provider.pendingShopId,
         billNumber:   provider.pendingBillNumber,
         billDate:     provider.pendingBillDate,
         billTime:     provider.pendingBillTime,
@@ -241,7 +277,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   }
 
   double get _billAmount => double.tryParse(_amtCtrl.text.trim()) ?? 0;
-  int    get _estimatedPoints  => (_billAmount * 0.1).round();
+  double get _estimatedPoints  => _billAmount / 10;
   String get _cashbackPreview  => (_billAmount * 0.01).toStringAsFixed(0);
 
   // ── Build ────────────────────────────────────────────────────────────────────
@@ -280,6 +316,38 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+
+            // ── Validation-issue banner (date/shop mismatch from OCR) ──────────
+            if (_issue != null) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEBEE),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFEF5350)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.error_outline_rounded,
+                        color: Color(0xFFC62828), size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _issueMessage,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFFC62828),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Status banner ─────────────────────────────────────────────────
             Container(
@@ -596,12 +664,69 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                       icon: Icons.stars_rounded,
                       iconColor: const Color(0xFFD97706),
                       label: 'Reward Points (10%)',
-                      value: '$_estimatedPoints pts',
+                      value: '${BillRewardEntry.fmtPoints(_estimatedPoints)} pts',
                       valueColor: const Color(0xFFD97706),
                     ),
                   ],
                 ),
               ),
+
+            // ── Redeem Zone discount preview ────────────────────────────────────
+            // Shown only when this scan is tied to a Redeem Zone shop and no
+            // validation issue is blocking the auto-claim path.
+            if (_issue == null &&
+                provider.pendingShopId != null &&
+                (provider.pendingDiscount ?? 0) > 0) ...[
+              const SizedBox(height: 14),
+              Builder(builder: (context) {
+                final pct = provider.pendingDiscount!;
+                final discountValue = _billAmount * pct / 100;
+                final wallet = provider.currentPoints;
+                final deducted =
+                    discountValue < wallet ? discountValue : wallet;
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFBBDEFB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Redeem Zone — $pct% discount',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _blue),
+                      ),
+                      const SizedBox(height: 10),
+                      _RewardRow(
+                        icon: Icons.percent_rounded,
+                        iconColor: const Color(0xFF6B7280),
+                        label: 'Discount Value',
+                        value: '₹${discountValue.toStringAsFixed(0)}',
+                        valueColor: const Color(0xFF374151),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: Divider(height: 1, color: Color(0xFFBBDEFB)),
+                      ),
+                      _RewardRow(
+                        icon: Icons.remove_circle_outline_rounded,
+                        iconColor: const Color(0xFFC62828),
+                        label: 'Points to be Deducted',
+                        value:
+                            '${BillRewardEntry.fmtPoints(deducted.toDouble())} pts',
+                        valueColor: const Color(0xFFC62828),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
 
             const SizedBox(height: 14),
 
@@ -819,7 +944,10 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                 ),
               ),
 
-            if (_manualMode) ...[
+            // Only allow leaving manual mode when there's no OCR validation
+            // issue — a flagged bill (date/shop mismatch) must go through
+            // review and can't be silently switched back to auto-claim.
+            if (_manualMode && _issue == null) ...[
               const SizedBox(height: 10),
               Center(
                 child: TextButton(

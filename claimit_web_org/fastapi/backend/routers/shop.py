@@ -13,6 +13,9 @@ from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as 
 import json
 import re
 
+# ─── Redeem Zone discount tiers (Merchant categorization) ──────────────────────
+_ALLOWED_DISCOUNTS = {5, 10, 15, 20, 25, 30}
+
 # ─── Category string → category_ids mapping ───────────────────────────────────
 _CATEGORY_MAP: dict[str, int] = {
     # ID 1 — New Deals / General
@@ -218,6 +221,12 @@ async def register_shop(
     discount_percentage: int = Form(15),
     current_user=Depends(get_current_user),
 ):
+    if discount_percentage not in _ALLOWED_DISCOUNTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"discount_percentage must be one of {sorted(_ALLOWED_DISCOUNTS)}",
+        )
+
     user_id = str(current_user["_id"])
     user_email = current_user.get("email", "")
 
@@ -313,6 +322,11 @@ async def get_dashboard(current_user=Depends(get_current_user)):
 # ─── Offer ────────────────────────────────────────────────────
 @router.put("/offer")
 async def update_offer(request: OfferUpdateRequest, current_user=Depends(get_current_user)):
+    if request.discount_percentage not in _ALLOWED_DISCOUNTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"discount_percentage must be one of {sorted(_ALLOWED_DISCOUNTS)}",
+        )
     user_id = str(current_user["_id"])
     result = await shops_collection.update_one(
         {"user_id": user_id},
@@ -320,6 +334,9 @@ async def update_offer(request: OfferUpdateRequest, current_user=Depends(get_cur
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Shop not found")
+    # Mirror updated discount into app-facing fields (was missing — app's
+    # cached "discount" field would otherwise go stale after an offer change).
+    await _sync_shop_to_app(user_id)
     return {"discount_percentage": request.discount_percentage}
 
 

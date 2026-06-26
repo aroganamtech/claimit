@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (input.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please enter your mobile number or email')),
+            content: Text('Please enter your email')),
       );
       return;
     }
@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 32),
 
                           const Text(
-                            'Enter your mobile number or Email',
+                            'Enter your email',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 14,
@@ -193,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _controller,
                             keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              hintText: 'Email / Phone',
+                              hintText: 'Email',
                               hintStyle: const TextStyle(
                                 color: Color(0xFF9CA3AF),
                                 fontSize: 15,

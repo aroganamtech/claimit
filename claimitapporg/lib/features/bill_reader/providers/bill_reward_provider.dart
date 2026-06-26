@@ -23,12 +23,12 @@ import '../../../core/utils/error_handler.dart';
 class BillRewardProvider extends ChangeNotifier {
   // ── Wallet ─────────────────────────────────────────────────────────────────
   double _lifetimeCashback = 0;
-  int    _currentPoints    = 0;
+  double _currentPoints    = 0;
   double _cashbackWallet   = 0;
   bool   _walletLoaded     = false;
 
   double get lifetimeCashback => _lifetimeCashback;
-  int    get currentPoints    => _currentPoints;
+  double get currentPoints    => _currentPoints;
   double get cashbackWallet   => _cashbackWallet;
   bool   get walletLoaded     => _walletLoaded;
 
@@ -40,6 +40,9 @@ class BillRewardProvider extends ChangeNotifier {
   DateTime? _pendingBillDate;
   String?   _pendingBillNumber;
   String?   _pendingBillTime;   // "HH:MM" from OCR receipt
+  String?   _pendingShopId;     // Redeem Zone shop id — set before scanning
+  int?      _pendingDiscount;   // Redeem Zone discount % shown on eligibility screen
+  String?   _pendingExpectedShopName; // Redeem Zone shop's registered name — for OCR match
 
   double?   get pendingTotal      => _pendingTotal;
   String?   get pendingImagePath  => _pendingImagePath;
@@ -48,6 +51,40 @@ class BillRewardProvider extends ChangeNotifier {
   DateTime? get pendingBillDate   => _pendingBillDate;
   String?   get pendingBillNumber => _pendingBillNumber;
   String?   get pendingBillTime   => _pendingBillTime;
+  String?   get pendingShopId     => _pendingShopId;
+  int?      get pendingDiscount   => _pendingDiscount;
+  String?   get pendingExpectedShopName => _pendingExpectedShopName;
+
+  /// Called from RedeemEligibilityScreen before pushing to the scanner, so
+  /// the eventual /bill/scan call knows which Redeem Zone shop (and its
+  /// registered discount %) this bill belongs to, and so the OCR step can
+  /// verify the scanned bill is actually from that shop.
+  void setRedeemContext({
+    String? shopId,
+    int?    discountPercent,
+    String? expectedShopName,
+  }) {
+    _pendingShopId           = shopId;
+    _pendingDiscount         = discountPercent;
+    _pendingExpectedShopName = expectedShopName;
+  }
+
+  /// Normalizes both names (lowercase, alphanumeric only) and checks for a
+  /// substring match in either direction — tolerant of OCR noise (extra
+  /// branch/address words, punctuation, case) without being a free-for-all.
+  /// Returns true when there's no expected shop set (non-Redeem-Zone scan).
+  bool matchesExpectedShop(String? scannedName) {
+    final expected = _pendingExpectedShopName;
+    if (expected == null || expected.trim().isEmpty) return true;
+    if (scannedName == null || scannedName.trim().isEmpty) return false;
+
+    String norm(String s) =>
+        s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final e = norm(expected);
+    final s = norm(scannedName);
+    if (e.isEmpty || s.isEmpty) return false;
+    return e.contains(s) || s.contains(e);
+  }
 
   // ── History ────────────────────────────────────────────────────────────────
   final List<BillRewardEntry> _history = [];
@@ -81,7 +118,12 @@ class BillRewardProvider extends ChangeNotifier {
   Future<void> _restoreFromCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _currentPoints    = prefs.getInt(_kPoints)       ?? 0;
+      try {
+        _currentPoints = prefs.getDouble(_kPoints) ?? 0;
+      } catch (_) {
+        // Legacy cache saved with setInt() before points became decimal-aware.
+        _currentPoints = (prefs.getInt(_kPoints) ?? 0).toDouble();
+      }
       _cashbackWallet   = prefs.getDouble(_kCbWallet)  ?? 0;
       _lifetimeCashback = prefs.getDouble(_kLifetime)  ?? 0;
 
@@ -108,7 +150,7 @@ class BillRewardProvider extends ChangeNotifier {
   Future<void> _saveToCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt   (_kPoints,   _currentPoints);
+      await prefs.setDouble(_kPoints,   _currentPoints);
       await prefs.setDouble(_kCbWallet, _cashbackWallet);
       await prefs.setDouble(_kLifetime, _lifetimeCashback);
 
@@ -142,7 +184,7 @@ class BillRewardProvider extends ChangeNotifier {
   Future<void> loadWallet() async {
     try {
       final data = await BillService.instance.fetchWallet();
-      _currentPoints    = (data['reward_points']     as num?)?.toInt()    ?? _currentPoints;
+      _currentPoints    = (data['reward_points']     as num?)?.toDouble() ?? _currentPoints;
       _cashbackWallet   = (data['cashback_wallet']   as num?)?.toDouble() ?? _cashbackWallet;
       _lifetimeCashback = (data['lifetime_cashback'] as num?)?.toDouble() ?? _lifetimeCashback;
       _walletLoaded     = true;
@@ -278,6 +320,7 @@ class BillRewardProvider extends ChangeNotifier {
         totalAmount: total,
         imagePath:   _pendingImagePath,
         shopName:    shopName,
+        shopId:      _pendingShopId,
         billNumber:  _pendingBillNumber,
         billDate:    _pendingBillDate,
         billTime:    _pendingBillTime,
@@ -289,7 +332,7 @@ class BillRewardProvider extends ChangeNotifier {
       final serverName = result['shop_name'] as String?;
       if (serverName != null && serverName.isNotEmpty) shopName = serverName;
 
-      _currentPoints    = (result['reward_points']     as num?)?.toInt()    ?? (_currentPoints + localPts);
+      _currentPoints    = (result['reward_points']     as num?)?.toDouble() ?? (_currentPoints + localPts);
       _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
       _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
 
@@ -332,6 +375,9 @@ class BillRewardProvider extends ChangeNotifier {
     _pendingBillDate   = null;
     _pendingBillNumber = null;
     _pendingBillTime   = null;
+    _pendingShopId     = null;
+    _pendingDiscount   = null;
+    _pendingExpectedShopName = null;
 
     notifyListeners();
 
@@ -369,9 +415,9 @@ class BillRewardProvider extends ChangeNotifier {
     final cb    = (m['earned_cashback'] as num?)?.toDouble()
                ?? (m['cashback']        as num?)?.toDouble()
                ?? total * 0.01;
-    final pts   = (m['earned_points']   as num?)?.toInt()
-               ?? (m['reward_points']   as num?)?.toInt()
-               ?? (total * 0.1).round();
+    final pts   = (m['earned_points']   as num?)?.toDouble()
+               ?? (m['reward_points']   as num?)?.toDouble()
+               ?? total / 10;
 
     DateTime? billDate;
     if (m['bill_date'] != null) {

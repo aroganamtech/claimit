@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from utils.s3 import upload_base64 as _s3_b64_async, generate_presigned_url_sync as _presign
-from database import app_db, app_bill_reviews_collection, app_notifications_collection
+from database import (
+    app_db, app_bill_reviews_collection, app_notifications_collection,
+    app_shops_collection,
+)
 from utils.dependencies import get_current_user_optional
 from bson import ObjectId
 from datetime import datetime
@@ -41,6 +44,7 @@ class BillScanRequest(BaseModel):
     total_amount:  float
     reward_points: Optional[int]  = None   # ignored — we recalc server-side
     shop_name:     Optional[str]  = None
+    shop_id:       Optional[str]  = None   # Redeem Zone shop — enables discount-aware calc
     bill_number:   Optional[str]  = None
     bill_date:     Optional[str]  = None   # YYYY-MM-DD from OCR
     image_base64:  Optional[str]  = None   # stored for audit if needed
@@ -85,6 +89,21 @@ def _dup_key(shop: str, bill_no: str, bill_date: str, amount: float) -> str:
     return f"{s}|{bill_date}|{amt}"
 
 
+def _names_match(expected: Optional[str], scanned: Optional[str]) -> bool:
+    """Lenient shop-name match — identical logic to app/routes/bill.py and
+    BillRewardProvider.matchesExpectedShop on the Flutter client."""
+    if not expected or not expected.strip():
+        return True
+    if not scanned or not scanned.strip():
+        return False
+    import re
+    norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+    e, s = norm(expected), norm(scanned)
+    if not e or not s:
+        return False
+    return e in s or s in e
+
+
 # ── POST /bill/scan ───────────────────────────────────────────────────────────
 @router.post("/scan")
 async def bill_scan(
@@ -115,12 +134,45 @@ async def bill_scan(
     if await _scans.find_one({"user_id": uid, "dup_key": key}):
         raise HTTPException(status_code=409, detail="Bill already scanned")
 
+    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
+    discount_pct = 0
+    if body.shop_id:
+        try:
+            shop_doc = await app_shops_collection.find_one({"_id": ObjectId(body.shop_id)})
+        except Exception:
+            shop_doc = None
+        discount_pct = (shop_doc or {}).get("discount") or 0
+
+        # Safety net — reject a clear shop-name mismatch instead of silently
+        # crediting/deducting against the wrong Redeem Zone shop.
+        expected_name = (shop_doc or {}).get("name")
+        if expected_name and not _names_match(expected_name, body.shop_name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":          "shop_mismatch",
+                    "message":       f"Scanned shop name does not match the "
+                                     f"selected Redeem Zone shop ({expected_name}).",
+                    "expected_shop": expected_name,
+                    "scanned_shop":  body.shop_name,
+                },
+            )
+
     # ── Calculate rewards (server is authoritative) ──────────────────────────
-    earned_cb  = round(total * 0.01, 2)   # 1 %  cashback
-    earned_pts = round(total * 0.10)      # 10 % reward points
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    earned_pts = round(total / 10, 1)
+    earned_cb  = round(total * 0.01, 2)   # 1 % cashback — unchanged
+
+    # Redeem Zone math: the shop's registered discount % applies directly to
+    # the scanned bill total (kept in sync with app/routes/bill.py).
+    discount_value  = 0.0
+    deducted_points = 0
+    if discount_pct:
+        discount_value  = round(total * discount_pct / 100, 2)
+        deducted_points = min(discount_value, wallet["reward_points"])
 
     # ── Cumulative update ─────────────────────────────────────────────────────
-    new_pts      = wallet["reward_points"]     + earned_pts
+    new_pts      = wallet["reward_points"]     - deducted_points + earned_pts
     new_cb_wallet= wallet["cashback_wallet"]   + earned_cb
     new_lifetime = wallet["lifetime_cashback"] + earned_cb
     new_scans    = wallet.get("total_scans", 0) + 1
@@ -141,9 +193,13 @@ async def bill_scan(
         "user_id":         uid,
         "dup_key":         key,
         "shop_name":       (body.shop_name or "Shop").strip(),
+        "shop_id":         body.shop_id,
         "total_amount":    total,
         "earned_cashback": earned_cb,
         "earned_points":   earned_pts,
+        "discount_percent": discount_pct,
+        "discount_value":  discount_value,
+        "deducted_points": deducted_points,
         "bill_number":     body.bill_number,
         "bill_date":       bill_date,
         "scanned_at":      datetime.utcnow(),
@@ -157,6 +213,10 @@ async def bill_scan(
         # Earned this scan
         "earned_cashback":  earned_cb,
         "earned_points":    earned_pts,
+        # Redeem Zone discount audit (0 / 0.0 when this wasn't a redeem-zone bill)
+        "discount_percent": discount_pct,
+        "discount_value":   discount_value,
+        "deducted_points":  deducted_points,
         # New user welcome bonus info
         "is_new_user_bonus": is_first,
         "bonus_points":     (await _get_new_user_config())["reward_points"] if is_first else 0,
@@ -214,6 +274,7 @@ async def get_history(current_user=Depends(get_current_user_optional)):
 class ManualBillRequest(BaseModel):
     total_amount:   float
     shop_name:      Optional[str] = None
+    shop_id:        Optional[str] = None   # Redeem Zone shop — enables discount-aware calc
     bill_number:    Optional[str] = None
     bill_date:      Optional[str] = None
     bill_time:      Optional[str] = None
@@ -248,6 +309,7 @@ async def submit_manual_review(
     doc = {
         "user_id":       uid,
         "shop_name":     (body.shop_name or "").strip(),
+        "shop_id":       body.shop_id,
         "total_amount":  body.total_amount,
         "bill_number":   body.bill_number or "",
         "bill_date":     body.bill_date or datetime.utcnow().strftime("%Y-%m-%d"),
