@@ -5,13 +5,23 @@ class BillRewardEntry {
   final String shopName;
   final Color shopColor;
   final double totalBill;
+  // Redeem Bill: ₹ value of the discount applied (always 0 for Reward Bill).
   final double discount;
-  final double cashback;    // 1% of bill e.g. Rs.5000 -> Rs.50
-  final double rewardPoints; // 1:10 rule e.g. Rs.1564 -> 156.4 pts (decimal preserved)
+  // Reward Bill: 1% cashback earned (always 0 for Redeem Bill).
+  final double cashback;
+  // Reward Bill: 1:10 points earned, e.g. Rs.1564 -> 156.4 pts (always 0 for
+  // Redeem Bill — Redeem never earns points, it only spends them).
+  final double rewardPoints;
+  // Redeem Bill: points spent against the discount (always 0 for Reward Bill).
+  final double pointsDeducted;
   final DateTime date;      // scan date/time (when the user scanned)
   final DateTime? billDate; // date printed on the bill (from OCR)
   final String? billNumber; // bill/invoice/receipt number from OCR
   final String? billTime;   // time printed on the bill e.g. "14:30" (from OCR)
+  /// 'redeem' (spent points on a discount, earns nothing) or
+  /// 'reward' (earned cashback + points, no discount). Defaults to 'reward'
+  /// for older entries created before this field existed.
+  final String scanType;
 
   const BillRewardEntry({
     required this.id,
@@ -22,10 +32,16 @@ class BillRewardEntry {
     required this.rewardPoints,
     required this.date,
     double? cashback,
+    this.pointsDeducted = 0,
     this.billDate,
     this.billNumber,
     this.billTime,
-  }) : cashback = cashback ?? totalBill * 0.01;
+    String? scanType,
+  }) : cashback = cashback ?? totalBill * 0.01,
+       scanType = scanType ?? 'reward';
+
+  bool get isRedeem => scanType == 'redeem';
+  bool get isReward => scanType != 'redeem';
 
   /// 1:10 rule — bill ÷ 10, decimal preserved (e.g. Rs.1564 -> 156.4 pts)
   static double calcPoints(double totalBill) => totalBill / 10;

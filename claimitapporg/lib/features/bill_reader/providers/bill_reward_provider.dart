@@ -40,9 +40,10 @@ class BillRewardProvider extends ChangeNotifier {
   DateTime? _pendingBillDate;
   String?   _pendingBillNumber;
   String?   _pendingBillTime;   // "HH:MM" from OCR receipt
-  String?   _pendingShopId;     // Redeem Zone shop id — set before scanning
+  String?   _pendingShopId;     // Redeem/Reward shop id — set before scanning
   int?      _pendingDiscount;   // Redeem Zone discount % shown on eligibility screen
-  String?   _pendingExpectedShopName; // Redeem Zone shop's registered name — for OCR match
+  String?   _pendingExpectedShopName; // Redeem/Reward shop's registered name — for OCR match
+  String?   _pendingScanType;   // 'redeem' | 'reward' — which flow this scan belongs to
 
   double?   get pendingTotal      => _pendingTotal;
   String?   get pendingImagePath  => _pendingImagePath;
@@ -54,11 +55,16 @@ class BillRewardProvider extends ChangeNotifier {
   String?   get pendingShopId     => _pendingShopId;
   int?      get pendingDiscount   => _pendingDiscount;
   String?   get pendingExpectedShopName => _pendingExpectedShopName;
+  String?   get pendingScanType   => _pendingScanType;
+  bool      get isPendingRedeem   => _pendingScanType == 'redeem';
+  bool      get isPendingReward   => _pendingScanType == 'reward';
 
   /// Called from RedeemEligibilityScreen before pushing to the scanner, so
   /// the eventual /bill/scan call knows which Redeem Zone shop (and its
   /// registered discount %) this bill belongs to, and so the OCR step can
   /// verify the scanned bill is actually from that shop.
+  /// Redeem Bill ONLY spends existing points against the discount — it never
+  /// earns cashback or reward points (see claimReward()).
   void setRedeemContext({
     String? shopId,
     int?    discountPercent,
@@ -67,6 +73,20 @@ class BillRewardProvider extends ChangeNotifier {
     _pendingShopId           = shopId;
     _pendingDiscount         = discountPercent;
     _pendingExpectedShopName = expectedShopName;
+    _pendingScanType         = 'redeem';
+  }
+
+  /// Called before pushing to the scanner from a Reward Zone shop's detail
+  /// page. Reward Bill has no discount — the user pays full price, scans the
+  /// bill afterward, and earns cashback + reward points on the bill total.
+  void setRewardContext({
+    String? shopId,
+    String? expectedShopName,
+  }) {
+    _pendingShopId           = shopId;
+    _pendingDiscount         = null;   // Reward never applies a discount
+    _pendingExpectedShopName = expectedShopName;
+    _pendingScanType         = 'reward';
   }
 
   /// Normalizes both names (lowercase, alphanumeric only) and checks for a
@@ -310,8 +330,24 @@ class BillRewardProvider extends ChangeNotifier {
         ? _pendingShopName!
         : 'Shop';
 
-    final localPts = BillRewardEntry.calcPoints(total);
-    final localCb  = BillRewardEntry.calcCashback(total);
+    // Back-compat: older callers may not have set a pending scan type — infer
+    // it the same way the server does (shop + discount present -> redeem).
+    final scanType = _pendingScanType ??
+        ((_pendingShopId != null && (_pendingDiscount ?? 0) > 0)
+            ? 'redeem'
+            : 'reward');
+    final isRedeem = scanType == 'redeem';
+
+    // ── Redeem Bill: ONLY spends existing points against the discount — it
+    //    never earns cashback or reward points. ──────────────────────────────
+    // ── Reward Bill: earns cashback + points on the bill total, no discount. ─
+    final discountPct   = isRedeem ? (_pendingDiscount ?? 0) : 0;
+    final discountValue = isRedeem ? (total * discountPct / 100) : 0.0;
+    final localDeducted = isRedeem
+        ? (discountValue < _currentPoints ? discountValue : _currentPoints)
+        : 0.0;
+    final localPts = isRedeem ? 0.0 : BillRewardEntry.calcPoints(total);
+    final localCb  = isRedeem ? 0.0 : BillRewardEntry.calcCashback(total);
 
     bool serverSuccess = false;
 
@@ -321,6 +357,7 @@ class BillRewardProvider extends ChangeNotifier {
         imagePath:   _pendingImagePath,
         shopName:    shopName,
         shopId:      _pendingShopId,
+        scanType:    scanType,
         billNumber:  _pendingBillNumber,
         billDate:    _pendingBillDate,
         billTime:    _pendingBillTime,
@@ -332,40 +369,53 @@ class BillRewardProvider extends ChangeNotifier {
       final serverName = result['shop_name'] as String?;
       if (serverName != null && serverName.isNotEmpty) shopName = serverName;
 
-      _currentPoints    = (result['reward_points']     as num?)?.toDouble() ?? (_currentPoints + localPts);
-      _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
-      _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
+      if (isRedeem) {
+        // Only the points balance changes (deducted) — cashback wallet and
+        // lifetime cashback are untouched by a Redeem scan.
+        _currentPoints = (result['reward_points'] as num?)?.toDouble() ??
+            (_currentPoints - localDeducted);
+      } else {
+        _currentPoints    = (result['reward_points']     as num?)?.toDouble() ?? (_currentPoints + localPts);
+        _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
+        _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
 
-      // New-user 1000-point welcome bonus
-      if (result['is_new_user_bonus'] == true) {
-        _bonusPoints           = (result['bonus_points'] as num?)?.toInt() ?? 1000;
-        _showNewUserBonusPopup = true;
+        // New-user 1000-point welcome bonus (Reward path only)
+        if (result['is_new_user_bonus'] == true) {
+          _bonusPoints           = (result['bonus_points'] as num?)?.toInt() ?? 1000;
+          _showNewUserBonusPopup = true;
+        }
       }
     } catch (e) {
       if (e is BillAlreadyScannedException) rethrow;
       AppError.friendly(e, '', context: 'BillSync');
-      // Fallback: apply locally so the user still sees the reward this session
-      _currentPoints    += localPts;
-      _cashbackWallet   += localCb;
-      _lifetimeCashback += localCb;
+      // Fallback: apply locally so the user still sees the result this session
+      if (isRedeem) {
+        _currentPoints -= localDeducted;
+      } else {
+        _currentPoints    += localPts;
+        _cashbackWallet   += localCb;
+        _lifetimeCashback += localCb;
+      }
     }
 
     // Add to local history (even on server fallback — avoids blank history)
     final scanNow = DateTime.now();
     final entry = BillRewardEntry(
-      id:           serverSuccess
-                      ? 'scan_${scanNow.millisecondsSinceEpoch}'
-                      : 'local_${scanNow.millisecondsSinceEpoch}',
-      shopName:     shopName,
-      shopColor:    _shopColors[_history.length % _shopColors.length],
-      totalBill:    total,
-      discount:     localCb,
-      cashback:     localCb,
-      rewardPoints: localPts,
-      date:         scanNow,
-      billDate:     _pendingBillDate,
-      billNumber:   _pendingBillNumber,
-      billTime:     _pendingBillTime,
+      id:             serverSuccess
+                        ? 'scan_${scanNow.millisecondsSinceEpoch}'
+                        : 'local_${scanNow.millisecondsSinceEpoch}',
+      shopName:       shopName,
+      shopColor:      _shopColors[_history.length % _shopColors.length],
+      totalBill:      total,
+      discount:       isRedeem ? discountValue : 0,
+      cashback:       isRedeem ? 0 : localCb,
+      rewardPoints:   isRedeem ? 0 : localPts,
+      pointsDeducted: isRedeem ? localDeducted : 0,
+      date:           scanNow,
+      billDate:       _pendingBillDate,
+      billNumber:     _pendingBillNumber,
+      billTime:       _pendingBillTime,
+      scanType:       scanType,
     );
     _history.insert(0, entry);
 
@@ -378,6 +428,7 @@ class BillRewardProvider extends ChangeNotifier {
     _pendingShopId     = null;
     _pendingDiscount   = null;
     _pendingExpectedShopName = null;
+    _pendingScanType   = null;
 
     notifyListeners();
 
@@ -412,12 +463,24 @@ class BillRewardProvider extends ChangeNotifier {
 
   static BillRewardEntry _entryFromMap(Map<String, dynamic> m, Color color) {
     final total = (m['total_amount']    as num?)?.toDouble() ?? 0;
+
+    // scan_type may be absent on older/cached records — infer the same way
+    // the server does: a discount % present means it was a Redeem scan.
+    final rawType = m['scan_type'] as String?;
+    final hasDiscountPct = ((m['discount_percent'] as num?) ?? 0) > 0;
+    final scanType = (rawType == 'redeem' || rawType == 'reward')
+        ? rawType
+        : (hasDiscountPct ? 'redeem' : 'reward');
+    final isRedeem = scanType == 'redeem';
+
     final cb    = (m['earned_cashback'] as num?)?.toDouble()
                ?? (m['cashback']        as num?)?.toDouble()
-               ?? total * 0.01;
+               ?? (isRedeem ? 0 : total * 0.01);
     final pts   = (m['earned_points']   as num?)?.toDouble()
                ?? (m['reward_points']   as num?)?.toDouble()
-               ?? total / 10;
+               ?? (isRedeem ? 0 : total / 10);
+    final discountValue   = (m['discount_value']  as num?)?.toDouble() ?? 0;
+    final pointsDeducted  = (m['deducted_points'] as num?)?.toDouble() ?? 0;
 
     DateTime? billDate;
     if (m['bill_date'] != null) {
@@ -431,17 +494,19 @@ class BillRewardProvider extends ChangeNotifier {
     }
 
     return BillRewardEntry(
-      id:           m['id'] as String? ?? m['_id'] as String? ?? '',
-      shopName:     m['shop_name'] as String? ?? 'Shop',
-      shopColor:    color,
-      totalBill:    total,
-      discount:     cb,
-      cashback:     cb,
-      rewardPoints: pts,
-      date:         scannedAt,
-      billDate:     billDate,
-      billNumber:   m['bill_number'] as String?,
-      billTime:     m['bill_time']   as String?,
+      id:             m['id'] as String? ?? m['_id'] as String? ?? '',
+      shopName:       m['shop_name'] as String? ?? 'Shop',
+      shopColor:      color,
+      totalBill:      total,
+      discount:       isRedeem ? discountValue : 0,
+      cashback:       isRedeem ? 0 : cb,
+      rewardPoints:   isRedeem ? 0 : pts,
+      pointsDeducted: isRedeem ? pointsDeducted : 0,
+      date:           scannedAt,
+      billDate:       billDate,
+      billNumber:     m['bill_number'] as String?,
+      billTime:       m['bill_time']   as String?,
+      scanType:       scanType,
     );
   }
 
@@ -452,6 +517,9 @@ class BillRewardProvider extends ChangeNotifier {
     'total_amount':    e.totalBill,
     'earned_cashback': e.cashback,
     'earned_points':   e.rewardPoints,
+    'discount_value':  e.discount,
+    'deducted_points': e.pointsDeducted,
+    'scan_type':       e.scanType,
     'bill_number':     e.billNumber,
     'bill_time':       e.billTime,
     'bill_date':       e.billDate?.toIso8601String(),

@@ -48,8 +48,8 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
         return 'The bill date doesn\'t match today\'s date. Please review '
             'the details below and submit for manual review.';
       case 'shop_mismatch':
-        return 'The shop name on the bill doesn\'t match the Redeem Zone '
-            'shop you selected. Please review the details below and submit '
+        return 'The shop name on the bill doesn\'t match the shop you '
+            'selected. Please review the details below and submit '
             'for manual review.';
       default:
         return 'We couldn\'t fully verify this bill automatically. Please '
@@ -247,6 +247,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
         imagePath:    imagePath,
         shopName:     shopName.isNotEmpty ? shopName : null,
         shopId:       provider.pendingShopId,
+        scanType:     provider.pendingScanType,
         billNumber:   provider.pendingBillNumber,
         billDate:     provider.pendingBillDate,
         billTime:     provider.pendingBillTime,
@@ -621,7 +622,9 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
             const SizedBox(height: 16),
 
             // ── Reward preview ────────────────────────────────────────────────
-            if (_estimatedPoints > 0)
+            // Reward Bill only — never shown for a Redeem scan, since Redeem
+            // never earns cashback or points (it only spends points).
+            if (!provider.isPendingRedeem && _estimatedPoints > 0)
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 14),
@@ -675,6 +678,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
             // Shown only when this scan is tied to a Redeem Zone shop and no
             // validation issue is blocking the auto-claim path.
             if (_issue == null &&
+                provider.isPendingRedeem &&
                 provider.pendingShopId != null &&
                 (provider.pendingDiscount ?? 0) > 0) ...[
               const SizedBox(height: 14),

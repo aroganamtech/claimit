@@ -64,11 +64,23 @@ final _shellNavKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 // e.g. `rootNavigatorKey.currentContext?.push('/notifications')`.
 final GlobalKey<NavigatorState> rootNavigatorKey = _rootNavKey;
 
+// Lets any screen with background media (autoplaying video/audio — e.g. the
+// home banner, Promo Reelz) know the instant another screen is pushed on
+// top of it, so it can pause/mute immediately instead of playing on unseen
+// underneath, and resume only if it's still the page actually in view when
+// the user comes back. Subscribe with a `RouteAware` mixin:
+//   ModalRoute.of(context) (or rootNavigatorKey.currentContext for widgets
+//   nested inside the bottom-nav shell) → appRouteObserver.subscribe(...)
+//   in didChangeDependencies, unsubscribe in dispose, and override
+//   didPushNext() / didPopNext().
+final RouteObserver<PageRoute> appRouteObserver = RouteObserver<PageRoute>();
+
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
     return GoRouter(
       navigatorKey: _rootNavKey,
       initialLocation: '/splash',
+      observers: [appRouteObserver],
       refreshListenable: authProvider.authStateNotifier,
       redirect: (context, state) {
         final isLoggedIn = authProvider.isAuthenticated;

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../profile/providers/profile_provider.dart';
+import '../../bill_reader/providers/bill_reward_provider.dart';
 import '../services/shop_service.dart';
 import 'shop_list_screen.dart';
 
@@ -258,6 +259,19 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
     context.push('/redeem-loading', extra: widget.shop);
   }
 
+  // Reward Bill: no eligibility/discount check needed — the user pays full
+  // price first, so we go straight to the scanner bound to this shop. The
+  // OCR confirm step then validates shop name, bill date, and dedupes
+  // against past scans before granting cashback + reward points.
+  void _scanForReward() {
+    final shop = widget.shop;
+    context.read<BillRewardProvider>().setRewardContext(
+      shopId: shop.id,
+      expectedShopName: shop.name,
+    );
+    context.push('/bill-reader/scanner');
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────────────────
@@ -467,6 +481,33 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                           elevation: 0,
                         ),
                         child: const Text('Redeem Now',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+
+                if (s.hasRedeem) const SizedBox(height: 12),
+
+                // ── Scan for Reward button ──────────────────────────────────
+                // Reward shops have no discount — user pays full price, then
+                // scans the bill afterward to earn cashback + reward points.
+                if (s.hasRewards)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _scanForReward,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                          elevation: 0,
+                        ),
+                        child: const Text('Scan for Reward',
                             style: TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.bold)),
                       ),

@@ -177,8 +177,10 @@ class _BillScannerScreenState extends State<BillScannerScreen>
   @override
   Widget build(BuildContext context) {
     final billProvider = context.watch<BillRewardProvider>();
-    final isRedeemZone  = billProvider.pendingShopId != null;
-    final redeemShop    = billProvider.pendingExpectedShopName ?? 'Redeem Shop';
+    final hasShopContext = billProvider.pendingShopId != null;
+    final isRedeem        = billProvider.isPendingRedeem;
+    final shopLabel       = billProvider.pendingExpectedShopName ??
+        (isRedeem ? 'Redeem Shop' : 'Reward Shop');
     final redeemDiscount = billProvider.pendingDiscount ?? 0;
 
     return Scaffold(
@@ -276,12 +278,12 @@ class _BillScannerScreenState extends State<BillScannerScreen>
             ),
           ),
 
-          // ── Hint text / Redeem Zone shop + discount banner ──────────────
+          // ── Hint text / Redeem-or-Reward shop + badge banner ────────────
           Positioned(
             top: 16,
-            left: isRedeemZone ? 16 : 0,
-            right: isRedeemZone ? 16 : 0,
-            child: isRedeemZone
+            left: hasShopContext ? 16 : 0,
+            right: hasShopContext ? 16 : 0,
+            child: hasShopContext
                 ? Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
@@ -297,7 +299,7 @@ class _BillScannerScreenState extends State<BillScannerScreen>
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            redeemShop,
+                            shopLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -307,8 +309,8 @@ class _BillScannerScreenState extends State<BillScannerScreen>
                             ),
                           ),
                         ),
-                        if (redeemDiscount > 0) ...[
-                          const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                        if (isRedeem && redeemDiscount > 0)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
@@ -324,8 +326,24 @@ class _BillScannerScreenState extends State<BillScannerScreen>
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          )
+                        else if (!isRedeem)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1565C0),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'CASHBACK + POINTS',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        ],
                       ],
                     ),
                   )

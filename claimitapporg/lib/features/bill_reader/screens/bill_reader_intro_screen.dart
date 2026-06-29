@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../shops/models/shop_category.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BillReaderIntroScreen
+// Entry point for the bottom-nav "Scan Bill" button. The user must first
+// choose WHICH kind of bill they're about to scan, since the two flows are
+// mutually exclusive and have different reward logic:
+//
+//   • Redeem Bill  — user already has points; pick a Redeem Zone shop,
+//                    confirm eligibility, then scan to SPEND points against
+//                    a discount. No cashback/points are ever earned here.
+//   • Reward Bill  — no discount upfront; pick a Reward Zone shop, pay full
+//                    price, then scan afterward to EARN cashback + points.
+//                    No points are ever spent here.
+// ─────────────────────────────────────────────────────────────────────────────
 
 class BillReaderIntroScreen extends StatelessWidget {
   const BillReaderIntroScreen({super.key});
 
-  static const _blue = Color(0xFF1565C0);
-  static const _lightBlue = Color(0xFFE3F2FD);
+  static const _blue  = Color(0xFF1565C0);
+  static const _green = Color(0xFF059669);
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +34,7 @@ class BillReaderIntroScreen extends StatelessWidget {
           onPressed: () => context.pop(),
         ),
         title: const Text(
-          'Bill Reader',
+          'Scan Bill',
           style: TextStyle(
             color: _blue,
             fontWeight: FontWeight.bold,
@@ -29,155 +44,173 @@ class BillReaderIntroScreen extends StatelessWidget {
         centerTitle: false,
       ),
       body: SafeArea(
-        top: false,          // AppBar handles top inset
-        child: Column(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'What kind of bill are you scanning?',
+                style: TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose the option that matches your purchase before scanning.',
+                style: TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ── Redeem Bill option ───────────────────────────────────────
+              _ChoiceCard(
+                color: _green,
+                bgColor: const Color(0xFFE8F5E9),
+                icon: Icons.redeem_rounded,
+                title: 'Redeem Bill',
+                subtitle: 'Use your existing points to claim a discount at a '
+                    'Redeem Zone shop. No cashback or points are earned.',
+                buttonLabel: 'Select Redeem Shop',
+                onTap: () => context.push(
+                  '/shops',
+                  extra: const ShopCategory(
+                    id: -1,
+                    name: 'Redeem Zone',
+                    icon: Icons.redeem_rounded,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Reward Bill option ───────────────────────────────────────
+              _ChoiceCard(
+                color: _blue,
+                bgColor: const Color(0xFFE3F2FD),
+                icon: Icons.card_giftcard_rounded,
+                title: 'Reward Bill',
+                subtitle: 'Pay full price at a Reward Zone shop, then scan '
+                    'the bill to earn cashback + reward points.',
+                buttonLabel: 'Select Reward Shop',
+                onTap: () => context.push(
+                  '/shops',
+                  extra: const ShopCategory(
+                    id: 0,
+                    name: 'Reward Zone',
+                    icon: Icons.card_membership_rounded,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChoiceCard extends StatelessWidget {
+  final Color color;
+  final Color bgColor;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String buttonLabel;
+  final VoidCallback onTap;
+
+  const _ChoiceCard({
+    required this.color,
+    required this.bgColor,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.buttonLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Subtitle
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-            child: Text(
-              'scan your bill to apply your discount or cashback',
-              style: TextStyle(
-                color: _blue,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 26),
               ),
-            ),
-          ),
-
-          // Scan card
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE0E0E0)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: _lightBlue,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.camera_alt_outlined, color: _blue, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: color,
                   ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Scan the Bill',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Scan your shop bill using your phone camera',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Demo video label
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              'How to Scan your Bill - Demo Video',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Demo video placeholder
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Placeholder background
-                    Container(
-                      color: const Color(0xFFF5F5F5),
-                      child: Image.network(
-                        'https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=700&q=80',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFFE8EAF6),
-                          child: const Icon(Icons.receipt_long_rounded,
-                              size: 80, color: Color(0xFF9FA8DA)),
-                        ),
-                      ),
-                    ),
-                    // Play button overlay
-                    Center(
-                      child: Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.play_arrow_rounded,
-                            color: Colors.white, size: 40),
-                      ),
-                    ),
-                  ],
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFF6B7280),
+              height: 1.4,
             ),
           ),
-
-          const SizedBox(height: 20),
-
-          // Scan Bill button — bottom padding accounts for home bar on tall phones.
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () => context.push('/bill-reader/scanner'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                  elevation: 0,
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              onPressed: onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: const Text(
-                  'Scan Bill',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                elevation: 0,
+              ),
+              child: Text(
+                buttonLabel,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ),
           ),
         ],
-        ),       // Column
-      ),         // SafeArea
+      ),
     );
   }
 }

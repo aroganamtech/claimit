@@ -1115,6 +1115,7 @@ import 'package:video_player/video_player.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/router/app_router.dart' show appRouteObserver, rootNavigatorKey;
 import '../../auth/providers/auth_provider.dart';
 import '../../notifications/providers/notification_provider.dart';
 import '../../deals/models/deal_model.dart';
@@ -2012,16 +2013,34 @@ class _BannerSlide extends StatefulWidget {
   State<_BannerSlide> createState() => _BannerSlideState();
 }
 
-class _BannerSlideState extends State<_BannerSlide> {
+class _BannerSlideState extends State<_BannerSlide> with RouteAware {
   VideoPlayerController? _ctrl;
   bool _videoReady = false;
   bool _videoFailed = false;
   bool _endedFired = false;
+  bool _coveredByAnotherRoute = false;
+  PageRoute? _subscribedRoute;
 
   @override
   void initState() {
     super.initState();
     if (widget.data.isVideo) _initVideo();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Home lives inside the bottom-nav shell, so the route that actually
+    // gets covered when e.g. Scan Bill / National Ads / a shop page opens
+    // is the shell's route on the ROOT navigator — not the nested `/home`
+    // route — so look the route up from the root navigator's context.
+    final rootCtx = rootNavigatorKey.currentContext;
+    final route = rootCtx != null ? ModalRoute.of(rootCtx) : null;
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      appRouteObserver.subscribe(this, route);
+      _subscribedRoute = route;
+    }
   }
 
   void _initVideo() {
@@ -2030,8 +2049,9 @@ class _BannerSlideState extends State<_BannerSlide> {
     ctrl.initialize().then((_) {
       if (!mounted) return;
       ctrl.setLooping(false);
-      ctrl.setVolume(0); // muted autoplay — this is a background ad banner
-      if (widget.isActive) ctrl.play();
+      // Sound plays for the active banner; non-active ones stay muted.
+      ctrl.setVolume(widget.isActive ? 1.0 : 0);
+      if (widget.isActive && !_coveredByAnotherRoute) ctrl.play();
       setState(() => _videoReady = true);
     }).catchError((e) {
       debugPrint('Banner video init error: $e');
@@ -2063,16 +2083,37 @@ class _BannerSlideState extends State<_BannerSlide> {
     if (widget.isActive != old.isActive && _ctrl != null && _videoReady) {
       if (widget.isActive) {
         _endedFired = false;
-        _ctrl!.seekTo(Duration.zero);
-        _ctrl!.play();
+        _ctrl!.setVolume(1.0);
+        if (!_coveredByAnotherRoute) {
+          _ctrl!.seekTo(Duration.zero);
+          _ctrl!.play();
+        }
       } else {
+        _ctrl!.setVolume(0);
         _ctrl!.pause();
       }
     }
   }
 
+  // ── RouteAware ───────────────────────────────────────────────────────────
+  // Stop the video (and its sound) the instant another screen covers Home —
+  // tapping the banner itself, Scan Bill, a shop page, etc. — and resume
+  // only if this slide is still the active one when the user comes back.
+  @override
+  void didPushNext() {
+    _coveredByAnotherRoute = true;
+    _ctrl?.pause();
+  }
+
+  @override
+  void didPopNext() {
+    _coveredByAnotherRoute = false;
+    if (widget.isActive && _videoReady) _ctrl?.play();
+  }
+
   @override
   void dispose() {
+    if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
     _ctrl?.dispose();
     super.dispose();
   }

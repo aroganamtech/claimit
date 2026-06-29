@@ -1230,11 +1230,37 @@ class _HistoryTabState extends State<_HistoryTab> {
               ),
             ),
           ),
-          title: Text(
-            entry.shopName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  entry.shopName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: entry.isRedeem
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFFE3F2FD),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  entry.isRedeem ? 'REDEEM' : 'REWARD',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: entry.isRedeem
+                        ? const Color(0xFF059669)
+                        : const Color(0xFF1565C0),
+                  ),
+                ),
+              ),
+            ],
           ),
           subtitle: Text(
             '$dateStr | $timeStr',
@@ -1255,14 +1281,24 @@ class _HistoryTabState extends State<_HistoryTab> {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                '${BillRewardEntry.fmtPoints(entry.rewardPoints)} ★',
-                style: const TextStyle(
-                  color: Color(0xFFD97706),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
+              if (entry.isRedeem)
+                Text(
+                  '−${BillRewardEntry.fmtPoints(entry.pointsDeducted)} pts',
+                  style: const TextStyle(
+                    color: Color(0xFFC62828),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                )
+              else
+                Text(
+                  '+${BillRewardEntry.fmtPoints(entry.rewardPoints)} ★',
+                  style: const TextStyle(
+                    color: Color(0xFFD97706),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
                 ),
-              ),
             ],
           ),
         );
@@ -1316,6 +1352,25 @@ class _HistoryTabState extends State<_HistoryTab> {
                     style: const TextStyle(
                         fontSize: 17, fontWeight: FontWeight.w700)),
               ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: entry.isRedeem
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFFE3F2FD),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  entry.isRedeem ? 'REDEEM BILL' : 'REWARD BILL',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: entry.isRedeem
+                        ? const Color(0xFF059669)
+                        : const Color(0xFF1565C0),
+                  ),
+                ),
+              ),
             ]),
             const SizedBox(height: 20),
             const Divider(),
@@ -1334,16 +1389,29 @@ class _HistoryTabState extends State<_HistoryTab> {
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF2563EB))),
-            _billRow('Cashback Earned', '₹ ${entry.cashback.toStringAsFixed(2)}',
-                valueStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF16A34A))),
-            _billRow('Reward Points', '${BillRewardEntry.fmtPoints(entry.rewardPoints)} pts ★',
-                valueStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFD97706))),
+            if (entry.isRedeem) ...[
+              _billRow('Discount Applied', '₹ ${entry.discount.toStringAsFixed(2)}',
+                  valueStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF16A34A))),
+              _billRow('Points Used', '− ${BillRewardEntry.fmtPoints(entry.pointsDeducted)} pts',
+                  valueStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFC62828))),
+            ] else ...[
+              _billRow('Cashback Earned', '₹ ${entry.cashback.toStringAsFixed(2)}',
+                  valueStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF16A34A))),
+              _billRow('Reward Points', '+ ${BillRewardEntry.fmtPoints(entry.rewardPoints)} pts ★',
+                  valueStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFD97706))),
+            ],
           ],
         ),
       ),
@@ -1617,6 +1685,7 @@ class _TransactionTile extends StatelessWidget {
     ];
     final dateStr =
         '${date.day} ${months[date.month]} ${date.year}';
+    final bool isRedeem = entry.isRedeem as bool;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1639,11 +1708,18 @@ class _TransactionTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
+              color: isRedeem
+                  ? const Color(0xFFE8F5E9)
+                  : const Color(0xFFEFF6FF),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.receipt_rounded,
-                color: Color(0xFF2563EB), size: 22),
+            child: Icon(
+              isRedeem ? Icons.redeem_rounded : Icons.receipt_rounded,
+              color: isRedeem
+                  ? const Color(0xFF059669)
+                  : const Color(0xFF2563EB),
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           // Shop + date
@@ -1651,15 +1727,32 @@ class _TransactionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  entry.shopName as String,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        entry.shopName as String,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF111827),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isRedeem ? '· Redeem' : '· Reward',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isRedeem
+                            ? const Color(0xFF059669)
+                            : const Color(0xFF2563EB),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -1670,16 +1763,20 @@ class _TransactionTile extends StatelessWidget {
               ],
             ),
           ),
-          // Cashback + bill amount
+          // Cashback/points + bill amount
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '+₹${(entry.cashback as double).toStringAsFixed(2)}',
-                style: const TextStyle(
+                isRedeem
+                    ? '−${BillRewardEntry.fmtPoints(entry.pointsDeducted as double)} pts'
+                    : '+₹${(entry.cashback as double).toStringAsFixed(2)}',
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF059669),
+                  color: isRedeem
+                      ? const Color(0xFFC62828)
+                      : const Color(0xFF059669),
                 ),
               ),
               const SizedBox(height: 3),

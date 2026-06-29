@@ -84,7 +84,8 @@ class BillScanRequest(BaseModel):
     total_amount:  float          = Field(..., gt=0)
     reward_points: Optional[int]  = None
     shop_name:     Optional[str]  = None
-    shop_id:       Optional[str]  = None   # Redeem Zone shop — enables discount-aware calc
+    shop_id:       Optional[str]  = None   # Redeem/Reward shop — enables server-side calc
+    scan_type:     Optional[str]  = None   # "redeem" | "reward" — see _resolve_scan_type
     bill_number:   Optional[str]  = None
     bill_date:     Optional[str]  = None
     bill_time:     Optional[str]  = None
@@ -96,7 +97,8 @@ class ManualReviewRequest(BaseModel):
     total_amount:  float  = Field(..., gt=0)
     image_base64:  str    = Field(..., description="Base64-encoded bill image")
     shop_name:     Optional[str] = None
-    shop_id:       Optional[str] = None   # Redeem Zone shop — enables discount-aware calc
+    shop_id:       Optional[str] = None   # Redeem/Reward shop — enables admin-side calc
+    scan_type:     Optional[str] = None   # "redeem" | "reward" — see _resolve_scan_type
     bill_number:   Optional[str] = None
     bill_date:     Optional[str] = None
     bill_time:     Optional[str] = None
@@ -120,6 +122,25 @@ def _dup_key(shop: str, bill_date: str, amount: float,
     if t:
         return f"{s}|{bill_date}|{t}|{amt}"
     return f"{s}|{bill_date}|{amt}"
+
+
+def _resolve_scan_type(raw: Optional[str], shop_id: Optional[str]) -> str:
+    """
+    Normalize scan_type to "redeem" or "reward".
+
+      • Redeem Bill — only spends existing reward points against a shop's
+        registered discount %.  No cashback / points are ever earned.
+      • Reward Bill — earns 1 % cashback + 10 % points on the bill total.
+        No discount is applied / no points are deducted.
+
+    Back-compat: older clients that don't send scan_type are treated as
+    "redeem" when a shop_id is present (matches the original Redeem Zone
+    behaviour) and "reward" otherwise (a plain scan with no shop context).
+    """
+    t = (raw or "").strip().lower()
+    if t in ("redeem", "reward"):
+        return t
+    return "redeem" if shop_id else "reward"
 
 
 def _names_match(expected: Optional[str], scanned: Optional[str]) -> bool:
@@ -187,19 +208,21 @@ async def scan_bill(data: BillScanRequest, request: Request):
     if await db.bill_scans.find_one({"user_id": uid, "dup_key": key}):
         raise HTTPException(status_code=409, detail="Bill already scanned")
 
-    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
+    scan_type = _resolve_scan_type(data.scan_type, data.shop_id)
+
+    # ── Look up merchant + verify the scanned shop matches the one selected ──
     discount_pct = 0
     if data.shop_id:
         try:
             shop_doc = await db.shops.find_one({"_id": ObjectId(data.shop_id)})
         except Exception:
             shop_doc = None
-        discount_pct = (shop_doc or {}).get("discount") or 0
 
         # Safety net — the client already checks this before submitting, but
         # the server re-checks in case the client check was bypassed/stale.
         # A clear mismatch is rejected; the app then routes the user to
         # manual review instead of silently auto-crediting the wrong shop.
+        # Applies to BOTH Redeem and Reward shops.
         expected_name = (shop_doc or {}).get("name")
         if expected_name and not _names_match(expected_name, data.shop_name):
             raise HTTPException(
@@ -207,22 +230,32 @@ async def scan_bill(data: BillScanRequest, request: Request):
                 detail={
                     "code":          "shop_mismatch",
                     "message":       f"Scanned shop name does not match the "
-                                     f"selected Redeem Zone shop ({expected_name}).",
+                                     f"selected shop ({expected_name}).",
                     "expected_shop": expected_name,
                     "scanned_shop":  data.shop_name,
                 },
             )
 
-    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-    earned_cb  = round(total * 0.01, 2)
-    earned_pts = round(total / 10, 1)
+        # Discount % only ever applies on the Redeem path.
+        if scan_type == "redeem":
+            discount_pct = (shop_doc or {}).get("discount") or 0
 
-    # Redeem Zone math: the shop's registered discount % applies directly to
-    # the scanned bill total — e.g. 1000 pts wallet, 10% discount shop,
-    # ₹2000 bill → discount value = ₹200 → 200 pts deducted → 800 pts left.
+    # ── Reward Bill: earn cashback + points. Redeem Bill: earn nothing — ────
+    # it only spends existing points against the shop's discount.
+    earned_cb  = 0.0
+    earned_pts = 0.0
+    if scan_type == "reward":
+        # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+        earned_cb  = round(total * 0.01, 2)
+        earned_pts = round(total / 10, 1)
+
+    # ── Redeem Bill: deduct existing points based on the shop's discount %. ──
+    # Reward Bill: never deducts — discount_pct is 0 above so this is skipped.
+    # e.g. 1000 pts wallet, 10% discount shop, ₹2000 bill →
+    # discount value = ₹200 → 200 pts deducted → 800 pts left.
     discount_value  = 0.0
     deducted_points = 0
-    if discount_pct:
+    if scan_type == "redeem" and discount_pct:
         discount_value  = round(total * discount_pct / 100, 2)
         deducted_points = min(discount_value, wallet["reward_points"])
 
@@ -246,6 +279,7 @@ async def scan_bill(data: BillScanRequest, request: Request):
     scan_doc = {
         "user_id":         uid,
         "dup_key":         key,
+        "scan_type":       scan_type,
         "shop_name":       shop_name,
         "shop_id":         data.shop_id,
         "total_amount":    total,
@@ -265,6 +299,7 @@ async def scan_bill(data: BillScanRequest, request: Request):
     # bill_scans is deleted after 24 h (dup-detection only); bill_history is kept forever.
     await db.bill_history.insert_one({
         "user_id":         uid,
+        "scan_type":       scan_type,
         "shop_name":       shop_name,
         "shop_id":         data.shop_id,
         "total_amount":    total,
@@ -285,11 +320,12 @@ async def scan_bill(data: BillScanRequest, request: Request):
     return {
         "ok":               True,
         "scan_id":          str(res.inserted_id),
+        "scan_type":        scan_type,
         "shop_name":        shop_name,
-        # Earned this scan
+        # Earned this scan (always 0 / 0.0 for a Redeem Bill)
         "earned_cashback":  earned_cb,
         "earned_points":    earned_pts,
-        # Redeem Zone discount audit (0 / 0.0 when this wasn't a redeem-zone bill)
+        # Discount audit (always 0 / 0.0 for a Reward Bill)
         "discount_percent": discount_pct,
         "discount_value":   discount_value,
         "deducted_points":  deducted_points,
@@ -326,10 +362,17 @@ async def bill_history(current_user: dict = Depends(get_current_user)):
     return [
         {
             "id":              str(r["_id"]),
+            # Older records (scanned before this field existed) are inferred
+            # from whether a discount was applied.
+            "scan_type":       r.get("scan_type")
+                                or ("redeem" if r.get("discount_percent") else "reward"),
             "shop_name":       r.get("shop_name", ""),
             "total_amount":    r.get("total_amount", 0),
             "earned_cashback": r.get("earned_cashback", 0),
             "earned_points":   r.get("earned_points", 0),
+            "discount_percent": r.get("discount_percent", 0),
+            "discount_value":  r.get("discount_value", 0),
+            "deducted_points": r.get("deducted_points", 0),
             "bill_number":     r.get("bill_number"),
             "bill_date":       r.get("bill_date"),
             "bill_time":       r.get("bill_time"),
@@ -354,6 +397,7 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
             pass
     doc = {
         "user_id":       uid,
+        "scan_type":     _resolve_scan_type(data.scan_type, data.shop_id),
         "total_amount":  round(data.total_amount, 2),
         "shop_name":     (data.shop_name or "").strip() or None,
         "shop_id":       data.shop_id,
@@ -430,14 +474,22 @@ async def admin_action_review(
     uid       = review.get("user_id", "")
     amount    = float(review.get("total_amount", 0))
     shop_name = review.get("shop_name") or "Shop"
-    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-    pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
-    cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
+    shop_id   = review.get("shop_id")
+    scan_type = _resolve_scan_type(review.get("scan_type"), shop_id)
 
-    # ── Redeem Zone: look up merchant's registered discount % (if any) ───────
-    shop_id      = review.get("shop_id")
+    # Redeem Bill manual reviews never earn cashback/points — they only spend
+    # existing points against the shop's discount (same rule as /bill/scan).
+    if scan_type == "redeem":
+        pts = 0
+        cb  = 0.0
+    else:
+        # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+        pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
+        cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
+
+    # ── Redeem Bill: look up merchant's registered discount % (if any) ───────
     discount_pct = 0
-    if shop_id:
+    if shop_id and scan_type == "redeem":
         try:
             shop_doc = await db.shops.find_one({"_id": ObjectId(shop_id)})
         except Exception:
@@ -473,6 +525,7 @@ async def admin_action_review(
         scan_now = now
         await db.bill_scans.insert_one({
             "user_id": uid, "dup_key": f"review|{review_id}",
+            "scan_type": scan_type,
             "shop_name": shop_name, "shop_id": shop_id, "total_amount": round(amount, 2),
             "earned_cashback": cb, "earned_points": pts,
             "discount_percent": discount_pct, "discount_value": discount_value,
@@ -485,6 +538,7 @@ async def admin_action_review(
         # Also write to permanent bill_history so it shows in the app
         await db.bill_history.insert_one({
             "user_id":         uid,
+            "scan_type":       scan_type,
             "shop_name":       shop_name,
             "shop_id":         shop_id,
             "total_amount":    round(amount, 2),
@@ -520,6 +574,7 @@ async def admin_action_review(
 
     return {
         "success": True, "action": data.action, "review_id": review_id,
+        "scan_type": scan_type,
         "reward_points": pts if data.action == "approve" else 0,
         "cashback":      cb  if data.action == "approve" else 0,
         "discount_value":  discount_value  if data.action == "approve" else 0.0,

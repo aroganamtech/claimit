@@ -12,6 +12,7 @@ import '../services/reel_service.dart';
 import '../../shops/services/shop_service.dart';
 import '../../shops/screens/shop_list_screen.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/router/app_router.dart' show appRouteObserver;
 
 class ReelzScreen extends StatefulWidget {
   const ReelzScreen({super.key});
@@ -385,9 +386,11 @@ class _ReelPage extends StatefulWidget {
   State<_ReelPage> createState() => _ReelPageState();
 }
 
-class _ReelPageState extends State<_ReelPage> {
+class _ReelPageState extends State<_ReelPage> with RouteAware {
   late VideoPlayerController _ctrl;
   bool _initialized = false;
+  bool _coveredByAnotherRoute = false;
+  PageRoute? _subscribedRoute;
 
   // Like state
   bool _liked = false;
@@ -409,12 +412,23 @@ class _ReelPageState extends State<_ReelPage> {
     _initVideo();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      appRouteObserver.subscribe(this, route);
+      _subscribedRoute = route;
+    }
+  }
+
   Future<void> _initVideo() async {
     _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl));
     try {
       await _ctrl.initialize();
       _ctrl.setLooping(true);
-      if (widget.isActive) {
+      if (widget.isActive && !_coveredByAnotherRoute) {
         _ctrl.play();
         _recordView();
       }
@@ -430,16 +444,35 @@ class _ReelPageState extends State<_ReelPage> {
     super.didUpdateWidget(old);
     if (widget.isActive != old.isActive) {
       if (widget.isActive) {
-        _ctrl.play();
-        _recordView();
+        if (!_coveredByAnotherRoute) {
+          _ctrl.play();
+          _recordView();
+        }
       } else {
         _ctrl.pause();
       }
     }
   }
 
+  // ── RouteAware ───────────────────────────────────────────────────────────
+  // Stop the video + sound the instant another screen is opened on top of
+  // Reelz (tapping the shop name, Scan Bill, etc.), and resume only if this
+  // page is still the one in view when the user comes back.
+  @override
+  void didPushNext() {
+    _coveredByAnotherRoute = true;
+    if (_initialized) _ctrl.pause();
+  }
+
+  @override
+  void didPopNext() {
+    _coveredByAnotherRoute = false;
+    if (_initialized && widget.isActive) _ctrl.play();
+  }
+
   @override
   void dispose() {
+    if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
     _ctrl.dispose();
     super.dispose();
   }

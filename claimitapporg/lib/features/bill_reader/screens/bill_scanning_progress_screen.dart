@@ -653,9 +653,11 @@ class _BillScanningProgressScreenState
 
   @override
   Widget build(BuildContext context) {
-    final billProvider  = context.watch<BillRewardProvider>();
-    final isRedeemZone  = billProvider.pendingShopId != null;
-    final redeemShop    = billProvider.pendingExpectedShopName ?? 'Redeem Shop';
+    final billProvider   = context.watch<BillRewardProvider>();
+    final hasShopContext = billProvider.pendingShopId != null;
+    final isRedeem       = billProvider.isPendingRedeem;
+    final shopLabel      = billProvider.pendingExpectedShopName ??
+        (isRedeem ? 'Redeem Shop' : 'Reward Shop');
     final redeemDiscount = billProvider.pendingDiscount ?? 0;
 
     return Scaffold(
@@ -687,7 +689,7 @@ class _BillScanningProgressScreenState
                 color: Color(0xFF1A1A1A),
               ),
             ),
-            if (isRedeemZone) ...[
+            if (hasShopContext) ...[
               const SizedBox(height: 10),
               Container(
                 padding:
@@ -704,7 +706,7 @@ class _BillScanningProgressScreenState
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        redeemShop,
+                        shopLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -714,12 +716,21 @@ class _BillScanningProgressScreenState
                         ),
                       ),
                     ),
-                    if (redeemDiscount > 0)
+                    if (isRedeem && redeemDiscount > 0)
                       Text(
                         '$redeemDiscount% OFF',
                         style: const TextStyle(
                           color: Color(0xFF2E7D32),
                           fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    else if (!isRedeem)
+                      const Text(
+                        'CASHBACK + POINTS',
+                        style: TextStyle(
+                          color: Color(0xFF1565C0),
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
