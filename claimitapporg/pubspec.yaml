@@ -40,6 +40,7 @@ dependencies:
   go_router: ^17.2.3
   flutter_svg: ^2.3.0
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
   google_fonts: ^8.1.0
   intl: ^0.20.2
   lottie: ^3.3.3
@@ -128,3 +129,4 @@ flutter:
     - assets/icons/
     - assets/icons/category_icon/
     - assets/icons/home_page_icons/
+    - assets/videos/

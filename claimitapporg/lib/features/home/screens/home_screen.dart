@@ -1493,6 +1493,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../shops/models/shop_category.dart';
+import '../../../core/router/app_router.dart' show appRouteObserver, homeShellCovered;
 
 /// The persistent shell that wraps every main tab.
 class HomeScreen extends StatefulWidget {
@@ -1503,7 +1504,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
+  PageRoute? _subscribedRoute;
+
   @override
   void initState() {
     super.initState();
@@ -1512,6 +1515,35 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ProfileProvider>().fetchLikedDealIds();
       _maybeShowAccountLinkPopup();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // HomeScreen sits between the outer root route and the inner bottom-nav
+    // shell navigator, so ModalRoute.of(context) here correctly resolves the
+    // OUTER route — the one that actually gets covered when e.g. Scan Bill,
+    // a shop page, or National Ads is pushed. Nested widgets like the home
+    // banner can't resolve this themselves (see homeShellCovered docs).
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      appRouteObserver.subscribe(this, route);
+      _subscribedRoute = route;
+    }
+  }
+
+  // ── RouteAware ─────────────────────────────────────────────────────────
+  @override
+  void didPushNext() => homeShellCovered.value = true;
+
+  @override
+  void didPopNext() => homeShellCovered.value = false;
+
+  @override
+  void dispose() {
+    if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+    super.dispose();
   }
 
   void _maybeShowAccountLinkPopup() {

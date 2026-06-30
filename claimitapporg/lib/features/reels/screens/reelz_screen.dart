@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models/reel_model.dart';
 import '../services/reel_service.dart';
+import '../services/reel_video_cache_service.dart';
 import '../../shops/services/shop_service.dart';
 import '../../shops/screens/shop_list_screen.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -60,6 +61,24 @@ class _ReelzScreenState extends State<ReelzScreen> {
       _currentPage = 0;
     });
     if (_pageCtrl.hasClients) _pageCtrl.jumpToPage(0);
+    _prefetchNext(0);
+  }
+
+  /// Starts downloading the *next* reel's video in the background while
+  /// the current one plays, so swiping to it feels instant — mirrors the
+  /// preloading behaviour of apps like Instagram/YouTube. Best-effort only:
+  /// if it fails for any reason the next reel simply streams from the
+  /// network like normal, so this can never break or crash the feed.
+  void _prefetchNext(int index) {
+    try {
+      final next = index + 1;
+      if (next < _filtered.length) {
+        ReelVideoCacheService.instance.prefetch(_filtered[next].videoUrl);
+      }
+    } catch (e) {
+      // Preloading is purely a nice-to-have — never let it affect the feed.
+      debugPrint('Reel prefetch error (ignored): $e');
+    }
   }
 
   // ── App bar (same structure as dashboard / notifications) ──────────────────
@@ -305,6 +324,7 @@ class _ReelzScreenState extends State<ReelzScreen> {
         _filtered = reels;
         _loading = false;
       });
+      _prefetchNext(_currentPage);
     }
   }
 
@@ -361,8 +381,10 @@ class _ReelzScreenState extends State<ReelzScreen> {
                     scrollDirection: Axis.vertical,
                     physics: const PageScrollPhysics(),
                     itemCount: _filtered.length,
-                    onPageChanged: (i) =>
-                        setState(() => _currentPage = i),
+                    onPageChanged: (i) {
+                      setState(() => _currentPage = i);
+                      _prefetchNext(i);
+                    },
                     itemBuilder: (context, index) => _ReelPage(
                       reel: _filtered[index],
                       isActive: index == _currentPage,
@@ -390,6 +412,7 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
   late VideoPlayerController _ctrl;
   bool _initialized = false;
   bool _coveredByAnotherRoute = false;
+  bool _disposed = false;
   PageRoute? _subscribedRoute;
 
   // Like state
@@ -424,8 +447,28 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
   }
 
   Future<void> _initVideo() async {
+    // Always assign a valid (uninitialized) controller synchronously first,
+    // so dispose() can never race against an unassigned `_ctrl`.
     _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl));
     try {
+      // If this video already finished downloading — e.g. it was preloaded
+      // while the previous reel was playing, or this reel was watched
+      // before — play it straight from disk: instant start, no
+      // re-download. This is a quick local-only lookup (capped wait), so
+      // it can never stall first playback if the file isn't ready yet.
+      final cached = await ReelVideoCacheService.instance
+          .getCachedFileIfReady(widget.reel.videoUrl);
+      if (_disposed) return;
+      if (cached != null) {
+        final placeholder = _ctrl;
+        _ctrl = VideoPlayerController.file(cached);
+        unawaited(placeholder.dispose());
+      } else {
+        // Not cached yet — stream from the network as usual, and make
+        // sure it's downloading in the background for next time.
+        ReelVideoCacheService.instance.prefetch(widget.reel.videoUrl);
+      }
+
       await _ctrl.initialize();
       _ctrl.setLooping(true);
       if (widget.isActive && !_coveredByAnotherRoute) {
@@ -472,6 +515,7 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
 
   @override
   void dispose() {
+    _disposed = true;
     if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
     _ctrl.dispose();
     super.dispose();

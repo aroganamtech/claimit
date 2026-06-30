@@ -38,6 +38,7 @@ import '../../features/classifieds/screens/add_post_flow.dart';
 import '../../features/classifieds/screens/classified_detail_screen.dart';
 import '../../features/classifieds/models/classified_post.dart';
 // Bill Reader flow
+import '../../features/bill_reader/screens/bill_reader_landing_screen.dart';
 import '../../features/bill_reader/screens/bill_reader_intro_screen.dart';
 import '../../features/bill_reader/screens/bill_confirm_screen.dart';
 // Redeem flow
@@ -64,16 +65,28 @@ final _shellNavKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 // e.g. `rootNavigatorKey.currentContext?.push('/notifications')`.
 final GlobalKey<NavigatorState> rootNavigatorKey = _rootNavKey;
 
-// Lets any screen with background media (autoplaying video/audio — e.g. the
-// home banner, Promo Reelz) know the instant another screen is pushed on
-// top of it, so it can pause/mute immediately instead of playing on unseen
-// underneath, and resume only if it's still the page actually in view when
-// the user comes back. Subscribe with a `RouteAware` mixin:
-//   ModalRoute.of(context) (or rootNavigatorKey.currentContext for widgets
-//   nested inside the bottom-nav shell) → appRouteObserver.subscribe(...)
-//   in didChangeDependencies, unsubscribe in dispose, and override
+// Lets any screen with background media (autoplaying video/audio — e.g.
+// Promo Reelz) know the instant another screen is pushed on top of it, so it
+// can pause/mute immediately instead of playing on unseen underneath, and
+// resume only if it's still the page actually in view when the user comes
+// back. Subscribe with a `RouteAware` mixin:
+//   ModalRoute.of(context) → appRouteObserver.subscribe(...) in
+//   didChangeDependencies, unsubscribe in dispose, and override
 //   didPushNext() / didPopNext().
+//
+// NOTE: this only works correctly for widgets whose context resolves the
+// route on the SAME Navigator the observer cares about. Home/Dashboard sits
+// inside the bottom-nav ShellRoute's NESTED shell navigator, so a widget deep
+// inside it (e.g. the banner) would resolve the wrong (inner) route. For
+// anything nested inside Home, use `homeShellCovered` below instead.
 final RouteObserver<PageRoute> appRouteObserver = RouteObserver<PageRoute>();
+
+// `_HomeScreenState` subscribes to `appRouteObserver` on the OUTER root route
+// (it sits correctly between that outer route and the inner shell navigator)
+// and flips this flag from didPushNext()/didPopNext(). Anything nested inside
+// Home (e.g. the banner video) listens to this instead of subscribing to the
+// observer directly, since its own context would resolve the wrong route.
+final ValueNotifier<bool> homeShellCovered = ValueNotifier<bool>(false);
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -250,6 +263,16 @@ class AppRouter {
         GoRoute(
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader',
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: const ValueKey('bill-reader-landing'),
+            child: const BillReaderLandingScreen(),
+            transitionsBuilder: (context, animation, secondary, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
+        ),
+        GoRoute(
+          parentNavigatorKey: _rootNavKey,
+          path: '/bill-reader/choose-type',
           pageBuilder: (context, state) => CustomTransitionPage(
             key: const ValueKey('bill-reader-intro'),
             child: const BillReaderIntroScreen(),

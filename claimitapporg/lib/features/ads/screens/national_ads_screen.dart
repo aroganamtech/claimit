@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/video_cache_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static fallback ads (shown when API returns nothing)
@@ -164,24 +166,24 @@ class _NationalAdsScreenState extends State<NationalAdsScreen> {
                         onChanged: (v) => setState(() => _query = v),
                       ),
                     ),
-                  if (!_showSearch)
-                    GestureDetector(
-                      onTap: () {},
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFD1D5DB)),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(children: [
-                          Icon(Icons.tune_rounded, size: 15, color: Color(0xFF374151)),
-                          SizedBox(width: 5),
-                          Text('Filter', style: TextStyle(fontSize: 13,
-                              color: Color(0xFF374151), fontWeight: FontWeight.w500)),
-                        ]),
-                      ),
-                    ),
+                  // if (!_showSearch)
+                  //   GestureDetector(
+                  //     onTap: () {},
+                  //     child: Container(
+                  //       margin: const EdgeInsets.only(right: 8),
+                  //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  //       decoration: BoxDecoration(
+                  //         border: Border.all(color: const Color(0xFFD1D5DB)),
+                  //         borderRadius: BorderRadius.circular(20),
+                  //       ),
+                  //       child: const Row(children: [
+                  //         Icon(Icons.tune_rounded, size: 15, color: Color(0xFF374151)),
+                  //         SizedBox(width: 5),
+                  //         Text('Filter', style: TextStyle(fontSize: 13,
+                  //             color: Color(0xFF374151), fontWeight: FontWeight.w500)),
+                  //       ]),
+                  //     ),
+                  //   ),
                   GestureDetector(
                     onTap: () => setState(() {
                       if (_showSearch) { _showSearch = false; _query = ''; _searchCtrl.clear(); }
@@ -247,6 +249,10 @@ class _AdCardState extends State<_AdCard> {
   VideoPlayerController? _ctrl;
   bool _videoReady = false;
   bool _videoFailed = false;
+  bool _disposed = false;
+  // Autoplay starts muted (like a feed preview). The first tap unmutes
+  // it — see _buildVideo's onTap below — so the ad's actual sound plays.
+  bool _muted = true;
 
   @override
   void initState() {
@@ -254,23 +260,42 @@ class _AdCardState extends State<_AdCard> {
     if (widget.ad.isVideo) _initVideo();
   }
 
-  void _initVideo() {
-    final ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.ad.videoUrl));
-    _ctrl = ctrl;
-    ctrl.initialize().then((_) {
-      if (!mounted) return;
-      ctrl.setLooping(true);
-      ctrl.setVolume(0); // muted inline preview
-      ctrl.play();
-      setState(() => _videoReady = true);
-    }).catchError((e) {
+  // Plays straight from disk if this ad's video was already cached (e.g.
+  // shown before in this session) — avoids re-downloading/re-loading it
+  // every time this card rebuilds. Falls back to the exact original
+  // network-streaming behavior if the cache isn't ready or anything fails.
+  Future<void> _initVideo() async {
+    final url = widget.ad.videoUrl;
+    final networkCtrl = VideoPlayerController.networkUrl(Uri.parse(url));
+    _ctrl = networkCtrl;
+    try {
+      final cached = await VideoCacheService.instance.getCachedFileIfReady(url);
+      if (_disposed) return;
+
+      var activeCtrl = networkCtrl;
+      if (cached != null) {
+        activeCtrl = VideoPlayerController.file(cached);
+        _ctrl = activeCtrl;
+        unawaited(networkCtrl.dispose());
+      } else {
+        VideoCacheService.instance.prefetch(url);
+      }
+
+      await activeCtrl.initialize();
+      if (_disposed) return;
+      activeCtrl.setLooping(true);
+      activeCtrl.setVolume(0); // muted inline preview
+      activeCtrl.play();
+      if (mounted) setState(() => _videoReady = true);
+    } catch (e) {
       debugPrint('Ad video init error: $e');
       if (mounted) setState(() => _videoFailed = true);
-    });
+    }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _ctrl?.dispose();
     super.dispose();
   }
@@ -316,7 +341,15 @@ class _AdCardState extends State<_AdCard> {
     }
     return GestureDetector(
       onTap: () => setState(() {
-        _ctrl!.value.isPlaying ? _ctrl!.pause() : _ctrl!.play();
+        if (_muted) {
+          // First tap: turn the sound on and make sure it's playing,
+          // instead of just toggling play/pause silently.
+          _muted = false;
+          _ctrl!.setVolume(1.0);
+          if (!_ctrl!.value.isPlaying) _ctrl!.play();
+        } else {
+          _ctrl!.value.isPlaying ? _ctrl!.pause() : _ctrl!.play();
+        }
       }),
       child: Stack(
         fit: StackFit.expand,

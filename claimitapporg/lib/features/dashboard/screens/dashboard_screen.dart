@@ -1115,7 +1115,7 @@ import 'package:video_player/video_player.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/network/api_client.dart';
-import '../../../core/router/app_router.dart' show appRouteObserver, rootNavigatorKey;
+import '../../../core/router/app_router.dart' show homeShellCovered;
 import '../../auth/providers/auth_provider.dart';
 import '../../notifications/providers/notification_provider.dart';
 import '../../deals/models/deal_model.dart';
@@ -1126,6 +1126,7 @@ import '../../shops/services/shop_service.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../reels/models/reel_model.dart';
 import '../../reels/services/reel_service.dart';
+import '../../../core/services/video_cache_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock data  (replace with live API calls once backend is wired up)
@@ -1403,10 +1404,14 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
   final PageController _bannerCtrl = PageController();
+  final ScrollController _scrollCtrl = ScrollController();
   Timer? _bannerTimer;
   int _currentBanner = 0;
   bool _isNearby = true;
   int _selectedCategory = 0;
+  // Banner is the first thing in the page; pause its video once it's been
+  // scrolled mostly out of view, resume once scrolled back near the top.
+  bool _bannerVisible = true;
 
   // API-loaded deals
   List<DealData> _nearbyDealsList = [];
@@ -1430,6 +1435,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scrollCtrl.addListener(_onScroll);
     // Auto-scroll banner — images advance after 5s, videos advance when
     // playback finishes (with a safety-timeout fallback). See
     // _scheduleNextBannerAdvance().
@@ -1442,6 +1448,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationProvider>().fetchNotifications();
     });
+  }
+
+  // Banner sits at the very top of the page (AspectRatio 16/9, full width).
+  // Once the user scrolls down past roughly half its height, pause it —
+  // mirroring how feeds like Instagram/Twitter pause inline video that's
+  // scrolled out of view — and resume it once scrolled back near the top.
+  void _onScroll() {
+    final bannerHeight = MediaQuery.of(context).size.width * 9 / 16;
+    final visible = _scrollCtrl.offset < bannerHeight * 0.5;
+    if (visible != _bannerVisible) {
+      setState(() => _bannerVisible = visible);
+    }
   }
 
   List<_BannerData> get _activeBanners =>
@@ -1643,6 +1661,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     _bannerTimer?.cancel();
     _reelzAdTimer?.cancel();
     _bannerCtrl.dispose();
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
     // Note: _reelzAdLastShownAt is static — intentionally kept alive across rebuilds
     super.dispose();
   }
@@ -1814,6 +1834,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         },
         color: const Color(0xFF1565C0),
         child: SingleChildScrollView(
+          controller: _scrollCtrl,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -1843,6 +1864,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 'banner_${i}_${_activeBanners[i].imageUrl}${_activeBanners[i].videoUrl}'),
                             data: _activeBanners[i],
                             isActive: i == _currentBanner,
+                            visible: _bannerVisible,
                             onVideoEnded: () {
                               if (i == _currentBanner) _advanceBanner();
                             },
@@ -2001,11 +2023,15 @@ class _DashboardScreenState extends State<DashboardScreen>
 class _BannerSlide extends StatefulWidget {
   final _BannerData data;
   final bool isActive;
+  // Whether the banner is currently scrolled into view on the Home page.
+  // When the user scrolls it off-screen, playback (and sound) should stop.
+  final bool visible;
   final VoidCallback? onVideoEnded;
   const _BannerSlide({
     super.key,
     required this.data,
     this.isActive = false,
+    this.visible = true,
     this.onVideoEnded,
   });
 
@@ -2013,50 +2039,32 @@ class _BannerSlide extends StatefulWidget {
   State<_BannerSlide> createState() => _BannerSlideState();
 }
 
-class _BannerSlideState extends State<_BannerSlide> with RouteAware {
+class _BannerSlideState extends State<_BannerSlide> {
   VideoPlayerController? _ctrl;
   bool _videoReady = false;
   bool _videoFailed = false;
   bool _endedFired = false;
   bool _coveredByAnotherRoute = false;
-  PageRoute? _subscribedRoute;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
+    _coveredByAnotherRoute = homeShellCovered.value;
+    homeShellCovered.addListener(_onShellCoveredChanged);
     if (widget.data.isVideo) _initVideo();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Home lives inside the bottom-nav shell, so the route that actually
-    // gets covered when e.g. Scan Bill / National Ads / a shop page opens
-    // is the shell's route on the ROOT navigator — not the nested `/home`
-    // route — so look the route up from the root navigator's context.
-    final rootCtx = rootNavigatorKey.currentContext;
-    final route = rootCtx != null ? ModalRoute.of(rootCtx) : null;
-    if (route is PageRoute && route != _subscribedRoute) {
-      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
-      appRouteObserver.subscribe(this, route);
-      _subscribedRoute = route;
-    }
+  // Fires the instant Scan Bill / National Ads / a shop page / any other
+  // screen covers Home (flagged by _HomeScreenState, which is positioned to
+  // see the real outer route) — pause immediately instead of playing on
+  // unseen underneath, and resume only if this slide is still in view.
+  void _onShellCoveredChanged() {
+    _coveredByAnotherRoute = homeShellCovered.value;
+    _applyPlayState();
   }
 
-  void _initVideo() {
-    final ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.data.videoUrl));
-    _ctrl = ctrl;
-    ctrl.initialize().then((_) {
-      if (!mounted) return;
-      ctrl.setLooping(false);
-      // Sound plays for the active banner; non-active ones stay muted.
-      ctrl.setVolume(widget.isActive ? 1.0 : 0);
-      if (widget.isActive && !_coveredByAnotherRoute) ctrl.play();
-      setState(() => _videoReady = true);
-    }).catchError((e) {
-      debugPrint('Banner video init error: $e');
-      if (mounted) setState(() => _videoFailed = true);
-    });
+  void _attachEndedListener(VideoPlayerController ctrl) {
     ctrl.addListener(() {
       if (!mounted || _endedFired) return;
       final v = ctrl.value;
@@ -2065,6 +2073,57 @@ class _BannerSlideState extends State<_BannerSlide> with RouteAware {
         widget.onVideoEnded?.call();
       }
     });
+  }
+
+  // Plays straight from disk if this banner's video was already cached
+  // (e.g. seen earlier in this session) — avoids re-downloading/re-loading
+  // it every time the carousel rebuilds this slide. Falls back to the
+  // exact original network-streaming behavior if the cache isn't ready or
+  // anything goes wrong.
+  Future<void> _initVideo() async {
+    final url = widget.data.videoUrl;
+    final networkCtrl = VideoPlayerController.networkUrl(Uri.parse(url));
+    _ctrl = networkCtrl;
+    try {
+      final cached =
+          await VideoCacheService.instance.getCachedFileIfReady(url);
+      if (_disposed) return;
+
+      var activeCtrl = networkCtrl;
+      if (cached != null) {
+        activeCtrl = VideoPlayerController.file(cached);
+        _ctrl = activeCtrl;
+        unawaited(networkCtrl.dispose());
+      } else {
+        VideoCacheService.instance.prefetch(url);
+      }
+
+      _attachEndedListener(activeCtrl);
+      await activeCtrl.initialize();
+      if (_disposed) return;
+      activeCtrl.setLooping(false);
+      if (mounted) setState(() => _videoReady = true);
+      _applyPlayState();
+    } catch (e) {
+      debugPrint('Banner video init error: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    }
+  }
+
+  // Single source of truth for whether this slide should currently be
+  // playing with sound — only when it's the active carousel slide, AND
+  // Home itself is actually on-screen (not scrolled away from, not covered
+  // by another pushed screen like Scan Bill / a shop page / National Ads).
+  void _applyPlayState() {
+    final ctrl = _ctrl;
+    if (ctrl == null || !_videoReady) return;
+    final shouldPlay = widget.isActive && widget.visible && !_coveredByAnotherRoute;
+    ctrl.setVolume(shouldPlay ? 1.0 : 0);
+    if (shouldPlay) {
+      if (!ctrl.value.isPlaying) ctrl.play();
+    } else {
+      if (ctrl.value.isPlaying) ctrl.pause();
+    }
   }
 
   @override
@@ -2080,40 +2139,21 @@ class _BannerSlideState extends State<_BannerSlide> with RouteAware {
       if (widget.data.isVideo) _initVideo();
       return;
     }
-    if (widget.isActive != old.isActive && _ctrl != null && _videoReady) {
-      if (widget.isActive) {
-        _endedFired = false;
-        _ctrl!.setVolume(1.0);
-        if (!_coveredByAnotherRoute) {
-          _ctrl!.seekTo(Duration.zero);
-          _ctrl!.play();
-        }
-      } else {
-        _ctrl!.setVolume(0);
-        _ctrl!.pause();
-      }
+    if (_ctrl == null || !_videoReady) return;
+    if (widget.isActive && !old.isActive) {
+      // Newly became the active carousel slide — start fresh from the top.
+      _endedFired = false;
+      _ctrl!.seekTo(Duration.zero);
     }
-  }
-
-  // ── RouteAware ───────────────────────────────────────────────────────────
-  // Stop the video (and its sound) the instant another screen covers Home —
-  // tapping the banner itself, Scan Bill, a shop page, etc. — and resume
-  // only if this slide is still the active one when the user comes back.
-  @override
-  void didPushNext() {
-    _coveredByAnotherRoute = true;
-    _ctrl?.pause();
-  }
-
-  @override
-  void didPopNext() {
-    _coveredByAnotherRoute = false;
-    if (widget.isActive && _videoReady) _ctrl?.play();
+    if (widget.isActive != old.isActive || widget.visible != old.visible) {
+      _applyPlayState();
+    }
   }
 
   @override
   void dispose() {
-    if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+    _disposed = true;
+    homeShellCovered.removeListener(_onShellCoveredChanged);
     _ctrl?.dispose();
     super.dispose();
   }
@@ -2761,8 +2801,11 @@ class _NearbyShopChip extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Full-screen Reelz ad overlay — covers the entire screen like an
-/// Instagram/TikTok interstitial. ✕ button is immediately visible (no delay).
-class _ReelzAdDialog extends StatelessWidget {
+/// Instagram/TikTok interstitial, and actually autoplays the reel's video.
+/// Like a real video ad (YouTube-style): Skip/Close is locked for a random
+/// 5–10s while the ad plays, with a live countdown shown in their place —
+/// only once that elapses can the user skip/close it.
+class _ReelzAdDialog extends StatefulWidget {
   final ReelItem reel;
   final VoidCallback onClose;
   final VoidCallback onWatch;
@@ -2774,277 +2817,380 @@ class _ReelzAdDialog extends StatelessWidget {
   });
 
   @override
+  State<_ReelzAdDialog> createState() => _ReelzAdDialogState();
+}
+
+class _ReelzAdDialogState extends State<_ReelzAdDialog> {
+  VideoPlayerController? _ctrl;
+  bool _videoReady = false;
+  bool _videoFailed = false;
+
+  late final int _skipAfterSec; // random 5–10s, like a real video ad
+  late int _remaining;
+  Timer? _countdownTimer;
+
+  bool get _canSkip => _remaining <= 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _skipAfterSec = 5 + Random().nextInt(6); // 5–10 inclusive
+    _remaining = _skipAfterSec;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_remaining <= 0) {
+        _countdownTimer?.cancel();
+        return;
+      }
+      setState(() => _remaining--);
+    });
+    if (widget.reel.videoUrl.isNotEmpty) _initVideo();
+  }
+
+  void _initVideo() {
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl));
+    _ctrl = ctrl;
+    ctrl.initialize().then((_) {
+      if (!mounted) return;
+      ctrl.setLooping(true);
+      ctrl.setVolume(1.0); // full-screen ad — plays with sound, like a real one
+      ctrl.play();
+      setState(() => _videoReady = true);
+    }).catchError((e) {
+      debugPrint('Reelz ad video init error: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    });
+  }
+
+  void _close() {
+    if (!_canSkip) return; // locked until the countdown finishes
+    widget.onClose();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // ── Full-screen thumbnail ──────────────────────────────────────
-          GestureDetector(
-            onTap: onWatch,
-            child: reel.thumbnailUrl.isNotEmpty
-                ? Image.network(
-                    reel.thumbnailUrl,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: const Color(0xFF0F172A),
-                      child: const Center(
-                        child: Icon(Icons.movie_creation_rounded,
-                            color: Colors.white24, size: 80),
+    final reel = widget.reel;
+    return PopScope(
+      // Block the hardware/gesture back button too, until skip unlocks —
+      // "the user can't skip the ad" should mean ALL exits, not just the X.
+      canPop: _canSkip,
+      child: Material(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // ── Full-screen video (falls back to thumbnail while loading) ──
+            GestureDetector(
+              onTap: widget.onWatch,
+              child: _videoReady && _ctrl != null
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _ctrl!.value.size.width,
+                        height: _ctrl!.value.size.height,
+                        child: VideoPlayer(_ctrl!),
                       ),
-                    ),
-                  )
-                : Container(
-                    color: const Color(0xFF0F172A),
-                    child: const Center(
-                      child: Icon(Icons.movie_creation_rounded,
-                          color: Colors.white24, size: 80),
-                    ),
-                  ),
-          ),
-
-          // ── Gradient: dark at top & bottom ────────────────────────────
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.55),
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.80),
-                  ],
-                  stops: const [0.0, 0.25, 0.60, 1.0],
-                ),
-              ),
-            ),
-          ),
-
-          // ── Top bar: "Promo Reelz" badge  +  ✕ close ─────────────────
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    // Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAB308),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.movie_creation_rounded,
-                              color: Colors.white, size: 14),
-                          SizedBox(width: 5),
-                          Text(
-                            'Ad',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                    )
+                  : (reel.thumbnailUrl.isNotEmpty
+                      ? Image.network(
+                          reel.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFF0F172A),
+                            child: const Center(
+                              child: Icon(Icons.movie_creation_rounded,
+                                  color: Colors.white24, size: 80),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    // ✕ Close — immediately visible, no delay
-                    GestureDetector(
-                      onTap: onClose,
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: Colors.white38, width: 1),
-                        ),
-                        child: const Icon(Icons.close_rounded,
-                            color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                        )
+                      : Container(
+                          color: const Color(0xFF0F172A),
+                          child: const Center(
+                            child: Icon(Icons.movie_creation_rounded,
+                                color: Colors.white24, size: 80),
+                          ),
+                        )),
             ),
-          ),
 
-          // ── Centre play button ─────────────────────────────────────────
-          Center(
-            child: GestureDetector(
-              onTap: onWatch,
-              child: Container(
-                width: 72,
-                height: 72,
+            // ── Gradient: dark at top & bottom ────────────────────────────
+            Positioned.fill(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.20),
-                  shape: BoxShape.circle,
-                  border:
-                      Border.all(color: Colors.white70, width: 2),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.55),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.80),
+                    ],
+                    stops: const [0.0, 0.25, 0.60, 1.0],
+                  ),
                 ),
-                child: const Icon(Icons.play_arrow_rounded,
-                    color: Colors.white, size: 44),
               ),
             ),
-          ),
 
-          // ── Bottom info + action buttons ───────────────────────────────
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Shop name
-                    if (reel.shopName.isNotEmpty)
-                      Text(
-                        reel.shopName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          shadows: [
-                            Shadow(
-                                color: Colors.black54, blurRadius: 8)
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-
-                    if (reel.shopLocation.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on_rounded,
-                              color: Colors.white70, size: 14),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              reel.shopLocation,
-                              style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-
-                    if (reel.offer.isNotEmpty) ...[
-                      const SizedBox(height: 10),
+            // ── Top bar: "Ad" badge  +  countdown / ✕ close ───────────────
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      // Badge
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: const Color(0xFFEAB308),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: Colors.white30, width: 0.8),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.local_offer_rounded,
-                                color: Color(0xFFFBBF24), size: 14),
-                            const SizedBox(width: 6),
-                            Flexible(
+                            Icon(Icons.movie_creation_rounded,
+                                color: Colors.white, size: 14),
+                            SizedBox(width: 5),
+                            Text(
+                              'Ad',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      // Locked while counting down — shows seconds left,
+                      // like a real ad's "Skip Ad in Xs". Becomes a tappable
+                      // ✕ once the countdown finishes.
+                      _canSkip
+                          ? GestureDetector(
+                              onTap: _close,
+                              child: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.5),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.white38, width: 1),
+                                ),
+                                child: const Icon(Icons.close_rounded,
+                                    color: Colors.white, size: 20),
+                              ),
+                            )
+                          : Container(
+                              width: 38,
+                              height: 38,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.5),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: Colors.white38, width: 1),
+                              ),
                               child: Text(
-                                reel.offer,
+                                '$_remaining',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
                                 ),
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Centre play button — only while video hasn't started ──────
+            if (!_videoReady)
+              Center(
+                child: GestureDetector(
+                  onTap: widget.onWatch,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.20),
+                      shape: BoxShape.circle,
+                      border:
+                          Border.all(color: Colors.white70, width: 2),
+                    ),
+                    child: const Icon(Icons.play_arrow_rounded,
+                        color: Colors.white, size: 44),
+                  ),
+                ),
+              ),
+
+            // ── Bottom info + action buttons ───────────────────────────────
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Shop name
+                      if (reel.shopName.isNotEmpty)
+                        Text(
+                          reel.shopName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                  color: Colors.black54, blurRadius: 8)
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+
+                      if (reel.shopLocation.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                color: Colors.white70, size: 14),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                reel.shopLocation,
+                                style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
+                      ],
 
-                    const SizedBox(height: 20),
-
-                    // Action buttons row
-                    Row(
-                      children: [
-                        // Skip
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: onClose,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(
-                                  color: Colors.white38, width: 1.5),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(28)),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 14),
-                            ),
-                            child: const Text('Skip',
-                                style: TextStyle(fontSize: 15)),
+                      if (reel.offer.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: Colors.white30, width: 0.8),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Watch Reel
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            onPressed: onWatch,
-                            icon: const Icon(
-                                Icons.play_circle_filled_rounded,
-                                size: 20),
-                            label: const Text('Watch Reel',
-                                style: TextStyle(fontSize: 15)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(28)),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 14),
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.local_offer_rounded,
+                                  color: Color(0xFFFBBF24), size: 14),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  reel.offer,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ],
+
+                      const SizedBox(height: 20),
+
+                      // Action buttons row
+                      Row(
+                        children: [
+                          // Skip — disabled + counting down until unlocked
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _canSkip ? _close : null,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                disabledForegroundColor: Colors.white54,
+                                side: BorderSide(
+                                    color: _canSkip
+                                        ? Colors.white38
+                                        : Colors.white24,
+                                    width: 1.5),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(28)),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 14),
+                              ),
+                              child: Text(
+                                _canSkip ? 'Skip' : 'Skip in ${_remaining}s',
+                                style: const TextStyle(fontSize: 15),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Watch Reel — always available; engaging further
+                          // isn't "skipping", so it isn't locked
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton.icon(
+                              onPressed: widget.onWatch,
+                              icon: const Icon(
+                                  Icons.play_circle_filled_rounded,
+                                  size: 20),
+                              label: const Text('Watch Reel',
+                                  style: TextStyle(fontSize: 15)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(28)),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
