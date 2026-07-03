@@ -37,7 +37,7 @@ export default function ShopDashboard() {
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 600, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, maxWidth: 900, marginBottom: 28 }}>
           <div className="stat-card">
             <div style={{ fontSize: 24 }}>🎯</div>
             <div className="stat-value">{data?.total_reward_given ?? 0}</div>
@@ -47,6 +47,15 @@ export default function ShopDashboard() {
             <div style={{ fontSize: 24 }}>🏪</div>
             <div className="stat-value">{data?.total_redeem_used ?? 0}</div>
             <div className="stat-label">Total Redeem Used</div>
+          </div>
+          <div className="stat-card">
+            <div style={{ fontSize: 24 }}>❤️</div>
+            <div className="stat-value">
+              {(data?.total_favorites ?? 0) >= 1000
+                ? ((data.total_favorites) / 1000).toFixed(1) + 'k'
+                : (data?.total_favorites ?? 0)}
+            </div>
+            <div className="stat-label">Total Favorites</div>
           </div>
         </div>
 

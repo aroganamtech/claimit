@@ -1428,9 +1428,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   double? _userLat;
   double? _userLng;
 
-  // Reelz ad overlay
-  Timer? _reelzAdTimer;
-
   @override
   void initState() {
     super.initState();
@@ -1443,7 +1440,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     _loadDeals();
     _loadNearbyShopsFromGPS();
     _loadBanners();
-    _scheduleReelzAd();
+    // NOTE: random-timer ads removed — interstitials now only appear at
+    // natural transition points (after a bill scan) via showReelzAdIfReady().
     // Fetch unread notification count for the bell badge
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationProvider>().fetchNotifications();
@@ -1521,57 +1519,18 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (mounted && parsed.isNotEmpty) {
           setState(() => _apiBanners = parsed);
           _scheduleNextBannerAdvance();
+          // Pre-download every banner video in the background as soon as
+          // the banner list arrives, so by the time the carousel reaches a
+          // video slide it plays straight from disk instead of showing a
+          // long loading screen.
+          for (final b in parsed) {
+            if (b.isVideo) VideoCacheService.instance.prefetch(b.videoUrl);
+          }
         }
       }
     } catch (e) {
       debugPrint('_loadBanners error: $e');
     }
-  }
-
-  /// Returns true if at least 5 minutes have passed since the last ad.
-  bool _canShowAd() {
-    if (_reelzAdLastShownAt == null) return true;
-    return DateTime.now().difference(_reelzAdLastShownAt!) >=
-        const Duration(minutes: 5);
-  }
-
-  /// Fetch reels then show one randomly after a short delay —
-  /// but only if the 5-minute cooldown has expired.
-  Future<void> _scheduleReelzAd() async {
-    if (!_canShowAd()) return;
-    final reels = await ReelService.instance.fetchReels();
-    if (!mounted || reels.isEmpty) return;
-
-    // Short delay (5–12 s) so the user sees the home screen first
-    final delaySec = 5 + Random().nextInt(8);
-    _reelzAdTimer = Timer(Duration(seconds: delaySec), () {
-      if (!mounted || !_canShowAd()) return;
-      final reel = reels[Random().nextInt(reels.length)];
-      _reelzAdLastShownAt = DateTime.now();
-      _showReelzAd(reel);
-    });
-  }
-
-
-  void _showReelzAd(ReelItem reel) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black,           // full black — dialog fills screen
-      transitionDuration: const Duration(milliseconds: 350),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
-        child: child,
-      ),
-      pageBuilder: (ctx, _, __) => _ReelzAdDialog(
-        reel: reel,
-        onClose: () => Navigator.of(ctx).pop(),
-        onWatch: () {
-          Navigator.of(ctx).pop();
-          context.push('/reelz');
-        },
-      ),
-    );
   }
 
   /// Fetch nearby + brand deals from the backend
@@ -1659,7 +1618,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _bannerTimer?.cancel();
-    _reelzAdTimer?.cancel();
     _bannerCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
@@ -1848,6 +1806,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   PageView.builder(
                     controller: _bannerCtrl,
+                    // Pre-build the adjacent slide so a video's controller
+                    // starts initializing BEFORE the user reaches it —
+                    // by the time it becomes active it plays instantly.
+                    allowImplicitScrolling: true,
                     onPageChanged: (i) {
                       setState(() => _currentBanner = i);
                       _scheduleNextBannerAdvance();
@@ -2212,13 +2174,33 @@ class _BannerSlideState extends State<_BannerSlide> {
 
     if (_videoFailed) return _fallback();
     if (!_videoReady || _ctrl == null) {
+      // While the video initializes, show the banner's poster image (or
+      // the gradient fallback) instead of a bare blue loading screen —
+      // with only a small corner spinner, so users scrolling fast just
+      // see a tiny loader, not a full-screen one.
       return Stack(
         fit: StackFit.expand,
         children: [
-          _fallback(),
-          const Center(
-            child: CircularProgressIndicator(
-                color: Colors.white70, strokeWidth: 2),
+          (widget.data.imageUrl.isNotEmpty ||
+                  widget.data.imageData.isNotEmpty)
+              ? _buildImage()
+              : _fallback(),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.35),
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    color: Colors.white70, strokeWidth: 2),
+              ),
+            ),
           ),
         ],
       );
@@ -3197,13 +3179,31 @@ class _ReelzAdDialogState extends State<_ReelzAdDialog> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared cooldown timestamp (top-level so it survives widget rebuilds)
+// Interstitial ad frequency control (top-level so it survives rebuilds).
+// Traditional-app rules: ads appear ONLY at natural transition points
+// (after completing a bill scan), never on a random timer while browsing.
+//   • Every 2nd trigger  — the 1st, 3rd, 5th… scans show no ad.
+//   • 5-minute cooldown  — never two ads within 5 minutes.
+//   • Max 3 per session  — after that, no more ads until app restart.
 // ─────────────────────────────────────────────────────────────────────────────
 DateTime? _reelzAdLastShownAt;
+int _adTriggerCount  = 0;   // how many ad-eligible moments happened
+int _adsShownSession = 0;   // ads actually shown this app session
 
-/// Show a reelz ad immediately — e.g. after a bill scan.
-/// Respects the same 5-minute cooldown as the dashboard auto-ad.
+/// Show a reelz ad at a natural transition moment (e.g. after a bill scan).
+/// Applies frequency rules above. Completes when the ad is closed (or
+/// immediately if no ad is shown), so callers can `await` it and then
+/// navigate — exactly how traditional apps place interstitials.
 Future<void> showReelzAdIfReady(BuildContext context) async {
+  _adTriggerCount++;
+
+  // Rule: only every 2nd eligible moment shows an ad
+  if (_adTriggerCount.isOdd) return;
+
+  // Rule: max 3 ads per app session
+  if (_adsShownSession >= 3) return;
+
+  // Rule: 5-minute cooldown between ads
   if (_reelzAdLastShownAt != null &&
       DateTime.now().difference(_reelzAdLastShownAt!) <
           const Duration(minutes: 5)) return;
@@ -3212,9 +3212,10 @@ Future<void> showReelzAdIfReady(BuildContext context) async {
   if (reels.isEmpty || !context.mounted) return;
 
   _reelzAdLastShownAt = DateTime.now();
+  _adsShownSession++;
   final reel = reels[Random().nextInt(reels.length)];
 
-  showGeneralDialog(
+  await showGeneralDialog(
     context: context,
     barrierDismissible: false,
     barrierColor: Colors.black,

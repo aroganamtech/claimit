@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from database import users_collection
+from database import users_collection, ads_collection, shops_collection, deleted_users_collection
 from models.schemas import (
     RegisterRequest, OTPVerifyRequest, UserDetailsRequest,
     LoginRequest, TokenResponse,
@@ -149,6 +149,42 @@ async def login(request: LoginRequest):
         "unique_id": user.get("unique_id"),
         "sub_role":  user.get("sub_role"),
     }
+
+
+# ─── Delete account ───────────────────────────────────────────
+@router.delete("/account")
+async def delete_account(current_user=Depends(get_current_user)):
+    """
+    Self-service account deletion. Deletes the user's account, all their ads,
+    and their shop. Full record is archived in deleted_users_collection for
+    admin review before permanent removal.
+    """
+    user_id = str(current_user["_id"])
+    role    = current_user.get("role", "")
+
+    # Gather associated data before deleting
+    user_ads  = await ads_collection.find({"user_id": user_id}).to_list(500)
+    user_shop = await shops_collection.find_one({"user_id": user_id})
+
+    # Archive full snapshot to deleted_users collection
+    archive = {
+        "user":       {**{k: str(v) if k == "_id" else v for k, v in current_user.items()}},
+        "ads":        [{**{k: str(v) if k == "_id" else v for k, v in a.items()}} for a in user_ads],
+        "shop":       {**{k: str(v) if k == "_id" else v for k, v in user_shop.items()}} if user_shop else None,
+        "deleted_at": datetime.utcnow(),
+        "role":       role,
+    }
+    await deleted_users_collection.insert_one(archive)
+
+    # Delete ads and shop
+    await ads_collection.delete_many({"user_id": user_id})
+    if user_shop:
+        await shops_collection.delete_one({"_id": user_shop["_id"]})
+
+    # Delete user account
+    await users_collection.delete_one({"_id": current_user["_id"]})
+
+    return {"ok": True, "message": "Account deleted successfully"}
 
 
 # ─── Current-user (used by frontend on reload) ────────────────

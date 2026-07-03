@@ -36,6 +36,15 @@ def _is_video_key(key: str) -> bool:
 def serialize_ad(ad):
     ad["id"] = str(ad["_id"])
     del ad["_id"]
+    # Reels track views in view_count and likes in like_count.
+    # Normalize to a single "views" and "like_count" field so the
+    # advertiser dashboard can display them in a uniform way.
+    if ad.get("ad_type") == "promo_reelz":
+        ad["views"] = int(ad.get("view_count") or 0)
+        ad["like_count"] = int(ad.get("like_count") or 0)
+    else:
+        ad.setdefault("views", 0)
+        ad["like_count"] = 0
     return ad
 
 
@@ -292,12 +301,19 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
 async def get_dashboard(current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
     ads = await ads_collection.find({"user_id": user_id}).to_list(100)
-    total_views  = sum(a.get("views", 0) for a in ads)
-    total_clicks = sum(a.get("clicks", 0) for a in ads)
+    # Reels store views in view_count, others in views
+    total_views = sum(
+        int(a.get("view_count") or 0) if a.get("ad_type") == "promo_reelz"
+        else int(a.get("views") or 0)
+        for a in ads
+    )
+    total_clicks = sum(int(a.get("clicks") or 0) for a in ads)
+    total_likes  = sum(int(a.get("like_count") or 0) for a in ads if a.get("ad_type") == "promo_reelz")
     return {
         "total_ads":    len(ads),
         "total_views":  total_views,
         "total_clicks": total_clicks,
+        "total_likes":  total_likes,
         "ads": [serialize_ad(a) for a in ads],
     }
 

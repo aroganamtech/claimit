@@ -158,6 +158,9 @@ class TicketCreate(BaseModel):
 class GalleryPhotoRequest(BaseModel):
     photo_b64: str
 
+class GalleryPhotoKeyRequest(BaseModel):
+    s3_key: str
+
 
 # ─── Geo ──────────────────────────────────────────────────────
 class GeoLookupRequest(BaseModel):

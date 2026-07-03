@@ -1,37 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import api from '../../utils/api'
 
-// Convert a File to a compressed base64 data-URL (max 800px, ~150KB)
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onerror = reject
-      img.onload = () => {
-        const MAX = 800
-        let { width, height } = img
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX }
-          else { width = Math.round(width * MAX / height); height = MAX }
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        let quality = 0.75
-        let result = canvas.toDataURL('image/jpeg', quality)
-        // Reduce quality until under ~150KB
-        while (result.length > 200000 && quality > 0.2) {
-          quality -= 0.1
-          result = canvas.toDataURL('image/jpeg', quality)
-        }
-        resolve(result)
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
+// Upload a File directly to S3 via presigned URL — same pattern as brand/nearby deals.
+// Returns { key, url } — key is stored in MongoDB, url is used for preview in review page.
+async function uploadShopImageToS3(file) {
+  const presignRes = await api.shop.presignImage()
+  const putRes = await fetch(presignRes.upload_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: file,
   })
+  if (!putRes.ok) throw new Error(`S3 upload failed: ${putRes.status}`)
+  return { key: presignRes.key, url: presignRes.public_url }
 }
 
 // ─── Single photo upload slot ──────────────────────────────────
@@ -137,27 +118,62 @@ export default function ShopPhotos() {
 
   const handleContinue = async () => {
     setLoading(true)
+    // Upload each photo directly to S3 via presigned URL — same as brand/nearby deals.
+    // Each photo is isolated so one failure never blocks the rest.
+    const failed = []
     try {
-      // Cover photo → base64 in sessionStorage
+      // Cover photo → upload directly to S3, store key + url in sessionStorage
       if (coverFile) {
-        const b64 = await fileToBase64(coverFile)
-        sessionStorage.setItem('shop_cover_b64', b64)
+        try {
+          const { key, url } = await uploadShopImageToS3(coverFile)
+          sessionStorage.setItem('shop_cover_key', key)
+          sessionStorage.setItem('shop_cover_url', url)
+        } catch (err) {
+          console.error('Failed to upload cover photo', err)
+          failed.push('Cover photo')
+          sessionStorage.removeItem('shop_cover_key')
+          sessionStorage.removeItem('shop_cover_url')
+        }
       } else {
-        sessionStorage.removeItem('shop_cover_b64')
+        sessionStorage.removeItem('shop_cover_key')
+        sessionStorage.removeItem('shop_cover_url')
       }
 
-      // Up to 3 gallery photos → base64 array in sessionStorage
+      // Up to 3 gallery photos → upload directly to S3, store keys + urls in sessionStorage
       const filled = galleryFiles.filter(Boolean)
       if (filled.length > 0) {
-        const b64Array = await Promise.all(filled.map(fileToBase64))
-        sessionStorage.setItem('shop_photos_b64', JSON.stringify(b64Array))
+        const results = await Promise.all(
+          filled.map((file, i) =>
+            uploadShopImageToS3(file)
+              .then((res) => ({ ok: true, ...res }))
+              .catch((err) => {
+                console.error('Failed to upload gallery photo', i, err)
+                failed.push(`Photo ${i + 1}`)
+                return { ok: false }
+              })
+          )
+        )
+        const keys = results.filter((r) => r.ok).map((r) => r.key)
+        const urls = results.filter((r) => r.ok).map((r) => r.url)
+        if (keys.length > 0) {
+          sessionStorage.setItem('shop_photos_keys', JSON.stringify(keys))
+          sessionStorage.setItem('shop_photos_urls', JSON.stringify(urls))
+        } else {
+          sessionStorage.removeItem('shop_photos_keys')
+          sessionStorage.removeItem('shop_photos_urls')
+        }
       } else {
-        sessionStorage.removeItem('shop_photos_b64')
+        sessionStorage.removeItem('shop_photos_keys')
+        sessionStorage.removeItem('shop_photos_urls')
       }
 
-      navigate('/shop/onboard/category')
-    } catch (err) {
-      console.error('Failed to process images', err)
+      if (failed.length > 0) {
+        alert(
+          `Could not upload: ${failed.join(', ')}. Please try a JPG or PNG file. ` +
+          `You can add photos later from your shop dashboard.`
+        )
+      }
+
       navigate('/shop/onboard/category')
     } finally {
       setLoading(false)

@@ -256,15 +256,19 @@ class AppRouter {
         ),
 
         // ── Bill Reader flow ───────────────────────────────────────────────
-        // parentNavigatorKey + explicit ValueKey on every screen ensures the
+        // parentNavigatorKey + explicit page key on every screen ensures the
         // root navigator's pages list is 100% explicitly-keyed.  go_router
         // 17.2.3 throws _debugCheckDuplicatedPageKeys when auto-keyed pages
         // are mixed with CustomTransitionPage pages in the same navigator.
+        // IMPORTANT: use state.pageKey (unique per pushed instance), NOT a
+        // const ValueKey — several screens (shop list, deals, reels) have a
+        // "Scan Bill" button that can push this flow while it's already in
+        // the stack, and duplicate const keys crash the Navigator.
         GoRoute(
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-landing'),
+            key: state.pageKey,
             child: const BillReaderLandingScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
@@ -274,7 +278,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/choose-type',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-intro'),
+            key: state.pageKey,
             child: const BillReaderIntroScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
@@ -284,7 +288,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/scanner',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-scanner'),
+            key: state.pageKey,
             child: const BillScannerScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
@@ -297,7 +301,7 @@ class AppRouter {
             final extra = state.extra as Map<String, dynamic>? ?? {};
             final imagePath = extra['imagePath'] as String? ?? '';
             return CustomTransitionPage(
-              key: const ValueKey('bill-reader-scanning'),
+              key: state.pageKey,
               child: BillScanningProgressScreen(imagePath: imagePath),
               transitionsBuilder: (context, animation, secondary, child) =>
                   FadeTransition(opacity: animation, child: child),
@@ -310,7 +314,7 @@ class AppRouter {
           pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>?;
             return CustomTransitionPage(
-              key: const ValueKey('bill-reader-confirm'),
+              key: state.pageKey,
               child: BillConfirmScreen(
                 validationIssue: extra?['issueCode'] as String?,
               ),
@@ -323,7 +327,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/success',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-success'),
+            key: state.pageKey,
             child: const BillRewardSuccessScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
@@ -333,7 +337,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/review-pending',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-review-pending'),
+            key: state.pageKey,
             child: const BillReviewPendingScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),
@@ -343,7 +347,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavKey,
           path: '/bill-reader/wallet',
           pageBuilder: (context, state) => CustomTransitionPage(
-            key: const ValueKey('bill-reader-wallet'),
+            key: state.pageKey,
             child: const BillRewardWalletScreen(),
             transitionsBuilder: (context, animation, secondary, child) =>
                 FadeTransition(opacity: animation, child: child),

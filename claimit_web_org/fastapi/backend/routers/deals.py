@@ -103,3 +103,5 @@ async def get_deal_by_id(deal_id: str):
     if not ad:
         raise HTTPException(status_code=404, detail="Deal not found")
     return {"deal": _serialize_deal(ad)}
+
+

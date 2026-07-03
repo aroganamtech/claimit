@@ -170,27 +170,34 @@ export function AdminAds() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={th}>Title</th><th style={th}>Type</th><th style={th}>Pincode</th>
-            <th style={th}>Publish</th><th style={th}>Amount</th><th style={th}>Status</th><th style={th}></th>
+            <th style={th}>Publish</th><th style={th}>Views</th><th style={th}>Likes</th>
+            <th style={th}>Amount</th><th style={th}>Status</th><th style={th}></th>
           </tr></thead>
           <tbody>
-            {ads.map(a => (
-              <tr key={a.id}>
-                <td style={td}><strong>{a.title}</strong></td>
-                <td style={td}>{a.ad_type}</td>
-                <td style={td}>{a.pincode}</td>
-                <td style={td}>{a.publish_date}</td>
-                <td style={td}>₹{a.amount}</td>
-                <td style={td}>
-                  <select value={a.status} onChange={e => setStatus(a.id, e.target.value)}
-                    style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
-                    <option value="active">active</option>
-                    <option value="scheduled">scheduled</option>
-                    <option value="paused">paused</option>
-                  </select>
-                </td>
-                <td style={td}><button style={dangerBtn} onClick={() => remove(a.id)}>Delete</button></td>
-              </tr>
-            ))}
+            {ads.map(a => {
+              const views = a.ad_type === 'promo_reelz' ? (a.view_count ?? a.views ?? 0) : (a.views ?? 0)
+              const likes = a.ad_type === 'promo_reelz' ? (a.like_count ?? 0) : 0
+              return (
+                <tr key={a.id}>
+                  <td style={td}><strong>{a.title}</strong></td>
+                  <td style={td}>{a.ad_type}</td>
+                  <td style={td}>{a.pincode}</td>
+                  <td style={td}>{a.publish_date}</td>
+                  <td style={td}>{views >= 1000 ? (views / 1000).toFixed(1) + 'k' : views}</td>
+                  <td style={td}>{likes > 0 ? (likes >= 1000 ? (likes / 1000).toFixed(1) + 'k' : likes) : '—'}</td>
+                  <td style={td}>₹{a.amount}</td>
+                  <td style={td}>
+                    <select value={a.status} onChange={e => setStatus(a.id, e.target.value)}
+                      style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
+                      <option value="active">active</option>
+                      <option value="scheduled">scheduled</option>
+                      <option value="paused">paused</option>
+                    </select>
+                  </td>
+                  <td style={td}><button style={dangerBtn} onClick={() => remove(a.id)}>Delete</button></td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
        )}
@@ -215,15 +222,16 @@ export function AdminShops() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={th}>Shop</th><th style={th}>Address</th><th style={th}>Category</th>
-            <th style={th}>Discount</th><th style={th}>Status</th><th style={th}></th>
+            <th style={th}>Discount</th><th style={th}>Favorites</th><th style={th}>Status</th><th style={th}></th>
           </tr></thead>
           <tbody>
             {shops.map(s => (
               <tr key={s.id}>
-                <td style={td}><strong>{s.shop_name}</strong></td>
-                <td style={td}>{s.shop_address}</td>
+                <td style={td}><strong>{s.shop_name || s.name}</strong></td>
+                <td style={td}>{s.shop_address || s.address}</td>
                 <td style={td}>{s.category}</td>
                 <td style={td}>{s.discount_percentage ?? 0}%</td>
+                <td style={td}>{s.favorites_count ?? 0}</td>
                 <td style={td}>
                   <select value={s.status || 'pending'} onChange={e => setStatus(s.id, e.target.value)}
                     style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
@@ -1023,5 +1031,77 @@ export function AdminBonusSettings() {
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Deleted Users ────────────────────────────────────────────
+export function AdminDeletedUsers() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState({})
+
+  useEffect(() => {
+    api.admin.listDeletedUsers().then(setItems).finally(() => setLoading(false))
+  }, [])
+
+  const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  const roleColor = { advertiser: '#1565C0', shop: '#388E3C', sales: '#7B1FA2' }
+
+  return (
+    <PageShell title="Deleted Users" subtitle="Archive of self-deleted accounts. Full data preserved for admin review.">
+      {loading ? (
+        <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{ padding: 60, textAlign: 'center', color: '#999' }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🗑</div>
+          <div style={{ fontSize: 14 }}>No deleted accounts yet</div>
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Name</th><th style={th}>Email</th><th style={th}>Phone</th>
+            <th style={th}>Role</th><th style={th}>Ads</th><th style={th}>Had Shop</th>
+            <th style={th}>Deleted At</th><th style={th}>Details</th>
+          </tr></thead>
+          <tbody>
+            {items.flatMap(u => {
+              const rows = [
+                <tr key={u.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                  <td style={td}><strong>{u.user?.name || '—'}</strong></td>
+                  <td style={td}>{u.user?.email || '—'}</td>
+                  <td style={td}>{u.user?.phone || '—'}</td>
+                  <td style={td}>
+                    <span style={{ background: roleColor[u.role] || '#888', color: '#fff', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td style={td}>{u.ads_count}</td>
+                  <td style={td}>{u.had_shop ? '✅ Yes' : '—'}</td>
+                  <td style={td}>{(u.deleted_at || '').slice(0, 16).replace('T', ' ')}</td>
+                  <td style={td}>
+                    <button style={ghostBtn} onClick={() => toggle(u.id)}>
+                      {expanded[u.id] ? 'Hide' : 'View'}
+                    </button>
+                  </td>
+                </tr>
+              ]
+              if (expanded[u.id]) {
+                rows.push(
+                  <tr key={u.id + '_d'}>
+                    <td colSpan={8} style={{ padding: '12px 20px', background: '#f9f9f9', fontSize: 12 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Full User Record:</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#333', lineHeight: 1.6 }}>
+                        {JSON.stringify(u.user, null, 2)}
+                      </pre>
+                    </td>
+                  </tr>
+                )
+              }
+              return rows
+            })}
+          </tbody>
+        </table>
+      )}
+    </PageShell>
   )
 }

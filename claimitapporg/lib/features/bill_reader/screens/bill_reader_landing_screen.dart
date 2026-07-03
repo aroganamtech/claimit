@@ -255,53 +255,57 @@ class _DemoVideoCardState extends State<_DemoVideoCard> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final ctrl = _ctrl;
+    final aspectRatio =
+        (_videoReady && ctrl != null) ? ctrl.value.aspectRatio : _fallbackAspectRatio;
 
-    return SizedBox(
-      width: double.infinity,
-      height: _cardHeight,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: GestureDetector(
-          onTap: _videoReady ? _togglePlayback : null,
-          child: Container(
-            color: const Color(0xFFE5E7EB),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_videoReady && ctrl != null)
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: ctrl.value.aspectRatio,
-                      child: VideoPlayer(ctrl),
+    // Width comes from whatever space is available (full device width,
+    // since this card has no horizontal padding around it) — height is
+    // then derived from the video's own aspect ratio. This scales
+    // correctly on every screen size instead of using a fixed pixel height
+    // tuned for one phone.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = width / aspectRatio;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: GestureDetector(
+            onTap: _videoReady ? _togglePlayback : null,
+            child: Container(
+              color: const Color(0xFFE5E7EB),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_videoReady && ctrl != null) VideoPlayer(ctrl),
+                  if (!_videoReady && !_videoFailed)
+                    const Center(
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF9CA3AF), strokeWidth: 2),
                     ),
-                  ),
-                if (!_videoReady && !_videoFailed)
-                  const Center(
-                    child: CircularProgressIndicator(
-                        color: Color(0xFF9CA3AF), strokeWidth: 2),
-                  ),
-                if (_videoReady && ctrl != null && !ctrl.value.isPlaying)
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: Colors.black26,
-                        shape: BoxShape.circle,
+                  if (_videoReady && ctrl != null && !ctrl.value.isPlaying)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Colors.black26,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow_rounded,
+                            color: Colors.white, size: 40),
                       ),
-                      child: const Icon(Icons.play_arrow_rounded,
-                          color: Colors.white, size: 40),
                     ),
-                  ),
-                if (_videoFailed)
-                  const Center(
-                    child: Icon(Icons.videocam_off_rounded,
-                        color: Color(0xFF9CA3AF), size: 36),
-                  ),
-              ],
+                  if (_videoFailed)
+                    const Center(
+                      child: Icon(Icons.videocam_off_rounded,
+                          color: Color(0xFF9CA3AF), size: 36),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

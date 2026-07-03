@@ -23,6 +23,7 @@ reviews_collection      = db["reviews"]
 tickets_collection      = db["support_tickets"]
 otps_collection         = db["otps"]
 team_collection         = db["team_members"]
+deleted_users_collection = db["deleted_users"]
 
 
 # ── App database (claimit_db) ─────────────────────────────────────────────────

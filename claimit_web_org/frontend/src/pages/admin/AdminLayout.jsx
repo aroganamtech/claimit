@@ -13,6 +13,7 @@ const NAV = [
   { label: 'Bill Reviews',   icon: '🧾', path: '/admin/bill-reviews' },
   { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },
   { label: 'Project PDFs',   icon: '📄', path: '/admin/pdfs' },
+  { label: 'Deleted Users',  icon: '🗑', path: '/admin/deleted-users' },
 ]
 
 export default function AdminLayout() {

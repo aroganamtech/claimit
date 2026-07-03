@@ -12,7 +12,7 @@ export default function AdvertiserDashboard() {
   useEffect(() => {
     api.advertiser.getDashboard()
       .then(setData)
-      .catch(() => setData({ total_ads: 0, total_views: 0, total_clicks: 0, ads: [] }))
+      .catch(() => setData({ total_ads: 0, total_views: 0, total_clicks: 0, total_likes: 0, ads: [] }))
       .finally(() => setLoading(false))
   }, [])
 
@@ -39,7 +39,7 @@ export default function AdvertiserDashboard() {
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
           <div className="stat-card">
             <div style={{ fontSize: 28, color: '#1565C0' }}>AD</div>
             <div className="stat-value">{data?.total_ads ?? 0}</div>
@@ -58,6 +58,13 @@ export default function AdvertiserDashboard() {
               {data?.total_clicks >= 1000 ? (data.total_clicks / 1000).toFixed(1) + 'k' : (data?.total_clicks ?? 0)}
             </div>
             <div className="stat-label">Total Clicks</div>
+          </div>
+          <div className="stat-card">
+            <div style={{ fontSize: 24 }}>❤️</div>
+            <div className="stat-value">
+              {data?.total_likes >= 1000 ? (data.total_likes / 1000).toFixed(1) + 'k' : (data?.total_likes ?? 0)}
+            </div>
+            <div className="stat-label">Reel Likes</div>
           </div>
         </div>
 
@@ -115,6 +122,14 @@ export default function AdvertiserDashboard() {
                         {ad.clicks >= 1000 ? (ad.clicks / 1000).toFixed(1) + 'k' : ad.clicks ?? 0}
                       </div>
                     </td>
+                    {ad.ad_type === 'promo_reelz' && (
+                      <td style={{ padding: '20px 24px', color: '#888', fontSize: 13 }}>
+                        <div>Likes</div>
+                        <div style={{ fontWeight: 600, color: '#c62828', marginTop: 2 }}>
+                          {(ad.like_count ?? 0) >= 1000 ? (ad.like_count / 1000).toFixed(1) + 'k' : ad.like_count ?? 0}
+                        </div>
+                      </td>
+                    )}
                     <td style={{ padding: '20px 24px' }}>
                       <span className={ad.status === 'active' ? 'badge-active' : 'badge-scheduled'}>
                         {ad.status === 'active' && '✓ '}

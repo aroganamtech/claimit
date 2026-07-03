@@ -21,6 +21,7 @@ from database import (
     reviews_collection, tickets_collection, transactions_collection,
     app_bill_reviews_collection, app_db, app_notifications_collection,
     app_users_collection, app_feedback_collection, app_shops_collection,
+    deleted_users_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -506,3 +507,22 @@ async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_adm
         upsert=True,
     )
     return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}
+
+
+# ─── Deleted Users ─────────────────────────────────────────────
+@router.get("/deleted-users")
+async def list_deleted_users(_admin=Depends(get_current_admin)):
+    """Admin-only: full archive of every self-deleted account."""
+    docs = await deleted_users_collection.find().sort("deleted_at", -1).to_list(1000)
+    result = []
+    for d in docs:
+        out = {
+            "id":         str(d["_id"]),
+            "role":       d.get("role", ""),
+            "deleted_at": d["deleted_at"].isoformat() if d.get("deleted_at") else "",
+            "user":       d.get("user", {}),
+            "ads_count":  len(d.get("ads", [])),
+            "had_shop":   d.get("shop") is not None,
+        }
+        result.append(out)
+    return result

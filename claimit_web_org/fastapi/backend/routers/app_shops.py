@@ -219,3 +219,4 @@ async def submit_review(shop_id: str, body: dict):
     doc["id"] = str(res.inserted_id)
     del doc["_id"]
     return {"review": doc}
+

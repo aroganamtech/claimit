@@ -29,7 +29,7 @@ export default function Header() {
   const portals = [
     { label: 'Business Owner Registration', role: 'shop', path: '/shop/auth' },
     { label: 'Create Advertisements', role: 'advertiser', path: '/advertiser/auth' },
-    { label: 'Business Associate', role: 'shop', path: '/shop/auth' },
+    // { label: 'Business Associate', role: 'shop', path: '/shop/auth' },
     { label: 'Sales Representative', role: 'sales', path: '/sales/auth' },
   ]
 

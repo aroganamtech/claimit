@@ -1,5 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { useState } from 'react'
+import api from '../../utils/api'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: '⊞', path: '/advertiser/dashboard' },
@@ -12,6 +14,21 @@ export default function AdvertiserSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuth()
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('Delete your account? This will permanently remove your account and all your ads. This cannot be undone.')) return
+    setDeleting(true)
+    try {
+      await api.auth.deleteAccount()
+      logout()
+      navigate('/')
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to delete account')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <aside className="sidebar">
@@ -49,7 +66,7 @@ export default function AdvertiserSidebar() {
         ))}
       </nav>
 
-      <div style={{ marginTop: 'auto', padding: 16 }}>
+      <div style={{ marginTop: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button
           onClick={() => { logout(); navigate('/') }}
           style={{
@@ -59,6 +76,18 @@ export default function AdvertiserSidebar() {
           }}
         >
           Logout
+        </button>
+        <button
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          style={{
+            width: '100%', padding: '10px', border: '1px solid #ffcdd2',
+            borderRadius: 8, background: '#fff3f3', color: '#b71c1c',
+            fontSize: 12, cursor: 'pointer', fontFamily: 'Poppins',
+            opacity: deleting ? 0.6 : 1,
+          }}
+        >
+          {deleting ? 'Deleting...' : '🗑 Delete Account'}
         </button>
       </div>
     </aside>

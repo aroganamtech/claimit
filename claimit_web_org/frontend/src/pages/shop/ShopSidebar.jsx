@@ -3,6 +3,24 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useState, useEffect } from 'react'
 import api from '../../utils/api'
 
+function useDeleteAccount(logout, navigate) {
+  const [deleting, setDeleting] = useState(false)
+  const handleDeleteAccount = async () => {
+    if (!confirm('Delete your account? This will permanently remove your account and your shop. This cannot be undone.')) return
+    setDeleting(true)
+    try {
+      await api.auth.deleteAccount()
+      logout()
+      navigate('/')
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to delete account')
+    } finally {
+      setDeleting(false)
+    }
+  }
+  return { deleting, handleDeleteAccount }
+}
+
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: '⊞', path: '/shop/dashboard' },
   { label: 'Offer management', icon: '⚙', path: '/shop/offer' },
@@ -17,6 +35,7 @@ export default function ShopSidebar() {
   const location = useLocation()
   const { logout, user } = useAuth()
   const [shopName, setShopName] = useState('')
+  const { deleting, handleDeleteAccount } = useDeleteAccount(logout, navigate)
 
   useEffect(() => {
     api.shop.getStoreDetails().then(d => {
@@ -51,7 +70,7 @@ export default function ShopSidebar() {
         ))}
       </nav>
 
-      <div style={{ marginTop: 'auto', padding: 16 }}>
+      <div style={{ marginTop: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button
           onClick={() => { logout(); navigate('/') }}
           style={{
@@ -61,6 +80,18 @@ export default function ShopSidebar() {
           }}
         >
           Logout
+        </button>
+        <button
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          style={{
+            width: '100%', padding: '10px', border: '1px solid #ffcdd2',
+            borderRadius: 8, background: '#fff3f3', color: '#b71c1c',
+            fontSize: 12, cursor: 'pointer', fontFamily: 'Poppins',
+            opacity: deleting ? 0.6 : 1,
+          }}
+        >
+          {deleting ? 'Deleting...' : '🗑 Delete Account'}
         </button>
       </div>
     </aside>

@@ -8,9 +8,9 @@ export function ReviewAndSubmit() {
   const category = sessionStorage.getItem('shop_category') || '—'
   const shopType = sessionStorage.getItem('shop_type') || 'redeem'
   const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
-  const coverB64 = sessionStorage.getItem('shop_cover_b64')
-  const photosB64Raw = sessionStorage.getItem('shop_photos_b64')
-  const galleryPreviews = photosB64Raw ? JSON.parse(photosB64Raw) : []
+  const coverUrl = sessionStorage.getItem('shop_cover_url')
+  const photosUrlsRaw = sessionStorage.getItem('shop_photos_urls')
+  const galleryPreviews = photosUrlsRaw ? JSON.parse(photosUrlsRaw) : []
 
   return (
     <div style={{ paddingTop: 64, display: 'flex', minHeight: '100vh' }}>
@@ -76,16 +76,16 @@ export function ReviewAndSubmit() {
               >Edit</span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {coverB64 && (
+              {coverUrl && (
                 <div style={{ position: 'relative' }}>
-                  <img src={coverB64} alt="cover" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '2px solid #1565C0' }} />
+                  <img src={coverUrl} alt="cover" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '2px solid #1565C0' }} />
                   <span style={{ position: 'absolute', bottom: 2, left: 2, fontSize: 9, background: '#1565C0', color: '#fff', borderRadius: 3, padding: '1px 3px' }}>Cover</span>
                 </div>
               )}
               {galleryPreviews.slice(0, 3).map((src, i) => (
                 <img key={i} src={src} alt={`shop ${i + 1}`} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #c5d0f0' }} />
               ))}
-              {!coverB64 && galleryPreviews.length === 0 && (
+              {!coverUrl && galleryPreviews.length === 0 && (
                 [1, 2, 3].map(i => (
                   <div key={i} style={{ width: 60, height: 60, background: '#d0daf0', borderRadius: 6 }} />
                 ))
@@ -139,6 +139,7 @@ export function ShopPayment() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(false)
   const [paid, setPaid] = useState(false)
+  const [photoWarning, setPhotoWarning] = useState('')
 
   const handlePay = async () => {
     if (!selected) return
@@ -167,22 +168,43 @@ export function ShopPayment() {
 
       await api.shop.register(formData)
 
-      // ── Step 2: Upload images via gallery endpoints ────────
-      // Images are stored as base64 in sessionStorage from ShopPhotos step.
-      // We send them as JSON (no size limit issues from FormData field caps).
-      const coverB64 = sessionStorage.getItem('shop_cover_b64')
-      const photosB64Raw = sessionStorage.getItem('shop_photos_b64')
+      // ── Step 2: Register S3 keys from the photos already uploaded to S3
+      // in the ShopPhotos step (presigned-URL flow — same as brand/nearby deals).
+      // Keys are already in S3; we just tell the backend which keys belong to
+      // this shop. No image bytes go through the backend or nginx.
+      const coverKey = sessionStorage.getItem('shop_cover_key')
+      const photosKeysRaw = sessionStorage.getItem('shop_photos_keys')
+      let imageUploadFailed = false
 
-      if (coverB64) {
-        try { await api.shop.updateCoverPhoto({ photo_b64: coverB64 }) } catch (_) {}
-      }
-      if (photosB64Raw) {
+      if (coverKey) {
         try {
-          const photoArr = JSON.parse(photosB64Raw)
-          for (const b64 of photoArr) {
-            await api.shop.addGalleryPhoto({ photo_b64: b64 })
+          await api.shop.setCoverPhotoKey({ s3_key: coverKey })
+        } catch (err) {
+          console.error('Cover key registration failed', err)
+          imageUploadFailed = true
+        }
+      }
+      if (photosKeysRaw) {
+        try {
+          const keyArr = JSON.parse(photosKeysRaw)
+          for (const key of keyArr) {
+            try {
+              await api.shop.addGalleryPhotoKey({ s3_key: key })
+            } catch (err) {
+              console.error('Gallery key registration failed', err)
+              imageUploadFailed = true
+            }
           }
-        } catch (_) {}
+        } catch (err) {
+          console.error('Failed to parse stored photo keys', err)
+        }
+      }
+
+      if (imageUploadFailed) {
+        setPhotoWarning(
+          'Your shop was submitted, but one or more photos failed to save. ' +
+          'Please add them again from Store Details Management in your dashboard.'
+        )
       }
 
       // ── Cleanup ───────────────────────────────────────────
@@ -190,8 +212,10 @@ export function ShopPayment() {
       sessionStorage.removeItem('shop_category')
       sessionStorage.removeItem('shop_type')
       sessionStorage.removeItem('shop_discount')
-      sessionStorage.removeItem('shop_cover_b64')
-      sessionStorage.removeItem('shop_photos_b64')
+      sessionStorage.removeItem('shop_cover_key')
+      sessionStorage.removeItem('shop_cover_url')
+      sessionStorage.removeItem('shop_photos_keys')
+      sessionStorage.removeItem('shop_photos_urls')
       setPaid(true)
     } catch (e) {
       alert(e?.response?.data?.detail || 'Could not register shop')
@@ -217,6 +241,15 @@ export function ShopPayment() {
           <p style={{ color: '#888', fontSize: 14, marginBottom: 28 }}>
             Your advertisement has been scheduled successfully
           </p>
+          {photoWarning && (
+            <div style={{
+              background: '#FFF3E0', border: '1px solid #FFB74D', borderRadius: 10,
+              padding: '12px 16px', marginBottom: 24, maxWidth: 360,
+              fontSize: 13, color: '#7a4a00', textAlign: 'left'
+            }}>
+              ⚠ {photoWarning}
+            </div>
+          )}
           <button className="btn-primary" style={{ width: 240 }} onClick={() => navigate('/shop/dashboard')}>
             Go to Dashboard
           </button>

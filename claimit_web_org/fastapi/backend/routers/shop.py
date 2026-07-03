@@ -3,13 +3,13 @@ from database import (
     shops_collection, transactions_collection, reviews_collection,
     app_shops_collection,
 )
-from models.schemas import OfferUpdateRequest, StoreUpdateRequest, ReviewCreate, ReviewReplyRequest, GalleryPhotoRequest
+from models.schemas import OfferUpdateRequest, StoreUpdateRequest, ReviewCreate, ReviewReplyRequest, GalleryPhotoRequest, GalleryPhotoKeyRequest
 from utils.dependencies import get_current_user
 from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
-from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign
+from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign, generate_presigned_upload_url, public_url as _public_url
 import json
 import re
 
@@ -135,28 +135,33 @@ async def _sync_shop_to_app(user_id: str) -> None:
         return f"https://{_bucket}.s3.{_region}.amazonaws.com/{key}" if key else ""
 
     # Upload cover photo to S3
+    # NOTE: decode + upload are both inside the try/except — a single corrupt
+    # or undecodable image must never crash this function before it reaches
+    # the final update_one() below (that previously dropped EVERY image field,
+    # including ones that had already uploaded fine in this same call).
     cover_key = ""
     cover_url = ""
-    cover_raw = _b64_to_bytes(shop.get("cover_photo_b64") or "")
-    if cover_raw:
-        try:
+    try:
+        cover_raw = _b64_to_bytes(shop.get("cover_photo_b64") or "")
+        if cover_raw:
             cover_key = await _s3_upload(cover_raw, "shop-covers", content_type="image/jpeg")
             cover_url = _s3_url(cover_key)
-        except Exception as _e:
-            print(f"Cover S3 upload error: {_e}")
+    except Exception as _e:
+        print(f"Cover S3 upload error: {_e}")
 
-    # Upload gallery photos to S3
+    # Upload gallery photos to S3 — each photo is isolated so one bad
+    # image (e.g. an undecodable base64 string) doesn't block the rest.
     gallery_keys = []
     gallery_urls = []
     for gp in (shop.get("gallery_photos") or []):
-        gb = _b64_to_bytes(gp)
-        if gb:
-            try:
+        try:
+            gb = _b64_to_bytes(gp)
+            if gb:
                 gk = await _s3_upload(gb, "shop-gallery", content_type="image/jpeg")
                 gallery_keys.append(gk)
                 gallery_urls.append(_s3_url(gk))
-            except Exception as _e:
-                print(f"Gallery S3 upload error: {_e}")
+        except Exception as _e:
+            print(f"Gallery S3 upload error: {_e}")
 
     app_fields = {
         "name":            shop.get("shop_name", ""),
@@ -175,11 +180,12 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "phone":           shop.get("phone", ""),
         "lat":             shop.get("lat"),
         "lng":             shop.get("lng"),
-        # S3 keys and URLs
-        "image_s3_key":    cover_key,
-        "image_url":       cover_url,
-        "image_s3_keys":   gallery_keys,
-        "image_urls":      gallery_urls,
+        # S3 keys and URLs — if no base64 was found to upload, preserve
+        # keys already stored (e.g. shops that used presigned-URL upload).
+        "image_s3_key":    cover_key or shop.get("image_s3_key", ""),
+        "image_url":       cover_url or shop.get("image_url", ""),
+        "image_s3_keys":   gallery_keys if gallery_keys else shop.get("image_s3_keys", []),
+        "image_urls":      gallery_urls if gallery_urls else shop.get("image_urls", []),
         # Legacy empty fields (no more base64 in DB)
         "image_data":      "",
         "image_data_list": [],
@@ -314,6 +320,7 @@ async def get_dashboard(current_user=Depends(get_current_user)):
         "shop": serialize(shop),
         "total_reward_given": len(rewards),
         "total_redeem_used": len(redeems),
+        "total_favorites": int(shop.get("favorites_count") or 0),
         "rewards": rewards,
         "redeems": redeems,
     }
@@ -499,6 +506,54 @@ async def delete_gallery_photo(index: int, current_user=Depends(get_current_user
     )
     # Mirror updated gallery into app database
     await _sync_shop_to_app(user_id)
+    return {"ok": True}
+
+
+# ─── Presigned-URL upload (same pattern as brand_deals / nearby_deals) ────────
+# Browser requests a presigned S3 PUT URL, uploads the file directly to S3,
+# then sends just the S3 key to one of the two endpoints below.
+# This avoids routing image bytes through the backend / nginx entirely.
+
+@router.post("/gallery/presign")
+async def presign_shop_image(current_user=Depends(get_current_user)):
+    """Return a presigned S3 PUT URL for a single shop image upload."""
+    result = generate_presigned_upload_url(
+        folder="shops",
+        filename="image.jpg",
+        content_type="image/jpeg",
+        is_video=False,
+    )
+    result["public_url"] = _public_url(result["key"])
+    return result
+
+
+@router.post("/gallery/cover-key")
+async def set_cover_photo_key(request: GalleryPhotoKeyRequest, current_user=Depends(get_current_user)):
+    """Store an already-uploaded S3 key as the shop cover photo."""
+    user_id = str(current_user["_id"])
+    key = request.s3_key
+    url = _public_url(key)
+    res = await shops_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"image_s3_key": key, "image_url": url}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    return {"ok": True}
+
+
+@router.post("/gallery/add-key")
+async def add_gallery_photo_key(request: GalleryPhotoKeyRequest, current_user=Depends(get_current_user)):
+    """Append an already-uploaded S3 key to the shop gallery."""
+    user_id = str(current_user["_id"])
+    key = request.s3_key
+    url = _public_url(key)
+    res = await shops_collection.update_one(
+        {"user_id": user_id},
+        {"$push": {"image_s3_keys": key, "image_urls": url}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Shop not found")
     return {"ok": True}
 
 

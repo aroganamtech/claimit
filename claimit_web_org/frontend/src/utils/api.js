@@ -71,11 +71,12 @@ const del  = (url)             => http.delete(url).then(r => r.data)
 
 // ─── Auth ────────────────────────────────────────────────────
 const auth = {
-  sendOtp:  (payload) => post('/auth/send-otp', payload),
-  verifyOtp:(payload) => post('/auth/verify-otp', payload),
-  register: (payload) => post('/auth/complete-registration', payload),
-  login:    (payload) => post('/auth/login', payload),
-  me:       ()        => get('/auth/me'),
+  sendOtp:       (payload) => post('/auth/send-otp', payload),
+  verifyOtp:     (payload) => post('/auth/verify-otp', payload),
+  register:      (payload) => post('/auth/complete-registration', payload),
+  login:         (payload) => post('/auth/login', payload),
+  me:            ()        => get('/auth/me'),
+  deleteAccount: ()        => del('/auth/account'),
 }
 
 // ─── Advertiser ──────────────────────────────────────────────
@@ -118,11 +119,15 @@ const shop = {
   addReview:          (payload)  => post('/shop/ratings', payload),
   replyReview:        (payload)  => post('/shop/ratings/reply', payload),
   getSettings:        ()         => get('/shop/settings'),
-  // Gallery
+  // Gallery — base64 path (used by dashboard ShopPages.jsx)
   getGallery:         ()           => get('/shop/gallery'),
   updateCoverPhoto:   (payload)    => post('/shop/gallery/cover', payload),
   addGalleryPhoto:    (payload)    => post('/shop/gallery/add', payload),
   deleteGalleryPhoto: (index)      => del(`/shop/gallery/${index}`),
+  // Presigned-URL path (used by onboarding — same pattern as brand/nearby deals)
+  presignImage:       ()           => post('/shop/gallery/presign', {}),
+  setCoverPhotoKey:   (payload)    => post('/shop/gallery/cover-key', payload),
+  addGalleryPhotoKey: (payload)    => post('/shop/gallery/add-key', payload),
 }
 
 // ─── Support ─────────────────────────────────────────────────
@@ -170,6 +175,7 @@ const admin = {
   listFeedback:      (status='all') => get('/admin/feedback', { status }),
   replyFeedback:     (id, payload)  => post(`/admin/feedback/${id}/reply`, payload),
   deleteFeedback:    (id)           => del(`/admin/feedback/${id}`),
+  listDeletedUsers:  ()             => get('/admin/deleted-users'),
 }
 
 // Default export bundles everything. Pages migrated to the new style

@@ -580,3 +580,169 @@ async def admin_action_review(
         "discount_value":  discount_value  if data.action == "approve" else 0.0,
         "deducted_points": deducted_points if data.action == "approve" else 0,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AI Bill OCR  —  POST /bill/ocr
+#
+# The Gemini Vision call used to live inside the Flutter app, which meant the
+# API key shipped inside the APK (extractable) and prompt/model changes needed
+# an app release. It now lives here: the app POSTs the bill image (base64) and
+# gets back the extracted fields. The app keeps its on-device ML Kit fallback
+# for when this endpoint is unreachable or returns nothing.
+#
+# Key: set GEMINI_API_KEY in fastapi/backend/.env  (new AI Studio "auth keys"
+# start with "AQ." and are sent via the x-goog-api-key header).
+# ══════════════════════════════════════════════════════════════════════════════
+
+import asyncio
+import json as _json
+import httpx
+
+GEMINI_MODEL_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "gemini-2.5-flash:generateContent"
+)
+
+# TODO: move this default into fastapi/backend/.env as GEMINI_API_KEY=...
+_GEMINI_KEY_DEFAULT = "AQ.Ab8RN6KIY8FyV6ey0aKMKk21tK2CjhVbxmPctUsj0X8zGffQiQ"
+
+_OCR_PROMPT = """
+You are a bill/receipt OCR assistant. Carefully analyze the receipt image and extract:
+
+1. shop_name: The business/store name — usually the largest, bold, or logo text at the top of the receipt (before address, phone, GSTIN, or date). Example: "The Daily Grind Cafe", "DMart".
+   - NEVER return generic header words like "TAX INVOICE", "RETAIL INVOICE", "CASH MEMO", "RECEIPT", "BILL", "WELCOME", "CUSTOMER COPY", "THANK YOU" — the shop name is always an actual business name.
+   - If the top line is a header word like "TAX INVOICE", the real shop name is usually just above or below it.
+
+2. total_amount: The FINAL amount the customer actually PAID, after ALL discounts and taxes.
+   - Receipts often show Subtotal, Discount/Savings, Tax/GST/CGST/SGST lines, and then a final total. Always pick the final payable figure.
+   - The label may be "TOTAL", "TOTAL AMOUNT", "GRAND TOTAL", "NET TOTAL", "NET PAYABLE", "AMOUNT PAYABLE", "FINAL AMOUNT", "AMOUNT PAID", "BILL AMOUNT" — or there may be NO label at all, just a bold/large printed number. On some bills this final amount is printed at the TOP of the receipt, not the bottom.
+   - NEVER return: the discount value, savings amount, subtotal (pre-discount), a tax amount, cash tendered, change/balance returned, loyalty points, or an individual item price.
+   - Sanity check: when subtotal, discount and tax lines are visible, the total should equal subtotal - discount + tax.
+   - Return only the numeric value (no currency sign or commas).
+
+3. bill_date: The date on the receipt. Always return in DD/MM/YYYY format. For example, if the receipt shows "May 23, 2026" return "23/05/2026".
+
+4. bill_number: The receipt/invoice/bill number (e.g., "98432", "INV-001"). Strip any leading # symbol.
+
+Return ONLY a single valid JSON object with no markdown or explanation. Example:
+{"shop_name":"The Daily Grind Cafe","total_amount":2008.80,"bill_date":"23/05/2026","bill_number":"98432"}
+
+If a field cannot be confidently read, set it to null.
+"""
+
+
+class BillOcrRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64-encoded bill image (no data: prefix)")
+    mime_type: Optional[str] = "image/jpeg"
+
+
+@router.post("/ocr")
+async def ai_bill_ocr(data: BillOcrRequest):
+    """
+    Extract bill fields from an image using Gemini Vision (server-side).
+
+    Returns 200 with:
+      {"success": true,  "shop_name": ..., "total_amount": ...,
+       "bill_date": "DD/MM/YYYY", "bill_number": ..., "raw": "<gemini json>"}
+    or {"success": false, "detail": "..."} when the AI is unavailable — the app
+    then falls back to on-device ML Kit OCR.
+    """
+    key = os.getenv("GEMINI_API_KEY", _GEMINI_KEY_DEFAULT).strip()
+    if not key:
+        return {"success": False, "detail": "GEMINI_API_KEY not configured"}
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inlineData": {
+                    "mimeType": data.mime_type or "image/jpeg",
+                    "data": data.image_base64,
+                }},
+                {"text": _OCR_PROMPT},
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0,
+            "topP": 1,
+            "topK": 1,
+            "maxOutputTokens": 512,
+            "responseMimeType": "application/json",
+            # gemini-2.5-flash is a thinking model — disable thinking so
+            # reasoning tokens don't eat the output budget (faster + cheaper).
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+    last_error = "unknown"
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        # Up to 2 attempts — occasionally Gemini returns truncated/invalid
+        # JSON or a transient 503 "model overloaded". Those usually clear in
+        # a second or two, so pause briefly before the retry.
+        for attempt in (1, 2):
+            if attempt == 2:
+                await asyncio.sleep(2.0)
+            try:
+                resp = await client.post(
+                    GEMINI_MODEL_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": key,
+                    },
+                    json=payload,
+                )
+                if resp.status_code == 429:
+                    # Quota/rate limit — retrying immediately is pointless
+                    last_error = f"quota exceeded ({resp.status_code})"
+                    break
+                if resp.status_code != 200:
+                    last_error = f"gemini http {resp.status_code}"
+                    continue
+
+                body = resp.json()
+                candidates = body.get("candidates") or []
+                if not candidates:
+                    last_error = "no candidates"
+                    continue
+                parts = ((candidates[0].get("content") or {}).get("parts")) or []
+                if not parts:
+                    last_error = "no parts"
+                    continue
+                text = (parts[0].get("text") or "").strip()
+
+                # Strip markdown fences and isolate the first {...} block
+                text = text.removeprefix("```json").removesuffix("```").strip()
+                start, end = text.find("{"), text.rfind("}")
+                if start == -1 or end <= start:
+                    last_error = "no json block"
+                    continue
+                parsed = _json.loads(text[start:end + 1])
+
+                def _clean_str(v):
+                    if v is None:
+                        return None
+                    s = str(v).strip()
+                    return s if s and s.lower() != "null" else None
+
+                def _clean_num(v):
+                    if v is None:
+                        return None
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    try:
+                        return float(str(v).replace(",", "").replace("₹", "").strip())
+                    except ValueError:
+                        return None
+
+                return {
+                    "success":      True,
+                    "shop_name":    _clean_str(parsed.get("shop_name")),
+                    "total_amount": _clean_num(parsed.get("total_amount")),
+                    "bill_date":    _clean_str(parsed.get("bill_date")),
+                    "bill_number":  _clean_str(parsed.get("bill_number")),
+                    "raw":          text[start:end + 1],
+                }
+            except Exception as e:  # network error, bad JSON, timeout…
+                last_error = str(e)[:200]
+
+    return {"success": False, "detail": last_error}

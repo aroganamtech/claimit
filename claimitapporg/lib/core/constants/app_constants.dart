@@ -122,17 +122,17 @@ class AppConstants {
 
   // Bill scan
   static const String billScan = '/bill/scan';
+  // AI bill OCR — Gemini call now lives on the backend (key not in APK)
+  static const String billOcr  = '/bill/ocr';
 
   // ── Feedback / Complaints ────────────────────────────────────────────────
   static const String submitFeedback = '/feedback';
   static const String myFeedback     = '/feedback/my';
 
   // ── Gemini AI Vision (for bill OCR) ──────────────────────────────────────
-  // Replace with your Google AI Studio key from https://aistudio.google.com/
-  static const String geminiApiKey =
-      'YOUR_GEMINI_API_KEY_HERE'; // ← paste your key
-  static const String geminiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  // MOVED TO BACKEND: the Gemini API key and model now live in
+  // fastapi/backend (POST /bill/ocr, key via GEMINI_API_KEY env var) so the
+  // key never ships inside the APK. See core/services/gemini_ocr_service.dart.
 
   // ── Storage Keys ──────────────────────────────────────────────────────────
   static const String tokenKey        = 'access_token';

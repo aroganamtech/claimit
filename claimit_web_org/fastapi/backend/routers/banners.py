@@ -78,3 +78,5 @@ async def get_banners():
     ).sort("created_at", -1).to_list(50)
     banners = [_serialize_banner(a) for a in ads if _is_active(a)]
     return {"banners": banners}
+
+

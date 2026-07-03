@@ -50,6 +50,12 @@ class _BillScanningProgressScreenState
   String?   _extractedBillNumber;
   bool      _ocrDone = false;
 
+  // Confidence of the ML Kit regex fallback. Set by _extractTotal /
+  // _extractShopName: true when the value came from a low-confidence stage
+  // (blind number scan / secondary line scan) rather than an explicit label.
+  bool _totalLowConfidence = false;
+  bool _shopLowConfidence  = false;
+
   @override
   void initState() {
     super.initState();
@@ -222,6 +228,33 @@ class _BillScanningProgressScreenState
       issueCode = 'shop_mismatch';
     }
 
+    // ── Validation: extracted result must be trustworthy ─────────────────────
+    // If any field is missing, or came from a low-confidence ML Kit stage
+    // (blind number guess / secondary shop-name scan), force manual review.
+    // The low-confidence flags are only set when the regex extractors actually
+    // ran — a fully successful Gemini scan never trips this. This prevents
+    // showing a wrong amount/shop that the user might blindly confirm — the
+    // confirm screen's default issue message handles this code.
+    if (issueCode == null &&
+        (total == null ||
+            shopName == null ||
+            shopName.isEmpty ||
+            _totalLowConfidence ||
+            _shopLowConfidence)) {
+      issueCode = 'ocr_unverified';
+      debugPrint('OCR low confidence — forcing manual review '
+          '(totalLow=$_totalLowConfidence shopLow=$_shopLowConfidence)');
+    }
+
+    // ── Validation: high-value bills always go through admin review ──────────
+    // Bills above ₹5,000 are routed to manual review as a fraud safeguard.
+    // Shown to the user as a friendly "reward will be updated soon" note —
+    // NOT as an error (see 'high_amount' handling in the confirm screen).
+    if (issueCode == null && total != null && total > 5000) {
+      issueCode = 'high_amount';
+      debugPrint('High amount (₹$total > 5000) — routing to manual review');
+    }
+
     if (!mounted) return;
     context.pushReplacement(
       '/bill-reader/confirm',
@@ -233,6 +266,7 @@ class _BillScanningProgressScreenState
 
   double? _extractTotal(String rawText) {
     debugPrint('═══ OCR RAW TEXT ═══\n$rawText\n════════════════════');
+    _totalLowConfidence = false;
 
     String text = rawText
         .replaceAll(RegExp(r'(?<=[0-9])[oO](?=[0-9])'), '0')
@@ -263,6 +297,25 @@ class _BillScanningProgressScreenState
       return (val != null && val >= 10 && val <= 500000) ? val : null;
     }
 
+    // ── Remove lines that commonly hold WRONG amounts ────────────────────────
+    // Discount / savings rows, cash tendered, change returned, loyalty points
+    // and phone/GST lines must never be picked as the bill total.
+    final excludeLine = RegExp(
+      r'discount|sav(?:e|ed|ing|ings)\b|off\b|'
+      r'tender|cash\s*receiv|change|balance\s*ret|round\s*off|'
+      r'points|loyalty|'
+      r'phone|mobile|tel\s*:|ph\s*[:\.]|gstin|gst\s*no|'
+      // Bill/invoice/receipt NUMBER lines — "BILL NO: ST-2026/0894" must
+      // never donate "2026" as the total (real bug seen in testing)
+      r'bill\s*no|invoice\s*no|receipt\s*no|order\s*no|'
+      r'voucher\s*no|txn|ref\s*no',
+      caseSensitive: false,
+    );
+    final safeText = text
+        .split('\n')
+        .where((l) => !excludeLine.hasMatch(l))
+        .join('\n');
+
     // Two delimiter variants:
     // • delim        — allows newlines; used only for Stage 1 where label and
     //                  value may span lines (e.g. "TOTAL AMOUNT:\n₹2008.80")
@@ -271,56 +324,68 @@ class _BillScanningProgressScreenState
     const delim       = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t\n]*';
     const delimStrict = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t]*';
 
-    // ── Stage 1: High-confidence grand total keywords ─────────────────────────
+    // ── Stage 1: High-confidence grand total keywords (priority tiers) ───────
     // Uses delim (allows newlines) so the value found on the next line is caught.
-    final highConfidencePatterns = [
-      '(?:grand\\s*total|net\\s*total|net\\s*amount|total\\s*amount|'
-          'total\\s*bill|bill\\s*total|amount\\s*due|amount\\s*payable|'
-          'payable\\s*amount)'
+    // Tier order matters: "GRAND TOTAL / NET PAYABLE / FINAL AMOUNT" style
+    // labels are the amount actually paid AFTER discount, so they must beat
+    // "TOTAL AMOUNT", which on discounted bills can be the pre-discount figure.
+    // Within a tier we take the LAST match (not the largest) — the final total
+    // is printed after any earlier pre-discount totals on the bill.
+    final highConfidenceTiers = [
+      // Tier A — final payable amount (after discount)
+      '(?:grand\\s*total|net\\s*total|net\\s*amount|net\\s*payable|'
+          'final\\s*amount|amount\\s*paid|amount\\s*due|amount\\s*payable|'
+          'payable\\s*amount|total\\s*payable)'
+          '$delim'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      // Tier B — generic total labels
+      '(?:total\\s*amount|total\\s*bill|bill\\s*total|bill\\s*amount|'
+          'invoice\\s*total|invoice\\s*value)'
           '$delim'
           r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
     ];
 
-    for (final pattern in highConfidencePatterns) {
-      final matches =
-          RegExp(pattern, caseSensitive: false, multiLine: true).allMatches(text);
-      double? best;
-      for (final m in matches) {
+    for (final pattern in highConfidenceTiers) {
+      final matches = RegExp(pattern, caseSensitive: false, multiLine: true)
+          .allMatches(safeText)
+          .toList();
+      for (final m in matches.reversed) {
         final val = parseNum(m.group(1));
-        if (val != null && (best == null || val > best)) best = val;
-      }
-      if (best != null) {
-        debugPrint('OCR total found via high-confidence keyword: $best');
-        return best;
+        if (val != null) {
+          debugPrint('OCR total found via high-confidence keyword: $val');
+          return val;
+        }
       }
     }
 
     // ── Stage 2: Lower-priority keyword patterns ──────────────────────────────
     // Uses delimStrict (no newlines) to prevent "TOTAL\n360.00" from matching
     // the column header "TOTAL" and stealing the first item's line-price (₹360).
+    // FIX: plain "TOTAL" must be tried BEFORE "SUBTOTAL" — on discounted bills
+    // the subtotal is the pre-discount figure and is the WRONG total. Within
+    // "total" we take the LAST match (final total prints after subtotal).
     final lowerPatterns = [
-      '(?:sub\\s*total|subtotal)$delimStrict'
-          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
       '(?:^|[ \\t])total$delimStrict'
           r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
       '(?:^|[ \\t])amount$delimStrict'
           r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
       '(?:^|[ \\t])amt$delimStrict'
           r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
+      '(?:sub\\s*total|subtotal)$delimStrict'
+          r'([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
       r'₹\s*([0-9][0-9,]{0,8}(?:\.[0-9]{1,2})?)',
     ];
 
     for (final pattern in lowerPatterns) {
-      final matches =
-          RegExp(pattern, caseSensitive: false, multiLine: true).allMatches(text);
-      double? best;
-      for (final m in matches) {
+      final matches = RegExp(pattern, caseSensitive: false, multiLine: true)
+          .allMatches(safeText)
+          .toList();
+      for (final m in matches.reversed) {
         final val = parseNum(m.group(1));
-        if (val != null && (best == null || val > best)) best = val;
-      }
-      if (best != null) {
-        debugPrint('OCR total found via lower-priority keyword: $best');
-        return best;
+        if (val != null) {
+          debugPrint('OCR total found via lower-priority keyword: $val');
+          return val;
+        }
       }
     }
 
@@ -328,39 +393,70 @@ class _BillScanningProgressScreenState
     // Bug fix: the old code returned on the FIRST matching line (which could be
     // "SUBTOTAL" or the column header "TOTAL" next to item ₹360). We now scan
     // ALL matching lines and return the largest valid amount found.
-    double? lineScanBest;
-    for (final line in text.split('\n')) {
+    // Amounts WITH decimals (450.00) are preferred over bare integers —
+    // bare integers on keyword lines are often bill numbers, years or counts.
+    double? lineScanDecimal;
+    double? lineScanPlain;
+    for (final line in safeText.split('\n')) {
       // Skip lines that are only the column header (no digits on the line)
       if (!RegExp(r'\d').hasMatch(line)) continue;
+      // Skip subtotal rows — pre-discount figure, never the final total
+      if (RegExp(r'sub\s*total|subtotal', caseSensitive: false)
+          .hasMatch(line)) continue;
       if (RegExp(r'total|amount|amt|bill|payable|due',
               caseSensitive: false).hasMatch(line)) {
         final numMatches =
             RegExp(r'([0-9][0-9,\s]{0,8}(?:\.[0-9]{1,2})?)').allMatches(line);
         for (final nm in numMatches) {
-          final val = parseNum(nm.group(1));
-          if (val != null &&
-              (lineScanBest == null || val > lineScanBest)) {
-            lineScanBest = val;
+          final raw = nm.group(1)!;
+          final val = parseNum(raw);
+          if (val == null) continue;
+          if (raw.contains('.')) {
+            if (lineScanDecimal == null || val > lineScanDecimal) {
+              lineScanDecimal = val;
+            }
+          } else {
+            if (lineScanPlain == null || val > lineScanPlain) {
+              lineScanPlain = val;
+            }
           }
         }
       }
     }
+    final lineScanBest = lineScanDecimal ?? lineScanPlain;
     if (lineScanBest != null) {
-      debugPrint('OCR total found via line scan (largest): $lineScanBest');
+      _totalLowConfidence = true; // no explicit label — needs user check
+      debugPrint('OCR total found via line scan: $lineScanBest');
       return lineScanBest;
     }
 
     // ── Stage 4: Absolute fallback — largest number in the whole text ─────────
-    final allNums = RegExp(
+    // Prefer amounts WITH decimals (e.g. 450.00) — money values on receipts
+    // are printed with paise, while phone numbers, PINs and quantities are not.
+    final rawMatches = RegExp(
             r'(?<!\d)([0-9]{2,}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)(?!\d)')
-        .allMatches(text)
-        .map((m) => parseNum(m.group(1)))
-        .whereType<double>()
+        .allMatches(safeText)
+        .map((m) => m.group(1)!)
         .toList();
 
+    final decimalNums = rawMatches
+        .where((s) => s.contains('.'))
+        .map(parseNum)
+        .whereType<double>()
+        .toList();
+    if (decimalNums.isNotEmpty) {
+      decimalNums.sort();
+      _totalLowConfidence = true; // blind guess — needs user check
+      debugPrint('OCR total fallback (largest decimal): ${decimalNums.last}');
+      return decimalNums.last;
+    }
+
+    final allNums =
+        rawMatches.map(parseNum).whereType<double>().toList();
     if (allNums.isNotEmpty) {
       allNums.sort();
       final largest = allNums.last;
+      _totalLowConfidence = true; // blind guess — needs user check
       debugPrint('OCR total fallback (largest number): $largest');
       return largest;
     }
@@ -378,6 +474,7 @@ class _BillScanningProgressScreenState
   //                 reads the date block before the business name block.
 
   String? _extractShopName(String rawText) {
+    _shopLowConfidence = false;
     // Lines that signal receipt metadata (stop primary, skip secondary)
     final stopPattern = RegExp(
       r'gstin|gst\s*no|gst\s*number|gst\s*reg|'
@@ -408,12 +505,31 @@ class _BillScanningProgressScreenState
         .where((l) => l.isNotEmpty)
         .toList();
 
+    // Generic header words that are NOT the shop name — SKIP them (don't stop)
+    // so a shop name printed below "TAX INVOICE" etc. is still found.
+    final headerJunk = RegExp(
+      r'^\s*(?:tax\s*invoice|retail\s*invoice|cash\s*memo|'
+      r'bill\s*of\s*supply|customer\s*copy|duplicate|original|'
+      r'estimate|welcome|receipt|invoice|bill|'
+      // Item-table column headers — ML Kit reads these as standalone lines
+      // and they must never be picked as the shop name ("ITEM DESCRIPTION")
+      r'(?:item\s*)?description|item|rate\s*\(?[a-z]*\)?|qty|quantity|'
+      r's\.?\s*no\.?|sl\.?\s*no\.?|hsn|mrp|'
+      r'total\s*items.*|grand\s*total.*|mode\s*:.*)\s*$'
+      r'|^[\*\-=_#\.]+$',                 // decorative separator lines
+      caseSensitive: false,
+    );
+
     // ── Primary pass: first clean lines before any stop keyword ──────────────
     final shopLines = <String>[];
+    var scanned = 0;
     for (final line in lines) {
+      if (scanned >= 8) break;
+      scanned++;
       if (stopPattern.hasMatch(line)) break;
+      if (headerJunk.hasMatch(line)) continue;   // skip junk, keep looking
       final alphaCount = RegExp(r'[a-zA-Z]').allMatches(line).length;
-      if (line.length > 3 && alphaCount < 2) break;
+      if (line.length > 3 && alphaCount < 2) continue; // digits/symbols line
       if (shopLines.length >= 5) break;
       shopLines.add(line);
     }
@@ -435,6 +551,7 @@ class _BillScanningProgressScreenState
     for (final line in lines) {
       if (stopPattern.hasMatch(line)) continue;  // skip, not break
       if (skipPattern.hasMatch(line)) continue;
+      if (headerJunk.hasMatch(line)) continue;   // "TAX INVOICE", "WELCOME"…
 
       final stripped = line.replaceAll(RegExp(r'[^a-zA-Z\s]'), '').trim();
       if (stripped.length < 5) continue;
@@ -451,6 +568,9 @@ class _BillScanningProgressScreenState
           .replaceAll(RegExp(r"[^a-zA-Z0-9\s\-\&\.\,']"), '')
           .trim();
       if (clean.isNotEmpty) {
+        // Secondary pass is a guess — item names are also ALL-CAPS, so
+        // this may pick a product line. Flag for manual verification.
+        _shopLowConfidence = true;
         debugPrint('OCR shop name (secondary all-lines): $clean');
         return clean;
       }

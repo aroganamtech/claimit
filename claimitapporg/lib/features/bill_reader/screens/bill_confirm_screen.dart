@@ -42,8 +42,20 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
 
   String? get _issue => widget.validationIssue;
 
+  // 'high_amount' is not an error — it gets a friendly blue "thank you"
+  // banner instead of the red error style.
+  bool get _isFriendlyIssue => _issue == 'high_amount';
+
   String get _issueMessage {
     switch (_issue) {
+      case 'high_amount':
+        return 'Thank you! Bills above ₹5,000 are verified by our team. '
+            'Please submit your bill — your reward will be updated soon.';
+      case 'ocr_unverified':
+        return 'We couldn\'t read this bill clearly — this can happen with '
+            'a slow internet connection or a blurry photo. Check your '
+            'connection and rescan, or fill in the details below and '
+            'submit for manual review.';
       case 'date_mismatch':
         return 'The bill date doesn\'t match today\'s date. Please review '
             'the details below and submit for manual review.';
@@ -89,7 +101,9 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     // Validation failure from OCR (date/shop mismatch) — block auto-claim
     // and push the user toward manual/admin review instead.
     if (_issue != null) {
-      _snack('Please submit for review — this bill needs a manual check.');
+      _snack(_isFriendlyIssue
+          ? 'Please submit your bill — your reward will be updated soon!'
+          : 'Please submit for review — this bill needs a manual check.');
       return;
     }
 
@@ -324,26 +338,72 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFEBEE),
+                  // Friendly blue for high-amount review, red for real issues
+                  color: _isFriendlyIssue
+                      ? const Color(0xFFE3F2FD)
+                      : const Color(0xFFFFEBEE),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFEF5350)),
+                  border: Border.all(
+                      color: _isFriendlyIssue
+                          ? const Color(0xFF64B5F6)
+                          : const Color(0xFFEF5350)),
                 ),
-                child: Row(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.error_outline_rounded,
-                        color: Color(0xFFC62828), size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _issueMessage,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFFC62828),
-                          height: 1.4,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                            _isFriendlyIssue
+                                ? Icons.verified_user_rounded
+                                : Icons.error_outline_rounded,
+                            color: _isFriendlyIssue
+                                ? const Color(0xFF1565C0)
+                                : const Color(0xFFC62828),
+                            size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _issueMessage,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _isFriendlyIssue
+                                  ? const Color(0xFF1565C0)
+                                  : const Color(0xFFC62828),
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Unreadable-bill case: often just weak internet (AI
+                    // unreachable) or a blurry photo — offer a quick rescan.
+                    if (_issue == 'ocr_unverified') ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          // The scanner screen is already below this one in
+                          // the navigation stack (scanner → scanning →
+                          // pushReplacement → confirm), so just pop back to
+                          // it. pushReplacement here would create a second
+                          // scanner page with the same ValueKey → duplicate
+                          // page key crash.
+                          onPressed: () => context.pop(),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Check Internet & Rescan'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFC62828),
+                            side: const BorderSide(color: Color(0xFFEF5350)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

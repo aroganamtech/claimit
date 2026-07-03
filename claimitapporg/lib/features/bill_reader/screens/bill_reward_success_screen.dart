@@ -66,10 +66,10 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
         provider.dismissBonusPopup();
       });
     }
-    // Show a reelz ad ~3 s after the success animation (respects 5-min cooldown)
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) showReelzAdIfReady(context);
-    });
+    // NOTE: the auto-popup ad (3 s into this screen) was removed — it
+    // interrupted the user while reading their reward. The interstitial now
+    // shows on the Continue button instead (natural transition point),
+    // with frequency rules handled inside showReelzAdIfReady().
   }
 
   void _showBonusDialog(int pts) {
@@ -466,7 +466,15 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => context.pushReplacement('/bill-reader/wallet'),
+                  onPressed: () async {
+                    // Traditional interstitial placement: between finishing
+                    // the scan flow and the next screen. Frequency rules
+                    // (every 2nd scan, 5-min cooldown, 3/session) are inside.
+                    await showReelzAdIfReady(context);
+                    if (context.mounted) {
+                      context.pushReplacement('/bill-reader/wallet');
+                    }
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
