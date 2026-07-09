@@ -11,6 +11,11 @@ class AppConstants {
   // static const String baseUrl = 'http://10.0.2.2:8001';   // Android emulator
   // static const String baseUrl = 'http://localhost:8001';   // iOS simulator
 
+  // ── App version (shown in Settings) ───────────────────────────────────────
+  // KEEP IN SYNC with pubspec.yaml "version:" when releasing a new build.
+  static const String appVersion   = '1.0.1';
+  static const String appBuildNumber = '11';
+
   // ── Legal & Support (public pages — also required for Play Store listing) ──
   static const String privacyPolicyUrl = 'https://www.claimitapp.in/privacy-policy';
   static const String termsUrl         = 'https://www.claimitapp.in/terms';
@@ -130,9 +135,16 @@ class AppConstants {
   static const String myFeedback     = '/feedback/my';
 
   // ── Gemini AI Vision (for bill OCR) ──────────────────────────────────────
-  // MOVED TO BACKEND: the Gemini API key and model now live in
-  // fastapi/backend (POST /bill/ocr, key via GEMINI_API_KEY env var) so the
-  // key never ships inside the APK. See core/services/gemini_ocr_service.dart.
+  // Called DIRECTLY from the app (phone → Google India edge is faster than
+  // phone → backend in eu-north-1 → Google, and it keeps backend load at
+  // zero). Tradeoff: the key ships in the APK. The backend /bill/ocr
+  // endpoint still exists as an alternative if this ever needs to change.
+  // New AI Studio "auth keys" (AQ.…) are sent via the x-goog-api-key header.
+  static const String geminiApiKey =
+      'AQ.Ab8RN6IFWok-_JzuTJaKM0P05tF533XYuFRI_RbRhXZzsFX6uw';
+  // gemini-2.0-flash was deprecated 1 June 2026 (free quota = 0) — use 2.5.
+  static const String geminiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
   // ── Storage Keys ──────────────────────────────────────────────────────────
   static const String tokenKey        = 'access_token';

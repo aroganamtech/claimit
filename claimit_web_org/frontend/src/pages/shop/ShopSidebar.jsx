@@ -35,13 +35,20 @@ export default function ShopSidebar() {
   const location = useLocation()
   const { logout, user } = useAuth()
   const [shopName, setShopName] = useState('')
+  const [shopType, setShopType] = useState('')
   const { deleting, handleDeleteAccount } = useDeleteAccount(logout, navigate)
 
   useEffect(() => {
     api.shop.getStoreDetails().then(d => {
       setShopName(d?.shop_name || user?.name || '')
+      setShopType((d?.shop_type || '').toLowerCase())
     }).catch(() => setShopName(user?.name || ''))
   }, [user])
+
+  // Offer management (discount %) is a REDEEM-shop feature only —
+  // Reward shops give free reward points + 1% cashback, no discount.
+  const navItems = NAV_ITEMS.filter(item =>
+    item.path !== '/shop/offer' || shopType.startsWith('redeem'))
 
   return (
     <aside className="sidebar">
@@ -58,7 +65,7 @@ export default function ShopSidebar() {
       </div>
 
       <nav style={{ padding: '8px 0' }}>
-        {NAV_ITEMS.map(item => (
+        {navItems.map(item => (
           <button
             key={item.path}
             className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}

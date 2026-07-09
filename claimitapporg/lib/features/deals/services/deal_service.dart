@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/location_service.dart';
 
 class DealDto {
   final String id;
@@ -102,11 +103,23 @@ class DealService {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  /// Adds the user's detected area/pincode so the backend can float
+  /// local deals to the top of the list (no-op when location unknown).
+  void _addLocationParams(Map<String, dynamic> params) {
+    if (LocationService.lastArea.isNotEmpty) {
+      params['area'] = LocationService.lastArea;
+    }
+    if (LocationService.lastPincode.isNotEmpty) {
+      params['pincode'] = LocationService.lastPincode;
+    }
+  }
+
   /// GET /deals/nearby
   Future<List<DealDto>> fetchNearbyDeals({String? category}) async {
     try {
       final params = <String, dynamic>{};
       if (category != null && category.isNotEmpty) params['category'] = category;
+      _addLocationParams(params);
       final resp = await _api.get(AppConstants.nearbyDeals, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['deals'] as List? ?? [];
@@ -123,6 +136,7 @@ class DealService {
     try {
       final params = <String, dynamic>{};
       if (category != null && category.isNotEmpty) params['category'] = category;
+      _addLocationParams(params);
       final resp = await _api.get(AppConstants.brandDeals, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['deals'] as List? ?? [];

@@ -16,6 +16,8 @@ from ..utils.auth import (
 from ..utils.helpers import serialize_doc
 from ..utils.otp import generate_otp, send_otp_sms, store_otp, verify_otp
 from ..utils.notify import notify_user
+from ..utils.welcome_email import send_welcome_email
+import asyncio
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -35,6 +37,9 @@ class VerifyOtpRequest(BaseModel):
     phone: str   # mobile number OR email – same as above
     otp: str
     mode: str = "login"  # same semantics as SendOtpRequest.mode
+    # Real name typed on the register screen — stored on the new account
+    # instead of an auto-generated "User1/2/3" placeholder.
+    name: Optional[str] = None
     # Optional: pass the device's FCM token here to register it for push
     # notifications in the same round-trip as login (no extra API call needed).
     fcm_token: Optional[str] = None
@@ -72,10 +77,11 @@ async def _find_user(db, identifier: str):
     return await db.users.find_one({"phone": identifier})
 
 
-async def _auto_create_user(db, identifier: str) -> dict:
+async def _auto_create_user(db, identifier: str, name: str = "") -> dict:
     """
-    Create a new user with a generated display name.
-    The user can update their name later from the Profile screen.
+    Create a new user. Uses the REAL name typed at registration when
+    provided; falls back to a generated display name only for old app
+    versions that don't send one.
 
     IMPORTANT: We deliberately omit the phone/email field when the user
     didn't provide it, rather than storing None/null.  MongoDB sparse
@@ -84,11 +90,13 @@ async def _auto_create_user(db, identifier: str) -> dict:
     indexed and would cause E11000 duplicate-key errors when a second
     email-only (or phone-only) user registers.
     """
-    count = await db.users.count_documents({})
-    default_name = f"User{count + 1}"
+    clean_name = (name or "").strip()
+    if not clean_name:
+        count = await db.users.count_documents({})
+        clean_name = f"User{count + 1}"
 
     user_doc: dict = {
-        "full_name": default_name,
+        "full_name": clean_name,
         "is_verified": True,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
@@ -183,8 +191,14 @@ async def verify_otp_endpoint(request: VerifyOtpRequest):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No account found with this mobile number or email. Please register first.",
             )
-        # Register mode — create account
-        user = await _auto_create_user(db, identifier)
+        # Register mode — create account (with the real typed name)
+        user = await _auto_create_user(db, identifier, request.name or "")
+        # NEW USER: send the promo/welcome email in the background
+        # (fire-and-forget — registration never waits for it; no-op for
+        # phone-only signups or when SMTP isn't configured)
+        if _is_email(identifier):
+            asyncio.create_task(
+                send_welcome_email(identifier, user.get("full_name", "")))
     else:
         if request.mode == "register":
             # Registration attempted with an already-registered identifier
@@ -223,7 +237,7 @@ async def verify_otp_endpoint(request: VerifyOtpRequest):
     # ── 5. Fire the "Login Successful" notification (in-app + push popup) ────
     # Best-effort: notify_user() swallows its own errors, so a push outage
     # can never fail a login.
-    display_name = user.get("name") or identifier
+    display_name = user.get("full_name") or user.get("name") or identifier
     await notify_user(
         db,
         user_id,
@@ -301,6 +315,10 @@ async def social_login(request: SocialLoginRequest):
         result = await db.users.insert_one(user_doc)
         user_doc["_id"] = result.inserted_id
         user = user_doc
+        # NEW USER via Google/Facebook button: promo/welcome email in the
+        # background (fire-and-forget, never blocks or fails the login)
+        if email:
+            asyncio.create_task(send_welcome_email(email, name))
     else:
         # Update provider_id and name if missing
         updates: dict = {"updated_at": datetime.utcnow()}

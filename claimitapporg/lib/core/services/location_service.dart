@@ -17,6 +17,13 @@ import 'package:geolocator/geolocator.dart';
 class LocationService {
   LocationService._();
 
+  /// Last reverse-geocoded area name (e.g. "Kovilpatti") and pincode.
+  /// Set by the dashboard after a successful GPS + geocode; read by
+  /// DealService / ReelService / banner fetch so ads and deals from the
+  /// user's own area are shown FIRST (server-side prioritization).
+  static String lastArea = '';
+  static String lastPincode = '';
+
   /// Timeout for a fresh GPS fix. After this we fall back to last-known.
   static const _timeout = Duration(seconds: 10);
 

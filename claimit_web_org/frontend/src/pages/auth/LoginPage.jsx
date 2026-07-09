@@ -35,11 +35,7 @@ export default function LoginPage({ portal }) {
       minHeight: '100vh', display: 'flex', alignItems: 'center',
       justifyContent: 'center', background: '#f0f4ff', paddingTop: 64
     }}>
-      <div style={{
-        background: '#fff', borderRadius: 16, padding: 48,
-        width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-        border: '1px solid #e8ecf0'
-      }}>
+      <div className="login-card">
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
             width: 56, height: 56, borderRadius: '50%',

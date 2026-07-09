@@ -101,22 +101,30 @@ class _BillScanningProgressScreenState
     String    rawText = '';
     String?   billNumber;
 
+    // ── Step 0: Quick internet check ──────────────────────────────────────────
+    // A 3-second DNS lookup instead of waiting for Gemini's 20s timeout ×2.
+    // Offline scans skip AI entirely and are always routed to manual review.
+    final netOk = await _hasInternet();
+    if (!netOk) debugPrint('No internet — skipping AI, using ML Kit only');
+
     // ── Step 1: Try Gemini Vision AI (most accurate) ─────────────────────────
     bool geminiSucceeded = false;
-    try {
-      final gemini = await GeminiOcrService.instance
-          .extractFromImage(widget.imagePath);
-      if (gemini != null && gemini.hasAnyData) {
-        total      = gemini.totalAmount;
-        shopName   = gemini.shopName;
-        billDate   = gemini.billDate;
-        billNumber = gemini.billNumber;
-        rawText    = gemini.rawJson ?? '';
-        geminiSucceeded = true;
-        debugPrint('Gemini OCR succeeded: $gemini');
+    if (netOk) {
+      try {
+        final gemini = await GeminiOcrService.instance
+            .extractFromImage(widget.imagePath);
+        if (gemini != null && gemini.hasAnyData) {
+          total      = gemini.totalAmount;
+          shopName   = gemini.shopName;
+          billDate   = gemini.billDate;
+          billNumber = gemini.billNumber;
+          rawText    = gemini.rawJson ?? '';
+          geminiSucceeded = true;
+          debugPrint('Gemini OCR succeeded: $gemini');
+        }
+      } catch (e) {
+        debugPrint('Gemini OCR error: $e');
       }
-    } catch (e) {
-      debugPrint('Gemini OCR error: $e');
     }
 
     // ── Step 2: ML Kit fallback (if Gemini unavailable or returned nulls) ────
@@ -127,7 +135,13 @@ class _BillScanningProgressScreenState
             TextRecognizer(script: TextRecognitionScript.latin);
         final result = await recognizer.processImage(inputImage);
         await recognizer.close();
-        rawText = result.text;
+        // Reconstruct reading order from word positions — ML Kit reads the
+        // TEXT perfectly but returns receipt COLUMNS as separate blocks, so
+        // "GRAND TOTAL:" and its amount end up 20 lines apart in result.text.
+        // Re-joining lines by their y-position on the image puts label and
+        // value back on the same line, which the keyword extraction needs.
+        rawText = _reconstructReceiptText(result);
+        debugPrint('ML Kit reconstructed layout:\n$rawText');
 
         // Only fill fields that Gemini didn't find
         total      ??= _extractTotal(rawText);
@@ -235,8 +249,12 @@ class _BillScanningProgressScreenState
     // ran — a fully successful Gemini scan never trips this. This prevents
     // showing a wrong amount/shop that the user might blindly confirm — the
     // confirm screen's default issue message handles this code.
+    // Additionally: any scan done WITHOUT internet (AI never verified it)
+    // always goes to manual review — the confirm screen shows the
+    // "check internet & rescan" option for these.
     if (issueCode == null &&
-        (total == null ||
+        ((!netOk && !geminiSucceeded) ||
+            total == null ||
             shopName == null ||
             shopName.isEmpty ||
             _totalLowConfidence ||
@@ -260,6 +278,59 @@ class _BillScanningProgressScreenState
       '/bill-reader/confirm',
       extra: issueCode != null ? {'issueCode': issueCode} : null,
     );
+  }
+
+  // ── Internet check ──────────────────────────────────────────────────────────
+  // Fast DNS lookup (3s cap) — much quicker feedback than waiting for the
+  // Gemini HTTP call to time out on a dead/weak connection.
+  Future<bool> _hasInternet() async {
+    try {
+      final result = await InternetAddress
+          .lookup('generativelanguage.googleapis.com')
+          .timeout(const Duration(seconds: 3));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── ML Kit layout reconstruction ────────────────────────────────────────────
+  // ML Kit returns receipt columns as separate text blocks, scrambling the
+  // reading order. This rebuilds visual lines: collect every recognized line
+  // with its bounding box, sort top-to-bottom, group lines whose vertical
+  // centers align (same printed row), then sort each row left-to-right.
+  String _reconstructReceiptText(RecognizedText result) {
+    final lines = <TextLine>[];
+    for (final block in result.blocks) {
+      lines.addAll(block.lines);
+    }
+    if (lines.isEmpty) return result.text;
+
+    lines.sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));
+
+    final rows = <List<TextLine>>[];
+    for (final line in lines) {
+      final cy = line.boundingBox.center.dy;
+      var placed = false;
+      for (final row in rows) {
+        final rowCy = row.first.boundingBox.center.dy;
+        final rowH  = row.first.boundingBox.height;
+        // Same printed row if vertical centers are within ~60% of line height
+        if ((cy - rowCy).abs() < rowH * 0.6) {
+          row.add(line);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) rows.add([line]);
+    }
+
+    final buf = StringBuffer();
+    for (final row in rows) {
+      row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+      buf.writeln(row.map((l) => l.text).join(' '));
+    }
+    return buf.toString();
   }
 
   // ── Extract: Total amount ───────────────────────────────────────────────────
@@ -321,8 +392,37 @@ class _BillScanningProgressScreenState
     //                  value may span lines (e.g. "TOTAL AMOUNT:\n₹2008.80")
     // • delimStrict  — NO newlines; used for lower-priority standalone keywords
     //                  so "TOTAL\n360.00" doesn't capture the wrong number.
-    const delim       = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t\n]*';
-    const delimStrict = r'[ \t:=\-₹]*(?:rs\.?|Rs\.?)?[ \t]*';
+    // ( ) and * included: ML Kit renders the ₹ symbol inside label brackets
+    // as empty parens — "GRAND TOTAL (₹):" becomes "GRAND TOTAL ():".
+    const delim       = r'[ \t:=\-₹()*]*(?:rs\.?|Rs\.?)?[ \t\n]*';
+    const delimStrict = r'[ \t:=\-₹()*]*(?:rs\.?|Rs\.?)?[ \t]*';
+
+    // ── Cross-check: what the total SHOULD be from the bill's own math ──────
+    // subtotal + taxes − discounts. Lets us verify the extracted total and
+    // repair the classic "₹ misread as leading 7" (₹920.40 → "7920.40").
+    final expected = _expectedTotalFromParts(text);
+
+    double finalize(double v) {
+      if (expected == null) return v;
+      if ((v - expected).abs() <= 1.0) {
+        _totalLowConfidence = false; // corroborated by the bill's own math
+        return v;
+      }
+      // If stripping a leading '7' makes the amount equal the bill's math,
+      // the 7 was the rupee symbol — repair it.
+      final s = v.toStringAsFixed(2);
+      if (s.startsWith('7')) {
+        final stripped = double.tryParse(s.substring(1));
+        if (stripped != null && (stripped - expected).abs() <= 1.0) {
+          debugPrint('OCR total repaired: ₹ read as 7 → $stripped (was $v)');
+          _totalLowConfidence = false;
+          return stripped;
+        }
+      }
+      // Total disagrees with the bill's own arithmetic — don't trust it
+      _totalLowConfidence = true;
+      return v;
+    }
 
     // ── Stage 1: High-confidence grand total keywords (priority tiers) ───────
     // Uses delim (allows newlines) so the value found on the next line is caught.
@@ -353,7 +453,7 @@ class _BillScanningProgressScreenState
         final val = parseNum(m.group(1));
         if (val != null) {
           debugPrint('OCR total found via high-confidence keyword: $val');
-          return val;
+          return finalize(val);
         }
       }
     }
@@ -384,7 +484,7 @@ class _BillScanningProgressScreenState
         final val = parseNum(m.group(1));
         if (val != null) {
           debugPrint('OCR total found via lower-priority keyword: $val');
-          return val;
+          return finalize(val);
         }
       }
     }
@@ -427,7 +527,7 @@ class _BillScanningProgressScreenState
     if (lineScanBest != null) {
       _totalLowConfidence = true; // no explicit label — needs user check
       debugPrint('OCR total found via line scan: $lineScanBest');
-      return lineScanBest;
+      return finalize(lineScanBest);
     }
 
     // ── Stage 4: Absolute fallback — largest number in the whole text ─────────
@@ -448,7 +548,7 @@ class _BillScanningProgressScreenState
       decimalNums.sort();
       _totalLowConfidence = true; // blind guess — needs user check
       debugPrint('OCR total fallback (largest decimal): ${decimalNums.last}');
-      return decimalNums.last;
+      return finalize(decimalNums.last);
     }
 
     final allNums =
@@ -458,11 +558,54 @@ class _BillScanningProgressScreenState
       final largest = allNums.last;
       _totalLowConfidence = true; // blind guess — needs user check
       debugPrint('OCR total fallback (largest number): $largest');
-      return largest;
+      return finalize(largest);
     }
 
     debugPrint('OCR: no total found');
     return null;
+  }
+
+  // ── Expected total from the bill's own arithmetic ───────────────────────────
+  // subtotal + taxes − discounts. Every part must be printed WITH paise
+  // digits (".00") — that automatically skips percentages ("@ 9%") and
+  // quantities. Returns null when the bill doesn't print a decimal subtotal.
+  double? _expectedTotalFromParts(String text) {
+    double? parseAmt(String? raw) {
+      if (raw == null) return null;
+      final v = double.tryParse(raw.replaceAll(RegExp(r'[,\s₹]'), ''));
+      return (v != null && v > 0 && v <= 500000) ? v : null;
+    }
+
+    const amt = r'([0-9][0-9,]{0,8}\.[0-9]{2})';
+
+    final subM =
+        RegExp('sub[\\s\\-]*total[^0-9\\n]*$amt', caseSensitive: false)
+            .firstMatch(text);
+    final subtotal = parseAmt(subM?.group(1));
+    if (subtotal == null) return null;
+
+    double taxes = 0;
+    for (final m in RegExp(
+            '(?:[cis]gst(?!in)|\\bgst(?!in)\\b|tax(?!\\s*invoice)|vat|cess)'
+            '[^0-9\\n]*(?:[0-9.]+\\s*%)?[^0-9\\n]*$amt',
+            caseSensitive: false)
+        .allMatches(text)) {
+      taxes += parseAmt(m.group(1)) ?? 0;
+    }
+
+    double discounts = 0;
+    for (final m in RegExp(
+            '(?:discount|savings?)[^0-9\\n]*(?:[0-9.]+\\s*%)?[^0-9\\n]*$amt',
+            caseSensitive: false)
+        .allMatches(text)) {
+      discounts += parseAmt(m.group(1)) ?? 0;
+    }
+
+    final expected = subtotal + taxes - discounts;
+    if (expected <= 0) return null;
+    debugPrint('OCR expected total from parts: '
+        '$subtotal + $taxes − $discounts = $expected');
+    return expected;
   }
 
   // ── Extract: Shop name ──────────────────────────────────────────────────────

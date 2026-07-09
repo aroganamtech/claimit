@@ -1785,7 +1785,7 @@ const _zones = [
   _ZoneItem(label: 'Brand\nDeals', icon: "assets/images/f3.png", route: '/claims'),
   _ZoneItem(label: 'Nearby\nDeals', icon: "assets/images/f4.png", route: '/claims'),
   _ZoneItem(label: 'Promo\nReelz', icon: "assets/images/f5.png", route: '/reelz'),
-  _ZoneItem(label: 'Local\nClassifieds', icon: "assets/images/f6.png", route: '/classified'),
+  _ZoneItem(label: 'Local Finds\nClassifieds', icon: "assets/images/f6.png", route: '/classified'),
 ];
 
 class _FeaturedZonesSheet extends StatelessWidget {

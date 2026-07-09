@@ -9,12 +9,7 @@ const AD_TYPES = [
     desc: 'Video  /  Static Thumbnail',
     price: 840,
   },
-  {
-    key: 'promo_reelz',
-    title: 'Promo Reelz Ad',
-    desc: 'Video  /  Static Thumbnail',
-    price: 1400,
-  },
+ 
   {
     key: 'brand_deals',
     title: 'Brand Deals Ad',
@@ -25,6 +20,12 @@ const AD_TYPES = [
     key: 'nearby_deals',
     title: 'Nearby Deals Ad',
     desc: 'Thumbnail + Details of the Ad',
+    price: 1400,
+  },
+   {
+    key: 'promo_reelz',
+    title: 'Promo Reelz Ad',
+    desc: 'Video  /  Static Thumbnail',
     price: 1400,
   },
 ]

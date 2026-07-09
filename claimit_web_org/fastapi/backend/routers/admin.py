@@ -16,12 +16,14 @@ from bson import ObjectId
 import os
 
 from utils.s3 import generate_presigned_url_sync as _presign
+from utils.s3 import delete_object as _s3_delete
 from database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
     app_bill_reviews_collection, app_db, app_notifications_collection,
     app_users_collection, app_feedback_collection, app_shops_collection,
     deleted_users_collection,
+    app_banners_collection, app_deals_collection, app_reels_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -34,7 +36,7 @@ from utils.notify import notify_user
 router = APIRouter()
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
+ADMIN_PASS = os.getenv("ADMIN_PASS", "Krishna2001$%")
 
 
 def _id(s):
@@ -97,7 +99,17 @@ async def delete_user(user_id: str, _admin=Depends(get_current_admin)):
     res = await users_collection.delete_one({"_id": _id(user_id)})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="User not found")
-    # Cascade clean-up
+    # Cascade clean-up — also remove app-side ad mirrors + S3 creatives,
+    # otherwise the deleted user's ads keep showing inside the Flutter app.
+    user_ads = await ads_collection.find({"user_id": user_id}).to_list(500)
+    for ad in user_ads:
+        aid = str(ad["_id"])
+        for coll in (app_banners_collection, app_deals_collection,
+                     app_reels_collection):
+            await coll.delete_many({"web_ad_id": aid})
+        for key_field in ("image_s3_key", "video_s3_key", "thumbnail_s3_key"):
+            if ad.get(key_field):
+                await _s3_delete(ad[key_field])
     await ads_collection.delete_many({"user_id": user_id})
     await shops_collection.delete_many({"user_id": user_id})
     await tickets_collection.delete_many({"user_id": user_id})
@@ -230,9 +242,32 @@ async def update_ad(ad_id: str, patch: AdminAdPatch, _admin=Depends(get_current_
 
 @router.delete("/ads/{ad_id}")
 async def delete_ad(ad_id: str, _admin=Depends(get_current_admin)):
-    res = await ads_collection.delete_one({"_id": _id(ad_id)})
-    if not res.deleted_count:
+    """
+    Deleting an ad must remove it EVERYWHERE:
+      1. the mirrored app-side copy (claimit_db banners / deals / reels —
+         this is what the Flutter app actually displays; the old code left
+         these behind, so "deleted" ads kept showing in the app),
+      2. the creative files in S3 (image / video / thumbnail),
+      3. the web ads record itself.
+    """
+    ad = await ads_collection.find_one({"_id": _id(ad_id)})
+    if not ad:
         raise HTTPException(status_code=404, detail="Ad not found")
+
+    # 1) Remove mirrored app-side copies (all types — delete_many is a no-op
+    #    on collections that don't contain this web_ad_id)
+    for coll in (app_banners_collection, app_deals_collection,
+                 app_reels_collection):
+        await coll.delete_many({"web_ad_id": ad_id})
+
+    # 2) Delete creative files from S3 (best-effort — never blocks)
+    for key_field in ("image_s3_key", "video_s3_key", "thumbnail_s3_key"):
+        key = ad.get(key_field)
+        if key:
+            await _s3_delete(key)
+
+    # 3) Delete the web ad record
+    await ads_collection.delete_one({"_id": _id(ad_id)})
     return {"ok": True}
 
 

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -18,10 +19,34 @@ from .routes import (
 )
 
 
+from .utils.daily_push import daily_push_loop
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    # Data normalization (idempotent): stored has_rewards/has_redeem must
+    # match shop_type — older "Edit Shop Type" saves left them contradictory,
+    # which made shops appear in BOTH the Reward and Redeem lists.
+    try:
+        from .database import get_db
+        _db = get_db()
+        # Case/format tolerant ("Reward", "Reward Shop", …) + canonicalizes
+        # shop_type itself to plain lowercase "reward"/"redeem".
+        await _db.shops.update_many(
+            {"shop_type": {"$regex": "^\\s*reward", "$options": "i"}},
+            {"$set": {"shop_type": "reward", "has_rewards": True,
+                      "has_redeem": False, "discount": 0}})
+        await _db.shops.update_many(
+            {"shop_type": {"$regex": "^\\s*redeem", "$options": "i"}},
+            {"$set": {"shop_type": "redeem", "has_rewards": False,
+                      "has_redeem": True}})
+    except Exception as _e:  # noqa: BLE001 — normalization must never block boot
+        print(f"⚠️  shop-flag normalization skipped: {_e}")
+    # Daily engagement push (random time 10:00–20:00 IST) — background task
+    push_task = asyncio.create_task(daily_push_loop())
     yield
+    push_task.cancel()
     await disconnect_db()
 
 

@@ -67,30 +67,6 @@ class BillReaderIntroScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-
-              // ── Redeem Bill option ───────────────────────────────────────
-              _ChoiceCard(
-                color: _green,
-                bgColor: const Color(0xFFE8F5E9),
-                icon: Icons.redeem_rounded,
-                title: 'Redeem Bill',
-                subtitle: 'Use your existing points to claim a discount at a '
-                    'Redeem Zone shop. No cashback or points are earned.',
-                buttonLabel: 'Select Redeem Shop',
-                onTap: () => context.push(
-                  '/shops',
-                  extra: const ShopCategory(
-                    id: -1,
-                    name: 'Redeem Zone',
-                    icon: Icons.redeem_rounded,
-                    color: Color(0xFF059669),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // ── Reward Bill option ───────────────────────────────────────
               _ChoiceCard(
                 color: _blue,
                 bgColor: const Color(0xFFE3F2FD),
@@ -109,6 +85,31 @@ class BillReaderIntroScreen extends StatelessWidget {
                   ),
                 ),
               ),
+                const SizedBox(height: 16),
+              // ── Redeem Bill option ───────────────────────────────────────
+              _ChoiceCard(
+                color: _green,
+                bgColor: const Color(0xFFE8F5E9),
+                icon: Icons.redeem_rounded,
+                title: 'Redeem Bill',
+                subtitle: 'Use your existing points to claim a discount at a '
+                    'Redeem Zone shop. Plus additional Rewards points And 1% Cashback',
+                buttonLabel: 'Select Redeem Shop',
+                onTap: () => context.push(
+                  '/shops',
+                  extra: const ShopCategory(
+                    id: -1,
+                    name: 'Redeem Zone',
+                    icon: Icons.redeem_rounded,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+              ),
+
+              
+
+              // ── Reward Bill option ───────────────────────────────────────
+              
             ],
           ),
         ),

@@ -234,3 +234,38 @@ final List<ClassifiedTopCategory> localHelperCategories = classifiedCategories
       ),
     )
     .toList();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Local Finds" zone — the 12-tile landing grid shown before the Classified
+// home screen (Shop / Eat / Fashion / Health / Fitness / Edu / Services /
+// Auto / Stay / Entertain / Fin / Living). Each zone will get its own set of
+// sub-categories later; for now they're placeholders that can route to a
+// dedicated sub-category screen once that content is provided.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class LocalFindZone {
+  final String id;      // stable key, e.g. "shop"
+  final String label;   // display label, e.g. "Shop"
+  final IconData icon;
+
+  const LocalFindZone({
+    required this.id,
+    required this.label,
+    required this.icon,
+  });
+}
+
+const List<LocalFindZone> localFindZones = [
+  LocalFindZone(id: 'shop',      label: 'Shop',      icon: Icons.shopping_bag_rounded),
+  LocalFindZone(id: 'eat',       label: 'Eat',       icon: Icons.restaurant_rounded),
+  LocalFindZone(id: 'fashion',   label: 'Fashion',   icon: Icons.checkroom_rounded),
+  LocalFindZone(id: 'health',    label: 'Health',    icon: Icons.favorite_rounded),
+  LocalFindZone(id: 'fitness',   label: 'Fitness',   icon: Icons.fitness_center_rounded),
+  LocalFindZone(id: 'edu',       label: 'Edu',       icon: Icons.school_rounded),
+  LocalFindZone(id: 'services',  label: 'Services',  icon: Icons.handyman_rounded),
+  LocalFindZone(id: 'auto',      label: 'Auto',      icon: Icons.directions_car_rounded),
+  LocalFindZone(id: 'stay',      label: 'Stay',      icon: Icons.hotel_rounded),
+  LocalFindZone(id: 'entertain', label: 'Entertain', icon: Icons.theaters_rounded),
+  LocalFindZone(id: 'fin',       label: 'Fin',       icon: Icons.payments_rounded),
+  LocalFindZone(id: 'living',    label: 'Living',    icon: Icons.home_rounded),
+];

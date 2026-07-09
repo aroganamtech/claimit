@@ -65,13 +65,19 @@ def _serialize(doc: dict, user_id: str = "") -> dict:
 @router.get("")
 async def list_reels(
     limit: int = Query(default=20, le=100),
+    area: str = Query(default="", description="User's area — local promo reels float to top"),
+    pincode: str = Query(default="", description="User's pincode — local promo reels float to top"),
     current_user: dict = Depends(get_current_user),
 ):
+    from ..utils.helpers import prioritize_by_location
     db = get_db()
     cursor = db["reels"].find({}).limit(limit)
     docs = await cursor.to_list(length=limit)
     user_id: str = current_user["_id"]
-    return {"reels": [_serialize(d, user_id) for d in docs]}
+    reels = [_serialize(d, user_id) for d in docs]
+    # Location-aware ordering: promo reels from the user's area first
+    reels = prioritize_by_location(reels, area, pincode)
+    return {"reels": reels}
 
 
 # ── Single ────────────────────────────────────────────────────────────────────

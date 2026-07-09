@@ -307,7 +307,9 @@ class BillRewardProvider extends ChangeNotifier {
     String?           billNumber,   // kept for API compat — no longer used in key
     String?           billTime,     // "HH:MM" from receipt; makes same-shop same-day valid
   }) {
-    final shop    = shopName.toLowerCase().trim();
+    // Must normalize IDENTICALLY to BillRewardEntry.duplicateKey:
+    // lowercase + alphanumerics only, so OCR spacing/case can't dodge it.
+    final shop    = shopName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     final amt     = amount.toStringAsFixed(0);
     final dateStr = '${billDate.year}-${billDate.month}-${billDate.day}';
 
@@ -338,16 +340,17 @@ class BillRewardProvider extends ChangeNotifier {
             : 'reward');
     final isRedeem = scanType == 'redeem';
 
-    // ── Redeem Bill: ONLY spends existing points against the discount — it
-    //    never earns cashback or reward points. ──────────────────────────────
-    // ── Reward Bill: earns cashback + points on the bill total, no discount. ─
+    // ── BOTH scan types earn cashback + points on the bill total. ───────────
+    // A Redeem Bill ADDITIONALLY spends existing points against the shop's
+    // discount — i.e. redeem shops act as redeem AND reward (matches the
+    // server rule in fastapi bill.py scan_bill).
     final discountPct   = isRedeem ? (_pendingDiscount ?? 0) : 0;
     final discountValue = isRedeem ? (total * discountPct / 100) : 0.0;
     final localDeducted = isRedeem
         ? (discountValue < _currentPoints ? discountValue : _currentPoints)
         : 0.0;
-    final localPts = isRedeem ? 0.0 : BillRewardEntry.calcPoints(total);
-    final localCb  = isRedeem ? 0.0 : BillRewardEntry.calcCashback(total);
+    final localPts = BillRewardEntry.calcPoints(total);
+    final localCb  = BillRewardEntry.calcCashback(total);
 
     bool serverSuccess = false;
 
@@ -369,33 +372,28 @@ class BillRewardProvider extends ChangeNotifier {
       final serverName = result['shop_name'] as String?;
       if (serverName != null && serverName.isNotEmpty) shopName = serverName;
 
-      if (isRedeem) {
-        // Only the points balance changes (deducted) — cashback wallet and
-        // lifetime cashback are untouched by a Redeem scan.
-        _currentPoints = (result['reward_points'] as num?)?.toDouble() ??
-            (_currentPoints - localDeducted);
-      } else {
-        _currentPoints    = (result['reward_points']     as num?)?.toDouble() ?? (_currentPoints + localPts);
-        _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
-        _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
+      // Server is authoritative for BOTH types — redeem now also earns
+      // cashback + points (plus the discount deduction, all server-side).
+      _currentPoints = (result['reward_points'] as num?)?.toDouble() ??
+          (_currentPoints + localPts - localDeducted);
+      _cashbackWallet   = (result['cashback_wallet']   as num?)?.toDouble() ?? (_cashbackWallet + localCb);
+      _lifetimeCashback = (result['lifetime_cashback'] as num?)?.toDouble() ?? (_lifetimeCashback + localCb);
 
-        // New-user 1000-point welcome bonus (Reward path only)
-        if (result['is_new_user_bonus'] == true) {
-          _bonusPoints           = (result['bonus_points'] as num?)?.toInt() ?? 1000;
-          _showNewUserBonusPopup = true;
-        }
+      // New-user 1000-point welcome bonus (Reward path only)
+      if (!isRedeem && result['is_new_user_bonus'] == true) {
+        _bonusPoints           = (result['bonus_points'] as num?)?.toInt() ?? 1000;
+        _showNewUserBonusPopup = true;
       }
     } catch (e) {
       if (e is BillAlreadyScannedException) rethrow;
       AppError.friendly(e, '', context: 'BillSync');
       // Fallback: apply locally so the user still sees the result this session
-      if (isRedeem) {
-        _currentPoints -= localDeducted;
-      } else {
-        _currentPoints    += localPts;
-        _cashbackWallet   += localCb;
-        _lifetimeCashback += localCb;
-      }
+      // Local fallback mirrors the server rule: earn on both types,
+      // deduct only on redeem.
+      _currentPoints    += localPts;
+      _cashbackWallet   += localCb;
+      _lifetimeCashback += localCb;
+      if (isRedeem) _currentPoints -= localDeducted;
     }
 
     // Add to local history (even on server fallback — avoids blank history)
@@ -408,8 +406,8 @@ class BillRewardProvider extends ChangeNotifier {
       shopColor:      _shopColors[_history.length % _shopColors.length],
       totalBill:      total,
       discount:       isRedeem ? discountValue : 0,
-      cashback:       isRedeem ? 0 : localCb,
-      rewardPoints:   isRedeem ? 0 : localPts,
+      cashback:       localCb,        // earned on BOTH scan types now
+      rewardPoints:   localPts,       // earned on BOTH scan types now
       pointsDeducted: isRedeem ? localDeducted : 0,
       date:           scanNow,
       billDate:       _pendingBillDate,

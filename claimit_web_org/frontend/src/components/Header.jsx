@@ -6,6 +6,7 @@ import img from '../../public/assets/logo_home.png'
 export default function Header() {
   const { user, role, logout } = useAuth()
   const [showLoginMenu, setShowLoginMenu] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const menuRef = useRef(null)
   const navigate = useNavigate()
@@ -27,10 +28,11 @@ export default function Header() {
   }
 
   const portals = [
-    { label: 'Business Owner Registration', role: 'shop', path: '/shop/auth' },
-    { label: 'Create Advertisements', role: 'advertiser', path: '/advertiser/auth' },
+    { label: 'Business Registration', role: 'shop', path: '/shop/auth' },
+    { label: 'Advertisements Upload', role: 'advertiser', path: '/advertiser/auth' },
     // { label: 'Business Associate', role: 'shop', path: '/shop/auth' },
-    { label: 'Sales Representative', role: 'sales', path: '/sales/auth' },
+    { label: 'Sales Team/Executives', role: 'sales', path: '/sales/auth' },
+    {label: 'Admin' , role:'sales',path:'/admin'}
   ]
 
   const getDashboardPath = () => {
@@ -72,7 +74,7 @@ export default function Header() {
       </div>
 
       {/* Nav Links */}
-      <nav style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+      <nav className="header-nav" style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
         {['About us', 'Why claimIT', 'Features', 'Contact us'].map(item => (
           <a key={item} href="#" style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 400, textDecoration: 'none' }}>{item}</a>
         ))}
@@ -162,8 +164,63 @@ export default function Header() {
           )}
         </div>
       </nav>
+
+      {/* Hamburger — mobile only (CSS hides it on desktop) */}
+      <button className="header-burger" onClick={() => setDrawerOpen(true)} aria-label="Menu">☰</button>
+
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />
+          <aside className="mobile-drawer">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, fontSize: 16, color: '#1565C0' }}>Menu</span>
+              <button onClick={() => setDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#555' }}>✕</button>
+            </div>
+            {['About us', 'Why claimIT', 'Features', 'Contact us'].map(item => (
+              <a key={item} href="#" onClick={() => setDrawerOpen(false)}
+                style={{ padding: '12px 4px', color: '#333', fontSize: 14, textDecoration: 'none', borderBottom: '1px solid #f0f0f0' }}>
+                {item}
+              </a>
+            ))}
+            <div style={{ height: 16 }} />
+            {user ? (
+              <>
+                <button style={drawerBtnStyle}
+                  onClick={() => { navigate(getDashboardPath()); setDrawerOpen(false) }}>Dashboard</button>
+                <button style={{ ...drawerBtnStyle, color: '#e53935', borderColor: '#ffcdd2' }}
+                  onClick={() => { setDrawerOpen(false); handleLogout() }}>Logout</button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#888', margin: '4px 0 8px' }}>Login / Register</div>
+                {portals.map(p => (
+                  <button key={p.label} style={drawerBtnStyle}
+                    onClick={() => { navigate(p.path); setDrawerOpen(false) }}>{p.label}</button>
+                ))}
+              </>
+            )}
+          </aside>
+        </>
+      )}
     </header>
   )
+}
+
+const drawerBtnStyle = {
+  width: '100%',
+  padding: '12px 14px',
+  marginBottom: 8,
+  background: '#fff',
+  border: '1.5px solid #dbe4f0',
+  borderRadius: 10,
+  textAlign: 'left',
+  fontSize: 14,
+  fontWeight: 600,
+  color: '#1565C0',
+  cursor: 'pointer',
+  fontFamily: 'Poppins, sans-serif',
 }
 
 const menuItemStyle = {

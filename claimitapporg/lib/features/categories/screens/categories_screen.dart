@@ -62,29 +62,29 @@ class CategoriesScreen extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded,
-                color: Color(0xFF1E3A8A), size: 24),
-            onPressed: () {},
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: const [
-                Icon(Icons.tune_rounded, size: 26, color: Color(0xFF374151)),
-                SizedBox(width: 4),
-                Text('Filter',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF374151))),
-              ],
-            ),
-          ),
-        ],
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(Icons.search_rounded,
+        //         color: Color(0xFF1E3A8A), size: 24),
+        //     onPressed: () {},
+        //   ),
+        //   Container(
+        //     margin: const EdgeInsets.only(right: 12),
+        //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        //     decoration: BoxDecoration(
+        //       border: Border.all(color: const Color(0xFFE5E7EB)),
+        //       borderRadius: BorderRadius.circular(20),
+        //     ),
+        //     child: Row(
+        //       children: const [
+        //         Icon(Icons.tune_rounded, size: 26, color: Color(0xFF374151)),
+        //         SizedBox(width: 4),
+        //         Text('Filter',
+        //             style: TextStyle(fontSize: 13, color: Color(0xFF374151))),
+        //       ],
+        //     ),
+        //   ),
+        // ],
       ),
       body: GridView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

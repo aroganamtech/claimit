@@ -13,11 +13,13 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _controller = TextEditingController();
+  final _nameController = TextEditingController();
   String? _socialLoading;
 
   @override
   void dispose() {
     _controller.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -54,7 +56,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _sendOtp() async {
+    final name  = _nameController.text.trim();
     final input = _controller.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your name')),
+      );
+      return;
+    }
     if (input.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -72,6 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       context.push('/auth/otp', extra: {
         'phone': input,
         'isRegistration': true,
+        'name': _nameController.text.trim(),
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,7 +178,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           const SizedBox(height: 32),
 
                           const Text(
-                            'Enter your email',
+                            'Enter your details',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 14,
@@ -177,6 +187,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
+
+                          // Full name — stored on the account (no more
+                          // auto-generated "User1/2/3" names)
+                          TextField(
+                            controller: _nameController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: InputDecoration(
+                              hintText: 'Your Name',
+                              hintStyle: const TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 15,
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF2563EB)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
 
                           TextField(
                             controller: _controller,

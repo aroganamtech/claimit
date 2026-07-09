@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from database import (
     shops_collection, transactions_collection, reviews_collection,
-    app_shops_collection,
+    app_shops_collection, app_db,
 )
 from models.schemas import OfferUpdateRequest, StoreUpdateRequest, ReviewCreate, ReviewReplyRequest, GalleryPhotoRequest, GalleryPhotoKeyRequest
 from utils.dependencies import get_current_user
@@ -10,8 +10,38 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
 from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign, generate_presigned_upload_url, public_url as _public_url
+from utils.fcm import send_push_to_tokens
+from database import app_db as _app_db
+import asyncio
 import json
 import re
+
+
+async def _broadcast_new_shop(shop_name: str, location: str) -> None:
+    """
+    Push a "new shop joined" alert to EVERY app user (fire-and-forget).
+    Chunked at FCM's 500-token multicast limit; dead tokens are pruned.
+    Best-effort by design — must never affect the registration request.
+    """
+    try:
+        docs = await _app_db["fcm_tokens"].find({}, {"token": 1}).to_list(20000)
+        tokens = list({d["token"] for d in docs if d.get("token")})
+        if not tokens:
+            return
+        title = "🏪 New shop just joined Claimit!"
+        where = f" ({location})" if location else ""
+        body = (f"{shop_name}{where} is now on Claimit — "
+                "check new shops & deals near you!")
+        for i in range(0, len(tokens), 500):
+            chunk = tokens[i:i + 500]
+            invalid = await send_push_to_tokens(
+                chunk, title, body, {"type": "new_shop"})
+            if invalid:
+                await _app_db["fcm_tokens"].delete_many(
+                    {"token": {"$in": invalid}})
+        print(f"📣 New-shop broadcast sent to {len(tokens)} device(s)")
+    except Exception as exc:  # noqa: BLE001 — never break registration
+        print(f"⚠️  new-shop broadcast failed: {exc}")
 
 # ─── Redeem Zone discount tiers (Merchant categorization) ──────────────────────
 _ALLOWED_DISCOUNTS = {5, 10, 15, 20, 25, 30}
@@ -227,7 +257,19 @@ async def register_shop(
     discount_percentage: int = Form(15),
     current_user=Depends(get_current_user),
 ):
-    if discount_percentage not in _ALLOWED_DISCOUNTS:
+    shop_type = (shop_type or "").strip().lower()
+    if shop_type not in ("reward", "redeem"):
+        raise HTTPException(
+            status_code=400,
+            detail="shop_type must be 'reward' or 'redeem'",
+        )
+
+    # Reward shops give free reward points — they have NO redeem discount.
+    # (Previously the 15% form default leaked into reward shops, which made
+    # the app show "15% Disc" badges on Reward Zone cards.)
+    if shop_type == "reward":
+        discount_percentage = 0
+    elif discount_percentage not in _ALLOWED_DISCOUNTS:
         raise HTTPException(
             status_code=400,
             detail=f"discount_percentage must be one of {sorted(_ALLOWED_DISCOUNTS)}",
@@ -271,6 +313,9 @@ async def register_shop(
     else:
         result = await shops_collection.insert_one(shop_doc)
         shop_doc["id"] = str(result.inserted_id)
+        # Brand-new shop — announce to every app user (fire-and-forget,
+        # runs in the background so registration responds instantly)
+        asyncio.create_task(_broadcast_new_shop(shop_name, location))
 
     # Mirror into app database
     await _sync_shop_to_app(user_id)
@@ -326,6 +371,56 @@ async def get_dashboard(current_user=Depends(get_current_user)):
     }
 
 
+# ─── Bill scans (read-only visibility for the shop owner) ─────────────────────
+@router.get("/bill-scans")
+async def get_bill_scans(current_user=Depends(get_current_user)):
+    """
+    Every bill scanned at this owner's shop through the Claimit app —
+    read-only, so owners can cross-check customer scans against their sales.
+    Matches by shop_id first, plus case-insensitive shop-name match for
+    scans where the app only captured the OCR'd name (no shop context).
+    """
+    user_id = str(current_user["_id"])
+    shop = await shops_collection.find_one({"user_id": user_id})
+    if not shop:
+        return {"total_scans": 0, "scans": []}
+
+    shop_id = str(shop["_id"])
+    name = (shop.get("shop_name") or shop.get("name") or "").strip()
+
+    query = {"$or": [{"shop_id": shop_id}]}
+    if name:
+        query["$or"].append(
+            {"shop_name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
+        )
+
+    docs = (
+        await app_db["bill_history"]
+        .find(query)
+        .sort("scanned_at", -1)
+        .to_list(300)
+    )
+
+    def _fmt(d):
+        ts = d.get("scanned_at")
+        return {
+            "scan_type":       d.get("scan_type", ""),
+            "shop_name":       d.get("shop_name", ""),
+            "total_amount":    d.get("total_amount", 0),
+            "earned_cashback": d.get("earned_cashback", 0),
+            "earned_points":   d.get("earned_points", 0),
+            "discount_value":  d.get("discount_value", 0),
+            "bill_number":     d.get("bill_number") or "",
+            "bill_date":       d.get("bill_date") or "",
+            "bill_time":       d.get("bill_time") or "",
+            "source":          d.get("source", "scan"),
+            "scanned_at":      ts.isoformat() if hasattr(ts, "isoformat")
+                               else str(ts or ""),
+        }
+
+    return {"total_scans": len(docs), "scans": [_fmt(d) for d in docs]}
+
+
 # ─── Offer ────────────────────────────────────────────────────
 @router.put("/offer")
 async def update_offer(request: OfferUpdateRequest, current_user=Depends(get_current_user)):
@@ -363,9 +458,29 @@ async def update_store_details(request: StoreUpdateRequest, current_user=Depends
     update_data = {k: v for k, v in request.dict().items() if v is not None}
     if not update_data:
         return {"message": "Nothing to update"}
+
+    # BUG FIX: when shop_type changes, the stored has_rewards / has_redeem
+    # booleans MUST change with it — otherwise the app's DB-level filters
+    # (which use the booleans) contradict shop_type and the shop appears
+    # in BOTH the Reward and Redeem lists.
+    if "shop_type" in update_data:
+        st = str(update_data["shop_type"]).strip().lower()
+        # Tolerant: "reward", "Reward Shop", "redeem shop"… all normalize
+        if st.startswith("reward") or st.startswith("redeem"):
+            st = "reward" if st.startswith("reward") else "redeem"
+            update_data["shop_type"]   = st
+            update_data["has_rewards"] = (st == "reward")
+            update_data["has_redeem"]  = (st == "redeem")
+            if st == "reward":
+                # Reward shops have no redeem discount
+                update_data["discount_percentage"] = 0
+                update_data["discount"] = 0
+
     res = await shops_collection.update_one({"user_id": user_id}, {"$set": update_data})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Shop not found")
+    # Keep the app-facing mirror fields consistent with the edit
+    await _sync_shop_to_app(user_id)
     return {"message": "Store details updated", "patch": update_data}
 
 

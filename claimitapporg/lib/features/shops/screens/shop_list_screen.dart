@@ -168,9 +168,12 @@ class _ShopListScreenState extends State<ShopListScreen> {
   @override
   void initState() {
     super.initState();
-    // Default tab: Rewards for category screens (id > 0).
+    // Default tab: Rewards for category screens (id > 0) AND the Reward
+    // Zone itself (id == 0) — id >= 0. (BUG FIX: `id > 0` made the Reward
+    // Zone default to redeem mode, so its cards wrongly showed
+    // "X% Disc + 1% Cashback" instead of "Free Reward + 1% Cashback".)
     // For isTab / id==-1 (Nearby) the toggle is hidden; value doesn't affect filtering.
-    _isRewards = !widget.isTab && widget.category.id > 0;
+    _isRewards = !widget.isTab && widget.category.id >= 0;
     _loadShops();
   }
 

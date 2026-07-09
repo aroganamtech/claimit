@@ -199,3 +199,104 @@ input, textarea, select {
   color: var(--text-light);
   font-size: 14px;
 }
+
+/* ── Auth pages (login/register — all 4 portals) ─────────────────────────
+   Desktop: illustration panel + form box side by side.
+   Mobile (≤768px): ONLY the form box, full width — no extra panels. */
+.auth-layout {
+  display: flex;
+  min-height: 100vh;
+  padding-top: 64px;
+}
+.auth-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 40px;
+  background: #fff;
+}
+.auth-right {
+  width: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 40px;
+  border: 1px solid #e8ecf0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+.login-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 48px;
+  width: 420px;
+  max-width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e8ecf0;
+}
+.otp-box {
+  width: 50px;
+  height: 56px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  border: 1.5px solid #ddd;
+  border-radius: 10px;
+  outline: none;
+  background: #fff;
+}
+/* ── Mobile header drawer ── */
+.header-burger {
+  display: none;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 26px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1100;
+}
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  max-width: 80vw;
+  background: #fff;
+  z-index: 1200;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  animation: drawerIn 0.25s ease;
+}
+@keyframes drawerIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@media (max-width: 768px) {
+  .auth-left { display: none; }         /* mobile: only the box */
+  .auth-right { width: 100%; padding: 16px 12px; }
+  .auth-card { padding: 26px 18px; }
+  .login-card { width: 100%; margin: 0 12px; padding: 30px 20px; }
+  .otp-box { width: 42px; height: 50px; font-size: 18px; }
+  .onboard-sidebar { display: none !important; }  /* onboarding menu strip */
+  .header-nav { display: none !important; }       /* inline links → drawer */
+  .header-burger { display: block; }
+}

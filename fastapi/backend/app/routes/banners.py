@@ -5,11 +5,12 @@ home_banner ad via POST /advertiser/ads/create.
 
 GET /banners   → { banners: [...] }   (no auth required)
 """
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Query
 from datetime import datetime
 
 from ..database import get_db
-from ..utils.helpers import serialize_doc
+from ..utils.helpers import serialize_doc, prioritize_by_location
 from ..utils.s3 import public_url, generate_video_url_sync
 
 router = APIRouter(prefix="/banners", tags=["Banners"])
@@ -29,7 +30,10 @@ def _is_active(banner: dict) -> bool:
 
 
 @router.get("")
-async def get_banners():
+async def get_banners(
+    area: Optional[str] = Query(None, description="User's area — local banners float to top"),
+    pincode: Optional[str] = Query(None, description="User's pincode — local banners float to top"),
+):
     """Return all active home-banner ads for the Flutter home screen."""
     db = get_db()
     banners = await db.banners.find({}).sort("created_at", -1).to_list(50)
@@ -51,4 +55,6 @@ async def get_banners():
         else:
             doc.setdefault("video_url", "")
         active.append(doc)
+    # Location-aware ordering: banners for the user's pincode/area first
+    active = prioritize_by_location(active, area or "", pincode or "")
     return {"success": True, "banners": active}

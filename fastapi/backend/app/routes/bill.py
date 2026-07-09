@@ -116,7 +116,10 @@ class ReviewActionRequest(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _dup_key(shop: str, bill_date: str, amount: float,
              bill_time: Optional[str] = None) -> str:
-    s   = shop.lower().strip()
+    import re as _re
+    # Lowercase + alphanumerics only — "Fresh Basket" and "FreshBasket"
+    # must produce the SAME fingerprint (mirrors the Flutter client).
+    s   = _re.sub(r"[^a-z0-9]", "", shop.lower())
     amt = f"{amount:.0f}"
     t   = (bill_time or "").strip()
     if t:
@@ -128,8 +131,9 @@ def _resolve_scan_type(raw: Optional[str], shop_id: Optional[str]) -> str:
     """
     Normalize scan_type to "redeem" or "reward".
 
-      • Redeem Bill — only spends existing reward points against a shop's
-        registered discount %.  No cashback / points are ever earned.
+      • Redeem Bill — spends existing reward points against a shop's
+        registered discount % AND earns 1 % cashback + 10 % points on the
+        bill total (redeem shops act as redeem + reward).
       • Reward Bill — earns 1 % cashback + 10 % points on the bill total.
         No discount is applied / no points are deducted.
 
@@ -240,14 +244,14 @@ async def scan_bill(data: BillScanRequest, request: Request):
         if scan_type == "redeem":
             discount_pct = (shop_doc or {}).get("discount") or 0
 
-    # ── Reward Bill: earn cashback + points. Redeem Bill: earn nothing — ────
-    # it only spends existing points against the shop's discount.
-    earned_cb  = 0.0
-    earned_pts = 0.0
-    if scan_type == "reward":
-        # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-        earned_cb  = round(total * 0.01, 2)
-        earned_pts = round(total / 10, 1)
+    # ── BOTH scan types earn cashback + points on the bill total. ────────────
+    # A Redeem Bill ADDITIONALLY spends existing points against the shop's
+    # discount (below) — i.e. a redeem shop acts as redeem AND reward:
+    # the user gets the discount from their points, then still earns
+    # 1% cashback + 10% points on the bill amount, exactly like a reward shop.
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    earned_cb  = round(total * 0.01, 2)
+    earned_pts = round(total / 10, 1)
 
     # ── Redeem Bill: deduct existing points based on the shop's discount %. ──
     # Reward Bill: never deducts — discount_pct is 0 above so this is skipped.
@@ -477,15 +481,11 @@ async def admin_action_review(
     shop_id   = review.get("shop_id")
     scan_type = _resolve_scan_type(review.get("scan_type"), shop_id)
 
-    # Redeem Bill manual reviews never earn cashback/points — they only spend
-    # existing points against the shop's discount (same rule as /bill/scan).
-    if scan_type == "redeem":
-        pts = 0
-        cb  = 0.0
-    else:
-        # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-        pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
-        cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
+    # BOTH scan types earn cashback + points (same rule as /bill/scan) —
+    # a Redeem Bill additionally spends points against the shop's discount.
+    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
+    pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
+    cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
 
     # ── Redeem Bill: look up merchant's registered discount % (if any) ───────
     discount_pct = 0
@@ -605,7 +605,7 @@ GEMINI_MODEL_URL = (
 )
 
 # TODO: move this default into fastapi/backend/.env as GEMINI_API_KEY=...
-_GEMINI_KEY_DEFAULT = "AQ.Ab8RN6KIY8FyV6ey0aKMKk21tK2CjhVbxmPctUsj0X8zGffQiQ"
+_GEMINI_KEY_DEFAULT = "AQ.Ab8RN6IFWok-_JzuTJaKM0P05tF533XYuFRI_RbRhXZzsFX6uw"
 
 _OCR_PROMPT = """
 You are a bill/receipt OCR assistant. Carefully analyze the receipt image and extract:

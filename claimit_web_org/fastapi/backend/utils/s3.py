@@ -60,6 +60,26 @@ def _sync_upload(data: bytes, key: str, content_type: str) -> str:
     return key
 
 
+def _sync_delete(key: str):
+    _s3_client().delete_object(Bucket=_bucket(), Key=key)
+
+
+async def delete_object(s3_key: str) -> bool:
+    """
+    Best-effort delete of a bucket object (accepts a raw key OR a full URL).
+    Never raises — a failed S3 delete must not block deleting the DB record.
+    """
+    if not s3_key:
+        return False
+    try:
+        key = _normalize_key(s3_key)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, partial(_sync_delete, key))
+        return True
+    except Exception:
+        return False
+
+
 async def upload_bytes(data: bytes, folder: str, filename: Optional[str] = None,
                        content_type: str = "image/jpeg") -> str:
     ext = ""

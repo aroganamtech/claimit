@@ -92,14 +92,18 @@ async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> di
             f"https://{bucket}.s3.{region}.amazonaws.com/{k}" for k in result["image_s3_keys"]
         ]
 
-    # Derive has_rewards / has_redeem from shop_type
-    shop_type = result.get("shop_type", "")
-    if shop_type == "reward":
-        result.setdefault("has_rewards", True)
-        result.setdefault("has_redeem",  False)
-    elif shop_type == "redeem":
-        result.setdefault("has_rewards", False)
-        result.setdefault("has_redeem",  True)
+    # Derive has_rewards / has_redeem from shop_type.
+    # When shop_type is a known value it is AUTHORITATIVE (override, not
+    # setdefault) — stale stored booleans from older "Edit Shop Type" saves
+    # used to contradict it, making a shop appear in BOTH zones.
+    # Tolerant matching: DB values may be "reward", "Reward", "Reward Shop"…
+    shop_type = str(result.get("shop_type") or "").strip().lower()
+    if shop_type.startswith("reward"):
+        result["has_rewards"] = True
+        result["has_redeem"]  = False
+    elif shop_type.startswith("redeem"):
+        result["has_rewards"] = False
+        result["has_redeem"]  = True
     else:
         result.setdefault("has_rewards", True)
         result.setdefault("has_redeem",  True)

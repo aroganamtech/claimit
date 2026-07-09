@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../data/classified_categories.dart';
+
+const Color _navy = Color(0xFF1E3A5F);
+const Color _gold = Color(0xFFC9A876);
 
 class ClassifiedHomeScreen extends StatefulWidget {
   const ClassifiedHomeScreen({super.key});
@@ -20,27 +24,28 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Color(0xFF1E40AF), size: 20),
+              color: _navy, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
-          'Classified',
-          style: TextStyle(
-            color: Color(0xFF1E293B),
-            fontWeight: FontWeight.bold,
+        title: Text(
+          'LOCAL CLASSIFIEDS',
+          style: GoogleFonts.playfairDisplay(
+            color: _navy,
+            fontWeight: FontWeight.w700,
             fontSize: 18,
+            letterSpacing: 0.6,
           ),
         ),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.search_rounded,
-                color: Color(0xFF1E40AF)),
+            icon: const Icon(Icons.search_rounded, color: _navy),
             onPressed: () => context.push(
               '/classified/list',
               extra: {'category': '', 'subcategory': '', 'title': 'All Classifieds'},
@@ -48,45 +53,63 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // ── Local Classified / Local Helpers toggle ───────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: _ClassifiedTabToggle(
-              selected: _tab,
-              onChanged: (i) => setState(() => _tab = i),
-            ),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFDCE7F5),
+              Color(0xFFE9E4EF),
+              Color(0xFFF3E3EA),
+            ],
           ),
-
-          // ── Category grid ──────────────────────────────────────────────
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 12,
-                childAspectRatio: 0.92,
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: kToolbarHeight + 8),
+              // ── Local Classified / Local Helpers toggle ───────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: _ClassifiedTabToggle(
+                  selected: _tab,
+                  onChanged: (i) => setState(() => _tab = i),
+                ),
               ),
-              itemCount: _items.length,
-              itemBuilder: (context, i) {
-                final item = _items[i];
-                return _TopCategoryBox(
-                  item: item,
-                  onTap: () => context.push(
-                    '/classified/list',
-                    extra: {
-                      'category': item.category,
-                      'subcategory': item.subcategory,
-                      'title': item.name,
-                    },
+
+              // ── Category grid ──────────────────────────────────────────────
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 14,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.92,
                   ),
-                );
-              },
-            ),
+                  itemCount: _items.length,
+                  itemBuilder: (context, i) {
+                    final item = _items[i];
+                    return _TopCategoryBox(
+                      item: item,
+                      onTap: () => context.push(
+                        '/classified/list',
+                        extra: {
+                          'category': item.category,
+                          'subcategory': item.subcategory,
+                          'title': item.name,
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -106,8 +129,9 @@ class _ClassifiedTabToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFEEF1F5),
+        color: Colors.white.withOpacity(0.55),
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _gold, width: 1.2),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -146,7 +170,7 @@ class _ToggleSegment extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFF2563EB) : Colors.transparent,
+          color: active ? _navy : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
@@ -154,7 +178,7 @@ class _ToggleSegment extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: active ? Colors.white : const Color(0xFF64748B),
+            color: active ? Colors.white : _navy.withOpacity(0.6),
           ),
         ),
       ),
@@ -177,15 +201,15 @@ class _TopCategoryBox extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white.withOpacity(0.6),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: _gold.withOpacity(0.8)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(item.icon, size: 30, color: const Color(0xFF334155)),
+            Icon(item.icon, size: 30, color: _navy),
             const SizedBox(height: 8),
             Text(
               item.name,
@@ -195,7 +219,7 @@ class _TopCategoryBox extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
+                color: _navy,
                 height: 1.2,
               ),
             ),

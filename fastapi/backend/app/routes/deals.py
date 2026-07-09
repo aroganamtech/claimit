@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from bson import ObjectId
 from ..database import get_db
 from ..utils.auth import get_current_user
-from ..utils.helpers import serialize_doc
+from ..utils.helpers import serialize_doc, prioritize_by_location
 from ..utils.s3 import public_url
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
@@ -23,6 +23,8 @@ def _fix_image_url(doc: dict) -> dict:
 async def get_nearby_deals(
     location: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    area: Optional[str] = Query(None, description="User's area name — local deals float to top"),
+    pincode: Optional[str] = Query(None, description="User's pincode — local deals float to top"),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -31,12 +33,16 @@ async def get_nearby_deals(
         query["category"] = {"$regex": category, "$options": "i"}
     cursor = db.deals.find(query).sort("name", 1)
     deals = await cursor.to_list(length=100)
-    return {"success": True, "deals": [_fix_image_url(serialize_doc(d)) for d in deals], "total": len(deals)}
+    result = [_fix_image_url(serialize_doc(d)) for d in deals]
+    result = prioritize_by_location(result, area or location or "", pincode or "")
+    return {"success": True, "deals": result, "total": len(result)}
 
 
 @router.get("/brand")
 async def get_brand_deals(
     category: Optional[str] = Query(None),
+    area: Optional[str] = Query(None, description="User's area name — local deals float to top"),
+    pincode: Optional[str] = Query(None, description="User's pincode — local deals float to top"),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -45,7 +51,9 @@ async def get_brand_deals(
         query["category"] = {"$regex": category, "$options": "i"}
     cursor = db.deals.find(query).sort("name", 1)
     deals = await cursor.to_list(length=100)
-    return {"success": True, "deals": [_fix_image_url(serialize_doc(d)) for d in deals], "total": len(deals)}
+    result = [_fix_image_url(serialize_doc(d)) for d in deals]
+    result = prioritize_by_location(result, area or "", pincode or "")
+    return {"success": True, "deals": result, "total": len(result)}
 
 
 @router.get("/{deal_id}")

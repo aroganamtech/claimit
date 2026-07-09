@@ -14,11 +14,15 @@ const int _kResendSeconds = 30;
 class OtpScreen extends StatefulWidget {
   final String phone;
   final bool isRegistration;
+  /// Name typed on the register screen — stored on the new account
+  /// (replaces the old auto-generated "User1/2/3" names).
+  final String name;
 
   const OtpScreen({
     super.key,
     required this.phone,
     required this.isRegistration,
+    this.name = '',
   });
 
   @override
@@ -112,6 +116,7 @@ class _OtpScreenState extends State<OtpScreen> {
       widget.phone,
       _otp,
       isLogin: !widget.isRegistration,
+      name: widget.name,
     );
 
     if (!mounted) return;

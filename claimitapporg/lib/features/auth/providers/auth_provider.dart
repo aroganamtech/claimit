@@ -148,7 +148,8 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> verifyOtp(String phone, String otp, {bool isLogin = true}) async {
+  Future<bool> verifyOtp(String phone, String otp,
+      {bool isLogin = true, String name = ''}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -164,6 +165,9 @@ class AuthProvider extends ChangeNotifier {
           'phone': phone,
           'otp': otp,
           'mode': isLogin ? 'login' : 'register',
+          // Real name typed at registration — backend stores it instead of
+          // generating "User1/2/3"
+          if (name.trim().isNotEmpty) 'name': name.trim(),
           if (fcmToken != null && fcmToken.isNotEmpty) 'fcm_token': fcmToken,
           if (fcmToken != null && fcmToken.isNotEmpty)
             'fcm_platform': Platform.isIOS ? 'ios' : 'android',

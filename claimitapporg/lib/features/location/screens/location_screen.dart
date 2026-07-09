@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +138,11 @@ class _LocationScreenState extends State<LocationScreen> {
     if (_isSaving) return;
     setState(() { _selectedLocation = location; _isSaving = true; });
     await context.read<AuthProvider>().updateLocation(location);
+    // Selected app-bar location drives deal/banner/reel ordering — takes
+    // effect immediately (area = first part before the comma, e.g.
+    // "Mudukulathur, Tamil Nadu" → "Mudukulathur").
+    LocationService.lastArea = location.split(',').first.trim();
+    LocationService.lastPincode = '';
     if (!mounted) return;
     setState(() => _isSaving = false);
     context.go('/home');

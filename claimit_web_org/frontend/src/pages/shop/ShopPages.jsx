@@ -18,6 +18,7 @@ export function OfferManagement() {
   const [selected, setSelected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [shopType, setShopType] = useState(null)
   const options = [5, 10, 15, 20, 25, 30]
 
   useEffect(() => {
@@ -25,7 +26,37 @@ export function OfferManagement() {
       setCurrent(d?.discount_percentage || 0)
       setSelected(d?.discount_percentage || null)
     }).catch(() => {})
+    api.shop.getStoreDetails()
+      .then(d => setShopType((d?.shop_type || '').toLowerCase()))
+      .catch(() => setShopType(''))
   }, [])
+
+  // Reward shops don't have discount offers — guard against opening this
+  // page directly by URL (the sidebar already hides the menu item).
+  if (shopType !== null && shopType.startsWith('reward')) {
+    return (
+      <div style={{ paddingTop: 64 }}>
+        <ShopSidebar />
+        <main className="main-content">
+          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 6 }}>Offer Management</h1>
+          <div style={{
+            background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 12,
+            padding: 28, maxWidth: 700, marginTop: 20
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1565C0', marginBottom: 8 }}>
+              🎯 Your shop is a Reward Shop
+            </div>
+            <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.7, margin: 0 }}>
+              Customers at your shop earn <strong>free reward points + 1% cashback</strong> when
+              they scan their bills — no discount setup is needed. Discount offers apply
+              only to Redeem shops. You can change your shop type in
+              Store Details Management.
+            </p>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   const handlePublish = async () => {
     if (!selected) return

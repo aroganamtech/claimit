@@ -33,6 +33,7 @@ import '../../features/search/screens/search_screen.dart';
 import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
+import '../../features/classifieds/screens/local_finds_screen.dart';
 import '../../features/classifieds/screens/classified_list_screen.dart';
 import '../../features/classifieds/screens/add_post_flow.dart';
 import '../../features/classifieds/screens/classified_detail_screen.dart';
@@ -87,6 +88,12 @@ final RouteObserver<PageRoute> appRouteObserver = RouteObserver<PageRoute>();
 // Home (e.g. the banner video) listens to this instead of subscribing to the
 // observer directly, since its own context would resolve the wrong route.
 final ValueNotifier<bool> homeShellCovered = ValueNotifier<bool>(false);
+
+// Observer for the INNER shell navigator — catches pushes that happen inside
+// the bottom-nav shell (e.g. the Notifications screen opened from the home
+// bell icon). The outer appRouteObserver can't see those, which used to
+// leave the home banner video playing (with sound) underneath.
+final RouteObserver<PageRoute> shellRouteObserver = RouteObserver<PageRoute>();
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -152,6 +159,7 @@ class AppRouter {
             return OtpScreen(
               phone: extra?['phone'] ?? '',
               isRegistration: extra?['isRegistration'] ?? false,
+              name: extra?['name'] as String? ?? '',
             );
           },
         ),
@@ -228,8 +236,15 @@ class AppRouter {
         ),
 
         // ── Classifieds ────────────────────────────────────────────────────
+        // '/classified' now opens the "Local Finds" zone-grid landing screen;
+        // its "LOCAL CLASSIFIEDS" heading pushes on to the original
+        // toggle+grid screen at '/classified/home'.
         GoRoute(
           path: '/classified',
+          builder: (context, state) => const LocalFindsScreen(),
+        ),
+        GoRoute(
+          path: '/classified/home',
           builder: (context, state) => const ClassifiedHomeScreen(),
         ),
         GoRoute(
@@ -407,6 +422,7 @@ class AppRouter {
         // auto-generating a key that could conflict with pushed route pages.
         ShellRoute(
           navigatorKey: _shellNavKey,
+          observers: [shellRouteObserver],
           pageBuilder: (context, state, child) => NoTransitionPage<void>(
             key: const ValueKey('app-shell'),
             child: HomeScreen(child: child),

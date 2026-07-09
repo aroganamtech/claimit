@@ -31,10 +31,7 @@ export default function AdminLogin() {
       background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      <div style={{
-        background: '#fff', borderRadius: 16, padding: 48,
-        width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-      }}>
+      <div className="login-card" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
             width: 64, height: 64, borderRadius: '50%',
@@ -61,9 +58,7 @@ export default function AdminLogin() {
         <button className="btn-primary" onClick={handleLogin} disabled={loading}>
           {loading ? 'Signing in...' : 'Sign In'}
         </button>
-        <p style={{ textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 16 }}>
-          Default: admin / admin123 (change in backend .env)
-        </p>
+        
       </div>
     </div>
   )

@@ -287,18 +287,19 @@ class ShopService {
         .toList();
     final meta = _metaFor(categoryIds);
 
-    final shopType = j['shop_type'] as String?;
+    // Tolerant matching: server values may be "reward", "Reward", "Reward Shop"…
+    final shopType = (j['shop_type'] as String?)?.trim().toLowerCase() ?? '';
     // Only let shop_type control the flags when it's one of the known values.
     // Any other value (e.g. 'grocery', 'salon') falls through to the boolean
     // fields so shops aren't silently excluded from both zones.
     final bool hasRewards;
     final bool hasRedeem;
-    if (shopType == 'reward') {
-      hasRewards = true;  hasRedeem = false;
-    } else if (shopType == 'redeem') {
-      hasRewards = false; hasRedeem = true;
-    } else if (shopType == 'both') {
+    if (shopType == 'both') {
       hasRewards = true;  hasRedeem = true;
+    } else if (shopType.startsWith('reward')) {
+      hasRewards = true;  hasRedeem = false;
+    } else if (shopType.startsWith('redeem')) {
+      hasRewards = false; hasRedeem = true;
     } else {
       // No explicit reward/redeem type → use boolean fields, default true
       hasRewards = j['has_rewards'] as bool? ?? true;

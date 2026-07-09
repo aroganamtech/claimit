@@ -143,13 +143,9 @@ export default function AuthPage({ portal }) {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', paddingTop: 64 }}>
-      {/* Left panel */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        padding: '60px 40px', background: '#fff'
-      }}>
+    <div className="auth-layout">
+      {/* Left panel — hidden on mobile (≤768px), only the form box shows */}
+      <div className="auth-left">
         <img
           src={step === 'register' ? '/assets/images/register.png' : '/assets/images/otp.png'}
           alt="claimit"
@@ -163,13 +159,9 @@ export default function AuthPage({ portal }) {
         </p>
       </div>
 
-      {/* Right panel */}
-      <div style={{ width: 520, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-        <div style={{
-          width: '100%', maxWidth: 440, background: '#fff',
-          borderRadius: 16, padding: 40, border: '1px solid #e8ecf0',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
-        }}>
+      {/* Right panel — the form box (full-width on mobile) */}
+      <div className="auth-right">
+        <div className="auth-card">
 
           {/* ── STEP 1: Register ── */}
           {step === 'register' && (
@@ -257,13 +249,10 @@ export default function AuthPage({ portal }) {
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 20 }}>
                 {otp.map((digit, idx) => (
                   <input key={idx} id={`otp-${idx}`} type="text" inputMode="numeric" maxLength={1}
+                    className="otp-box"
                     value={digit}
                     onChange={e => handleOtpInput(e.target.value, idx)}
-                    onKeyDown={e => handleOtpKeyDown(e, idx)}
-                    style={{
-                      width: 50, height: 56, textAlign: 'center', fontSize: 22, fontWeight: 700,
-                      border: '1.5px solid #ddd', borderRadius: 10, outline: 'none', background: '#fff'
-                    }} />
+                    onKeyDown={e => handleOtpKeyDown(e, idx)} />
                 ))}
               </div>
               <p style={{ textAlign: 'center', marginBottom: 20, fontSize: 13 }}>

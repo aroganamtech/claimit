@@ -71,7 +71,9 @@ class BillRewardEntry {
   String get duplicateKey {
     final d = billDate ?? date;
     final dateStr = '${d.year}-${d.month}-${d.day}';
-    final shop = shopName.toLowerCase().trim();
+    // Lowercase + alphanumerics only — "Fresh Basket" and "FreshBasket"
+    // must produce the SAME fingerprint (OCR spacing/case varies per scan).
+    final shop = shopName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     final amt = totalBill.toStringAsFixed(0);
 
     final t = billTime?.trim();

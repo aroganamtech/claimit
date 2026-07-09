@@ -155,7 +155,9 @@ class FcmService {
   }
 
   Future<void> _initLocalNotifications() async {
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // White-on-transparent status-bar icon (colored launcher icons render
+    // as a blank grey square) — see res/drawable/ic_stat_notify.xml
+    const androidInit = AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -227,7 +229,8 @@ class FcmService {
           channelDescription: _channel.description,
           importance: Importance.high,
           priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
+          icon: '@drawable/ic_stat_notify',
+          color: const Color(0xFF1565C0), // Claimit blue tint for the icon
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,

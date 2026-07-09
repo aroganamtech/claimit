@@ -37,10 +37,23 @@ def _bucket():
 
 
 def public_url(s3_key: str) -> str:
-    """Return a permanent public URL for a bucket object (bucket must be public)."""
+    """
+    Return a permanent public URL for a bucket object (bucket must be public).
+
+    If CDN_DOMAIN is set in .env (a CloudFront distribution in front of this
+    bucket), serve through it — users in India then stream from nearby edge
+    servers instead of the Stockholm bucket. If CDN_DOMAIN is not set (or
+    removed), this returns the direct S3 URL exactly as before — instant
+    zero-risk rollback.
+    """
+    key = s3_key.lstrip("/")
+    cdn = os.getenv("CDN_DOMAIN", "").strip().rstrip("/")
+    if cdn:
+        if not cdn.startswith("http"):
+            cdn = "https://" + cdn
+        return f"{cdn}/{key}"
     region = os.getenv("AWS_REGION", "eu-north-1")
     bucket = _bucket()
-    key = s3_key.lstrip("/")
     return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
 
 

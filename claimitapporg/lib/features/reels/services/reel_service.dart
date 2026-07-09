@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/location_service.dart';
 import '../models/reel_model.dart';
 
 /// Returned by [ReelService.likeReel] — server-confirmed state.
@@ -15,7 +16,15 @@ class ReelService {
   /// GET /reels — includes liked_by_me per authenticated user.
   Future<List<ReelItem>> fetchReels() async {
     try {
-      final resp = await _api.get(AppConstants.reels);
+      // Send the user's detected area/pincode so local promo reels come first
+      final params = <String, dynamic>{};
+      if (LocationService.lastArea.isNotEmpty) {
+        params['area'] = LocationService.lastArea;
+      }
+      if (LocationService.lastPincode.isNotEmpty) {
+        params['pincode'] = LocationService.lastPincode;
+      }
+      final resp = await _api.get(AppConstants.reels, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['reels'] as List? ?? [];
         return list

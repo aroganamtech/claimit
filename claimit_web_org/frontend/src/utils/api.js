@@ -111,6 +111,7 @@ const sales = {
 const shop = {
   register:           (formData) => post('/shop/register', formData),
   getDashboard:       ()         => get('/shop/dashboard'),
+  getBillScans:       ()         => get('/shop/bill-scans'),
   getOffer:           ()         => get('/shop/offer'),
   setOffer:           (payload)  => put('/shop/offer', payload),
   getStoreDetails:    ()         => get('/shop/store-details'),

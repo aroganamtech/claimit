@@ -9,7 +9,7 @@ export default function ChooseService() {
       display: 'flex'
     }}>
       {/* Minimal sidebar for onboarding */}
-      <aside style={{
+      <aside className="onboard-sidebar" style={{
         width: 280, minHeight: '100vh',
         background: '#fff', borderRight: '1px solid #eee',
         display: 'flex', flexDirection: 'column',

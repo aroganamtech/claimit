@@ -682,9 +682,10 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
             const SizedBox(height: 16),
 
             // ── Reward preview ────────────────────────────────────────────────
-            // Reward Bill only — never shown for a Redeem scan, since Redeem
-            // never earns cashback or points (it only spends points).
-            if (!provider.isPendingRedeem && _estimatedPoints > 0)
+            // Shown for BOTH scan types — redeem scans now ALSO earn
+            // cashback + points on the bill total (plus the discount,
+            // previewed separately below).
+            if (_estimatedPoints > 0)
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 14),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/theme_provider.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -118,6 +119,21 @@ class SettingsScreen extends StatelessWidget {
             child: const Text(
               'Logout',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // App version footer
+          const Center(
+            child: Text(
+              'Version ${AppConstants.appVersion} '
+              '(${AppConstants.appBuildNumber})',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF9E9E9E),
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
 

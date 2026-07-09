@@ -13,12 +13,8 @@ export function ReviewAndSubmit() {
   const galleryPreviews = photosUrlsRaw ? JSON.parse(photosUrlsRaw) : []
 
   return (
-    <div style={{ paddingTop: 64, display: 'flex', minHeight: '100vh' }}>
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        padding: '60px 40px', background: '#fff'
-      }}>
+    <div className="auth-layout">
+      <div className="auth-left">
         <img
           src="/assets/images/submit_shop.png"
           alt="Review and submit"
@@ -32,7 +28,7 @@ export function ReviewAndSubmit() {
         </p>
       </div>
 
-      <div style={{ width: 560, padding: 40, display: 'flex', alignItems: 'center' }}>
+      <div className="auth-right">
         <div style={{
           width: '100%', background: '#fff',
           borderRadius: 16, padding: 36, border: '1px solid #e8ecf0',
@@ -148,8 +144,18 @@ export function ShopPayment() {
     try {
       const basic = JSON.parse(sessionStorage.getItem('shop_basic') || '{}')
       const category = sessionStorage.getItem('shop_category') || ''
-      const shopType = sessionStorage.getItem('shop_type') || 'redeem'
+      const shopType = sessionStorage.getItem('shop_type')
       const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
+
+      // BUG FIX: never silently default the shop type — a lost sessionStorage
+      // value used to register the shop as 'redeem' even when the owner had
+      // chosen 'Reward Shop'. Send the user back to choose explicitly.
+      if (shopType !== 'reward' && shopType !== 'redeem') {
+        alert('Please choose your shop type (Reward or Redeem) again before submitting.')
+        setLoading(false)
+        navigate('/shop/onboard/shop-type')
+        return
+      }
 
       // ── Step 1: Register shop basic info ──────────────────
       const formData = new FormData()
@@ -259,14 +265,8 @@ export function ShopPayment() {
   }
 
   return (
-    <div style={{
-      paddingTop: 64, display: 'flex', minHeight: '100vh'
-    }}>
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        padding: '60px 40px', background: '#fff'
-      }}>
+    <div className="auth-layout">
+      <div className="auth-left">
         <img
           src="/assets/images/payment_shop.png"
           alt="Finish payment"
@@ -280,7 +280,7 @@ export function ShopPayment() {
         </p>
       </div>
 
-      <div style={{ width: 520, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+      <div className="auth-right">
         <div style={{
           width: '100%', maxWidth: 440, background: '#fff',
           borderRadius: 16, padding: 36, border: '1px solid #e8ecf0',

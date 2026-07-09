@@ -1112,10 +1112,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:video_player/video_player.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/network/api_client.dart';
-import '../../../core/router/app_router.dart' show homeShellCovered;
+import '../../../core/router/app_router.dart'
+    show homeShellCovered, shellRouteObserver;
 import '../../auth/providers/auth_provider.dart';
 import '../../notifications/providers/notification_provider.dart';
 import '../../deals/models/deal_model.dart';
@@ -1402,7 +1404,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final PageController _bannerCtrl = PageController();
   final ScrollController _scrollCtrl = ScrollController();
   Timer? _bannerTimer;
@@ -1413,33 +1415,71 @@ class _DashboardScreenState extends State<DashboardScreen>
   // scrolled mostly out of view, resume once scrolled back near the top.
   bool _bannerVisible = true;
 
-  // API-loaded deals
-  List<DealData> _nearbyDealsList = [];
-  List<DealData> _brandDealsList = [];
-  bool _loadingDeals = true;
+  // ── Session caches (static) ────────────────────────────────────────────
+  // Switching bottom-nav tabs REPLACES the shell child, so this State is
+  // recreated on every return to Home — previously it refetched everything
+  // (deals, banners, GPS + shops) from zero, causing the visible load
+  // delay. Cache the last results: Home renders INSTANTLY from cache and
+  // refreshes silently in the background.
+  static List<DealData> _cachedNearbyDeals = [];
+  static List<DealData> _cachedBrandDeals  = [];
+  static List<_BannerData> _cachedBanners  = [];
+  static List<ShopItem> _cachedShops       = [];
+  static String _cachedDetectedArea        = '';
+  static double? _cachedLat, _cachedLng;
+
+  // API-loaded deals (seeded from cache — instant on tab return)
+  List<DealData> _nearbyDealsList = List.of(_cachedNearbyDeals);
+  List<DealData> _brandDealsList  = List.of(_cachedBrandDeals);
+  bool _loadingDeals =
+      _cachedNearbyDeals.isEmpty && _cachedBrandDeals.isEmpty;
 
   // API-loaded banners (replaces static _banners list)
-  List<_BannerData> _apiBanners = [];
+  List<_BannerData> _apiBanners = List.of(_cachedBanners);
 
   // GPS-based nearby shops (within 4 km)
-  List<ShopItem> _nearbyShops = [];
+  List<ShopItem> _nearbyShops = List.of(_cachedShops);
   bool _loadingNearbyShops = false;
-  String _detectedArea = '';   // reverse-geocoded area name, e.g. "Anna Nagar"
-  double? _userLat;
-  double? _userLng;
+  String _detectedArea = _cachedDetectedArea;
+  double? _userLat = _cachedLat;
+  double? _userLng = _cachedLng;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Home (this screen) is torn down and rebuilt from scratch every time the
+    // user switches away and back (bottom-nav tab switch, or leaving via a
+    // route outside the shell like Reels, then returning). If Home was
+    // covered right before that teardown, didPopNext() on the OLD instance
+    // may never fire (its RouteAware subscription is gone with it, or the
+    // return trip isn't a matching pop/didPopNext at all under go_router's
+    // `.go()` navigation) — leaving the shared `homeShellCovered` flag stuck
+    // at true forever, which then keeps the banner video paused on every
+    // future visit to Home. Since this fresh instance is, by definition,
+    // the one actually on-screen right now, force the flag back to false so
+    // the banner video is free to autoplay again.
+    homeShellCovered.value = false;
     _scrollCtrl.addListener(_onScroll);
     // Auto-scroll banner — images advance after 5s, videos advance when
     // playback finishes (with a safety-timeout fallback). See
     // _scheduleNextBannerAdvance().
     _scheduleNextBannerAdvance();
+    // The location the user PICKED in the app bar (e.g. "Mudukulathur")
+    // takes priority for deal/banner/reel ordering — GPS is only a
+    // fallback when nothing was selected. First word before the comma is
+    // the area name ads are matched against.
+    final savedLoc = context.read<AuthProvider>().user?.location;
+    if (savedLoc != null && savedLoc.trim().isNotEmpty) {
+      LocationService.lastArea = savedLoc.split(',').first.trim();
+      LocationService.lastPincode = '';
+    }
     _loadDeals();
     _loadNearbyShopsFromGPS();
     _loadBanners();
+    // Re-fetch deal/banner ordering when the user returns from the
+    // location picker with a DIFFERENT area selected.
+    homeShellCovered.addListener(_maybeRefetchOnLocationChange);
     // NOTE: random-timer ads removed — interstitials now only appear at
     // natural transition points (after a bill scan) via showReelzAdIfReady().
     // Fetch unread notification count for the bell badge
@@ -1493,9 +1533,18 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   /// Fetch banners from /banners API; fall back to static if empty/error.
+  /// Sends the user's area/pincode (when known) so LOCAL banner ads
+  /// are returned first by the backend.
   Future<void> _loadBanners() async {
     try {
-      final resp = await ApiClient().get('/banners');
+      final params = <String, dynamic>{};
+      if (LocationService.lastArea.isNotEmpty) {
+        params['area'] = LocationService.lastArea;
+      }
+      if (LocationService.lastPincode.isNotEmpty) {
+        params['pincode'] = LocationService.lastPincode;
+      }
+      final resp = await ApiClient().get('/banners', queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['banners'] as List? ?? [];
         final parsed = list.map((b) {
@@ -1518,6 +1567,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         }).toList();
         if (mounted && parsed.isNotEmpty) {
           setState(() => _apiBanners = parsed);
+          _cachedBanners = parsed; // instant render on next tab return
           _scheduleNextBannerAdvance();
           // Pre-download every banner video in the background as soon as
           // the banner list arrives, so by the time the carousel reaches a
@@ -1533,23 +1583,53 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  /// Fetch nearby + brand deals from the backend
+  // Area used for the most recent deals/banners fetch — compared on return
+  // from the location picker so a changed selection reorders immediately.
+  String _lastFetchedArea = '';
+
+  void _maybeRefetchOnLocationChange() {
+    if (homeShellCovered.value) return; // just got covered — nothing to do
+    if (LocationService.lastArea != _lastFetchedArea && mounted) {
+      _loadDeals();
+      _loadBanners();
+    }
+  }
+
+  /// Fetch nearby + brand deals from the backend.
+  /// Shows the loader only when there's no cached data — otherwise the
+  /// cached lists stay visible and are swapped silently when fresh data
+  /// arrives (parallel fetch for speed).
   Future<void> _loadDeals() async {
-    setState(() => _loadingDeals = true);
-    final nearby = await DealService.instance.fetchNearbyDeals();
-    final brand  = await DealService.instance.fetchBrandDeals();
+    _lastFetchedArea = LocationService.lastArea;
+    if (_nearbyDealsList.isEmpty && _brandDealsList.isEmpty) {
+      setState(() => _loadingDeals = true);
+    }
+    final results = await Future.wait([
+      DealService.instance.fetchNearbyDeals(),
+      DealService.instance.fetchBrandDeals(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _nearbyDealsList = nearby.map(_dtoToDealData).toList();
-      _brandDealsList  = brand.map(_dtoToDealData).toList();
-      _loadingDeals    = false;
+      // Don't wipe good cached data with an error-empty response
+      if (results[0].isNotEmpty || _nearbyDealsList.isEmpty) {
+        _nearbyDealsList = results[0].map(_dtoToDealData).toList();
+        _cachedNearbyDeals = _nearbyDealsList;
+      }
+      if (results[1].isNotEmpty || _brandDealsList.isEmpty) {
+        _brandDealsList = results[1].map(_dtoToDealData).toList();
+        _cachedBrandDeals = _brandDealsList;
+      }
+      _loadingDeals = false;
     });
   }
 
   /// Fetch shops within 4 km of the user's GPS location.
   /// Also reverse-geocodes the position to a human-readable area name.
   Future<void> _loadNearbyShopsFromGPS() async {
-    if (mounted) setState(() => _loadingNearbyShops = true);
+    // Loader only when nothing cached — otherwise refresh silently
+    if (mounted && _nearbyShops.isEmpty) {
+      setState(() => _loadingNearbyShops = true);
+    }
     try {
       final pos = await LocationService.getPosition(
         context: mounted ? context : null,
@@ -1558,7 +1638,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         final lat = pos.latitude;
         final lng = pos.longitude;
 
-        // ── Reverse geocode to get area name ──────────────────────────
+        // ── Reverse geocode to get area name + pincode ─────────────────
         String areaName = '';
         try {
           final placemarks = await placemarkFromCoordinates(lat, lng);
@@ -1569,6 +1649,26 @@ class _DashboardScreenState extends State<DashboardScreen>
             areaName = p.subLocality?.isNotEmpty == true
                 ? p.subLocality!
                 : p.locality ?? '';
+
+            // Remember area + pincode globally so deals/banners/reels
+            // requests can float LOCAL ads to the top (server-side).
+            // IMPORTANT: only from GPS when the user has NOT picked a
+            // location in the app bar — a manual selection always wins.
+            final manualLoc =
+                mounted ? context.read<AuthProvider>().user?.location : null;
+            final hasManual =
+                manualLoc != null && manualLoc.trim().isNotEmpty;
+            final hadLocation = LocationService.lastArea.isNotEmpty;
+            if (!hasManual) {
+              LocationService.lastArea    = areaName;
+              LocationService.lastPincode = p.postalCode ?? '';
+            }
+            // First time we learn the location this session: re-fetch the
+            // ad lists so they arrive location-prioritized.
+            if (!hadLocation && LocationService.lastArea.isNotEmpty) {
+              _loadDeals();
+              _loadBanners();
+            }
           }
         } catch (_) {}
 
@@ -1584,8 +1684,14 @@ class _DashboardScreenState extends State<DashboardScreen>
             _userLat = lat;
             _userLng = lng;
             _detectedArea = areaName;
-            _nearbyShops = shops;
+            if (shops.isNotEmpty || _nearbyShops.isEmpty) {
+              _nearbyShops = shops;
+              _cachedShops = shops;
+            }
           });
+          _cachedLat = lat;
+          _cachedLng = lng;
+          _cachedDetectedArea = areaName;
         }
       }
     } catch (e) {
@@ -1617,6 +1723,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    shellRouteObserver.unsubscribe(this);
+    homeShellCovered.removeListener(_maybeRefetchOnLocationChange);
     _bannerTimer?.cancel();
     _bannerCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
@@ -1632,6 +1740,24 @@ class _DashboardScreenState extends State<DashboardScreen>
       _loadNearbyShopsFromGPS();
     }
   }
+
+  // ── Pause banner when covered INSIDE the shell navigator ──────────────────
+  // Screens like Notifications are pushed onto the shell's own navigator, so
+  // the outer route observer never fires. Subscribe to the shell observer and
+  // flip the SAME homeShellCovered flag the banner video already listens to —
+  // video + audio pause instantly and resume when the user comes back.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) shellRouteObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPushNext() => homeShellCovered.value = true;
+
+  @override
+  void didPopNext() => homeShellCovered.value = false;
 
   // ── Custom white AppBar ──────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
@@ -2163,7 +2289,9 @@ class _BannerSlideState extends State<_BannerSlide> {
       imageUrl: data.imageUrl,
       fit: BoxFit.cover,
       width: double.infinity,
-      placeholder: (_, __) => _fallback(),
+      // YouTube-style animated shimmer while the image downloads —
+      // the gradient/text fallback is kept only for real load failures.
+      placeholder: (_, __) => const _BannerShimmer(),
       errorWidget: (_, __, ___) => _fallback(),
     );
   }
@@ -2174,17 +2302,16 @@ class _BannerSlideState extends State<_BannerSlide> {
 
     if (_videoFailed) return _fallback();
     if (!_videoReady || _ctrl == null) {
-      // While the video initializes, show the banner's poster image (or
-      // the gradient fallback) instead of a bare blue loading screen —
-      // with only a small corner spinner, so users scrolling fast just
-      // see a tiny loader, not a full-screen one.
+      // While the video initializes: if the banner has a poster image show
+      // it with a small corner spinner; otherwise show a YouTube-style
+      // animated shimmer skeleton instead of the old blue screen with text.
+      final hasPoster = widget.data.imageUrl.isNotEmpty ||
+          widget.data.imageData.isNotEmpty;
+      if (!hasPoster) return const _BannerShimmer();
       return Stack(
         fit: StackFit.expand,
         children: [
-          (widget.data.imageUrl.isNotEmpty ||
-                  widget.data.imageData.isNotEmpty)
-              ? _buildImage()
-              : _fallback(),
+          _buildImage(),
           Positioned(
             top: 10,
             right: 10,
@@ -2217,10 +2344,67 @@ class _BannerSlideState extends State<_BannerSlide> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Banner shimmer — YouTube-style animated skeleton shown while banner
+// media (image or video) is still loading. Adapts to light/dark theme.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BannerShimmer extends StatelessWidget {
+  const _BannerShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final bg = dark ? const Color(0xFF181818) : const Color(0xFFF3F4F6);
+    final base = dark ? const Color(0xFF272727) : const Color(0xFFE2E5E9);
+    final highlight = dark ? const Color(0xFF3D3D3D) : const Color(0xFFF7F8FA);
+
+    Widget block({double? w, double h = 10, double r = 6}) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: BorderRadius.circular(r),
+          ),
+        );
+
+    return Container(
+      color: bg,
+      child: Shimmer.fromColors(
+        baseColor: base,
+        highlightColor: highlight,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Big media block (like YouTube's thumbnail placeholder)
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: base,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Two text-line placeholders under the media block
+              block(w: 170, h: 10),
+              const SizedBox(height: 6),
+              block(w: 110, h: 10),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Category row
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CategoryRow extends StatelessWidget {
+class _CategoryRow extends StatefulWidget {
   final int selected;
   final ValueChanged<int> onSelect;
 
@@ -2229,9 +2413,43 @@ class _CategoryRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  // 3 pages of 5 slots; last page has 4 real icons + "Show All" button
-  static const int _pages = 3;
-  static const int _perPage = 5;
+  @override
+  State<_CategoryRow> createState() => _CategoryRowState();
+}
+
+class _CategoryRowState extends State<_CategoryRow> {
+  // Continuous "circle motion": all category icons loop endlessly like a
+  // carousel. The list repeats [14 categories … + All] forever; a timer
+  // nudges the scroll position so it glides on its own. The user can still
+  // drag it manually — auto-motion pauses while touching and resumes 2 s
+  // after release. Tap behaviour is unchanged; the "All" icon (end of the
+  // circle) opens the all-categories landing page.
+  static const double _speedPxPerTick = 0.8; // ~27 px/sec at 30 ms ticks
+
+  late final ScrollController _ctrl;
+  Timer? _autoTimer;
+  bool _paused = false;
+
+  int get _totalSlots => _categories.length + 1; // categories + "All"
+
+  @override
+  void initState() {
+    super.initState();
+    // Start deep inside the infinite list so backwards dragging also works
+    _ctrl = ScrollController(initialScrollOffset: 100000.0);
+    _autoTimer = Timer.periodic(const Duration(milliseconds: 30), (_) {
+      if (!_paused && _ctrl.hasClients) {
+        _ctrl.jumpTo(_ctrl.offset + _speedPxPerTick);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   Widget _buildIcon({
     required BuildContext context,
@@ -2239,6 +2457,7 @@ class _CategoryRow extends StatelessWidget {
     required int globalIndex,
     required bool active,
     required VoidCallback onTap,
+    required double width,
   }) {
     // Asset icons: icon1.png … icon30.png (1-based index)
     final assetPath = 'assets/icons/category_icon/icon${globalIndex + 1}.png';
@@ -2246,7 +2465,8 @@ class _CategoryRow extends StatelessWidget {
     // Use screen width for responsive icon size: ~13% of width, clamped 48–60
     final iconSize = (MediaQuery.of(context).size.width * 0.11).clamp(40.0, 52.0);
 
-    return Expanded(
+    return SizedBox(
+      width: width,
       child: GestureDetector(
         onTap: onTap,
         child: Column(
@@ -2313,8 +2533,9 @@ class _CategoryRow extends StatelessWidget {
     );
   }
 
-  Widget _buildShowAll(BuildContext context) {
-    return Expanded(
+  Widget _buildShowAll(BuildContext context, double width) {
+    return SizedBox(
+      width: width,
       child: GestureDetector(
         onTap: () => context.push('/categories'),
         child: Column(
@@ -2358,53 +2579,65 @@ class _CategoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // 108dp ≈ 13.5% of 800dp design baseline → scales with screen height
     final catRowH = MediaQuery.of(context).size.height * 0.135;
+    // 5 icons visible at a time (same density as the old pages)
+    final slotW = MediaQuery.of(context).size.width / 5;
+
     return SizedBox(
       height: catRowH,
-      child: PageView.builder(
-        controller: PageController(viewportFraction: 1),
-        itemCount: _pages,
-        itemBuilder: (context, pageIndex) {
-          final isLastPage = pageIndex == _pages - 1;
-          final start = pageIndex * _perPage;
-          // Last page shows 4 real icons + Show All; others show 5
-          final slotCount = isLastPage ? _perPage - 1 : _perPage;
-          final end = (start + slotCount).clamp(0, _categories.length);
-          final pageItems = _categories.sublist(start, end);
-
-          return Row(
-            children: [
-              // Real category icons for this page
-              ...List.generate(slotCount, (i) {
-                if (i < pageItems.length) {
-                  final globalIndex = start + i;
-                  final cat = pageItems[i];
-                  return _buildIcon(
-                    context: context,
-                    cat: cat,
-                    globalIndex: globalIndex,
-                    active: selected == globalIndex,
-                    onTap: () {
-                      onSelect(globalIndex);
-                      context.push(
-                        '/shops',
-                        extra: ShopCategory(
-                          id: globalIndex + 1,
-                          name: cat.label.replaceAll('\n', ' '),
-                          icon: cat.icon,
-                          color: cat.color,
-                        ),
-                      );
-                    },
-                  );
-                }
-                return const Expanded(child: SizedBox.shrink());
-              }),
-
-              // "Show All" only on the last page
-              if (isLastPage) _buildShowAll(context),
-            ],
-          );
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          // Pause the circle motion while the user's finger is dragging;
+          // resume 2 s after they let go.
+          if (n is ScrollStartNotification && n.dragDetails != null) {
+            _paused = true;
+          } else if (_paused && n is ScrollEndNotification) {
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted) _paused = false;
+            });
+          }
+          return false;
         },
+        child: ListView.builder(
+          controller: _ctrl,
+          scrollDirection: Axis.horizontal,
+          // CRITICAL for performance: with a fixed itemExtent Flutter can
+          // jump straight to the deep initial offset (100000px) in O(1).
+          // Without it, the first layout measured ~1300 items one by one —
+          // that was the 2–3 s freeze when returning to Home from other tabs.
+          itemExtent: slotW,
+          // No itemCount → endless list; index % totalSlots wraps the same
+          // icons around forever = the infinite circle motion.
+          itemBuilder: (context, index) {
+            final idx = index % _totalSlots;
+
+            // End of each circle: the "All" icon → all-categories page
+            // (Center = same vertical placement as the old page layout)
+            if (idx == _categories.length) {
+              return Center(child: _buildShowAll(context, slotW));
+            }
+
+            final cat = _categories[idx];
+            return Center(child: _buildIcon(
+              context: context,
+              cat: cat,
+              globalIndex: idx,
+              active: widget.selected == idx,
+              width: slotW,
+              onTap: () {
+                widget.onSelect(idx);
+                context.push(
+                  '/shops',
+                  extra: ShopCategory(
+                    id: idx + 1,
+                    name: cat.label.replaceAll('\n', ' '),
+                    icon: cat.icon,
+                    color: cat.color,
+                  ),
+                );
+              },
+            ));
+          },
+        ),
       ),
     );
   }

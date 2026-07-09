@@ -241,13 +241,9 @@ export default function ShopRegister() {
         />
       )}
 
-      <div style={{ paddingTop: 64, display: 'flex', minHeight: '100vh' }}>
+      <div className="auth-layout">
         {/* Left */}
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column',
-          justifyContent: 'center', alignItems: 'center',
-          padding: '60px 40px', background: '#fff'
-        }}>
+        <div className="auth-left">
           <img
             src="/assets/images/shop_register.png"
             alt="Register your shop"
@@ -262,7 +258,7 @@ export default function ShopRegister() {
         </div>
 
         {/* Right */}
-        <div style={{ width: 520, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+        <div className="auth-right">
           <div style={{
             width: '100%', maxWidth: 440, background: '#fff',
             borderRadius: 16, padding: 40, border: '1px solid #e8ecf0',

@@ -28,7 +28,7 @@ async def _generate_unique_id(sub_role: str) -> str:
     count = await users_collection.count_documents(
         {"role": "sales", "sub_role": sub_role}
     )
-    return f"CLM-{prefix}-{str(count + 1).zfill(4)}"
+    return f"CLM-{prefix}-{str(count + 1000+1).zfill(4)}"
 
 
 # ─── Step 1: register → send OTP ──────────────────────────────
