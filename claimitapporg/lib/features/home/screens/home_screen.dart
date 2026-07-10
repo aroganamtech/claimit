@@ -1866,7 +1866,7 @@ class _FeaturedZonesSheet extends StatelessWidget {
                           context.push('/nearby-deals');
                         } else if (label == 'Promo Reelz') {
                           context.push('/reelz');
-                        } else if (label == 'Local Classifieds') {
+                        } else if (label == 'Local Finds Classifieds') {
                           context.push('/classified');
                         } else {
                           context.go(z.route);

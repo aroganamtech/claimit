@@ -7,9 +7,10 @@ import '../data/classified_categories.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // "Local Finds" landing screen — opened from the FAB's Featured Zones popup
 // via the "Local Finds Classifieds" tile. Shows a 12-tile zone grid (Shop,
-// Eat, Fashion, Health, Fitness, Edu, Services, Auto, Stay, Entertain, Fin,
-// Living) styled after the reference design, with a "LOCAL CLASSIFIEDS"
-// heading beneath it that opens the existing Classified home screen
+// Eat, Beauty, Health, Fitness, Edu, Services, Auto, Stay, Entertain, Fin,
+// Living) styled after the reference design. Tapping a zone opens its
+// sub-category grid (LocalFindZoneScreen); the "LOCAL CLASSIFIEDS" heading
+// beneath it opens the existing Classified home screen
 // (property / rental / job / buy & sell listings, restyled to match).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -51,13 +52,13 @@ class LocalFindsScreen extends StatelessWidget {
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                Text(
+                const Text(
                   'LOCAL FINDS',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 34,
+                  style: TextStyle(
+                    fontSize: 30,
                     fontWeight: FontWeight.w700,
                     color: _navy,
-                    letterSpacing: 1.2,
+                    letterSpacing: 1.0,
                   ),
                 ),
                 const SizedBox(height: 28),
@@ -67,7 +68,7 @@ class LocalFindsScreen extends StatelessWidget {
                   itemCount: localFindZones.length,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
-                    mainAxisSpacing: 22,
+                    mainAxisSpacing: 16,
                     crossAxisSpacing: 8,
                     childAspectRatio: 0.82,
                   ),
@@ -82,13 +83,13 @@ class LocalFindsScreen extends StatelessWidget {
                 const SizedBox(height: 36),
                 GestureDetector(
                   onTap: () => context.push('/classified/home'),
-                  child: Text(
+                  child: const Text(
                     'LOCAL CLASSIFIEDS',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 26,
+                    style: TextStyle(
+                      fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: _navy,
-                      letterSpacing: 0.8,
+                      letterSpacing: 0.6,
                     ),
                   ),
                 ),
@@ -103,15 +104,7 @@ class LocalFindsScreen extends StatelessWidget {
   }
 
   void _openZone(BuildContext context, LocalFindZone zone) {
-    // TODO: route to each zone's dedicated sub-category screen once that
-    // content is provided; for now, let the user know it's on the way.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${zone.label} sub-categories coming soon'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: _navy,
-      ),
-    );
+    context.push('/classified/zone', extra: zone);
   }
 }
 

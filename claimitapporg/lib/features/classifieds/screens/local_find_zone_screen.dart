@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../data/classified_categories.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shows the subcategories inside one Local Finds zone (e.g. "Shop" →
+// Grocery, Supermarkets, Fashion, ...). Tapping a subcategory opens the same
+// browse + "add post" list screen already used by Local Classified, so
+// posting a new listing here works exactly the same way.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Color _navy = Color(0xFF1E3A5F);
 const Color _gold = Color(0xFFC9A876);
 
-class ClassifiedHomeScreen extends StatefulWidget {
-  const ClassifiedHomeScreen({super.key});
-
-  @override
-  State<ClassifiedHomeScreen> createState() => _ClassifiedHomeScreenState();
-}
-
-class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
-  // "Local Helpers" tab removed — this screen now only shows Local Classified.
-  List<ClassifiedTopCategory> get _items => localClassifiedCategories;
+class LocalFindZoneScreen extends StatelessWidget {
+  final LocalFindZone zone;
+  const LocalFindZoneScreen({super.key, required this.zone});
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +29,9 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
               color: _navy, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
-          'LOCAL CLASSIFIEDS',
-          style: TextStyle(
+        title: Text(
+          zone.label.toUpperCase(),
+          style: const TextStyle(
             color: _navy,
             fontWeight: FontWeight.w700,
             fontSize: 18,
@@ -40,15 +39,6 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded, color: _navy),
-            onPressed: () => context.push(
-              '/classified/list',
-              extra: {'category': '', 'subcategory': '', 'title': 'All Classifieds'},
-            ),
-          ),
-        ],
       ),
       body: Container(
         width: double.infinity,
@@ -65,51 +55,46 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: kToolbarHeight + 16),
-              // ── Category grid ──────────────────────────────────────────────
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: zone.subcategories.isEmpty
+              ? Center(
+                  child: Text(
+                    '${zone.label} sub-categories coming soon',
+                    style: const TextStyle(color: _navy),
+                  ),
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, kToolbarHeight + 24, 20, 24),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
                     mainAxisSpacing: 16,
                     crossAxisSpacing: 8,
                     childAspectRatio: 0.82,
                   ),
-                  itemCount: _items.length,
+                  itemCount: zone.subcategories.length,
                   itemBuilder: (context, i) {
-                    final item = _items[i];
-                    return _TopCategoryBox(
-                      item: item,
+                    final sub = zone.subcategories[i];
+                    return _ZoneSubcategoryTile(
+                      sub: sub,
                       onTap: () => context.push(
                         '/classified/list',
                         extra: {
-                          'category': item.category,
-                          'subcategory': item.subcategory,
-                          'title': item.name,
+                          'category': zone.id,
+                          'subcategory': sub.name,
+                          'title': sub.name,
                         },
                       ),
                     );
                   },
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Category tile — circular icon + label, matching the Local Finds screen design
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _TopCategoryBox extends StatelessWidget {
-  const _TopCategoryBox({required this.item, required this.onTap});
-  final ClassifiedTopCategory item;
+class _ZoneSubcategoryTile extends StatelessWidget {
+  const _ZoneSubcategoryTile({required this.sub, required this.onTap});
+  final ClassifiedSubcategory sub;
   final VoidCallback onTap;
 
   @override
@@ -128,19 +113,19 @@ class _TopCategoryBox extends StatelessWidget {
               color: Colors.white.withOpacity(0.55),
               border: Border.all(color: _gold, width: 1.4),
             ),
-            child: Icon(item.icon, size: 30, color: _navy),
+            child: Icon(sub.icon, size: 30, color: _navy),
           ),
           const SizedBox(height: 8),
           Text(
-            item.name.toUpperCase(),
+            sub.name,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13,
+            style: const TextStyle(
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: _navy,
-              letterSpacing: 0.3,
+              height: 1.2,
             ),
           ),
         ],

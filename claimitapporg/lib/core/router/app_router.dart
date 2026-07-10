@@ -34,6 +34,8 @@ import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
 import '../../features/classifieds/screens/local_finds_screen.dart';
+import '../../features/classifieds/screens/local_find_zone_screen.dart';
+import '../../features/classifieds/data/classified_categories.dart' show LocalFindZone;
 import '../../features/classifieds/screens/classified_list_screen.dart';
 import '../../features/classifieds/screens/add_post_flow.dart';
 import '../../features/classifieds/screens/classified_detail_screen.dart';
@@ -246,6 +248,13 @@ class AppRouter {
         GoRoute(
           path: '/classified/home',
           builder: (context, state) => const ClassifiedHomeScreen(),
+        ),
+        GoRoute(
+          path: '/classified/zone',
+          builder: (context, state) {
+            final zone = state.extra as LocalFindZone;
+            return LocalFindZoneScreen(zone: zone);
+          },
         ),
         GoRoute(
           path: '/classified/list',
