@@ -125,6 +125,10 @@ class AppConstants {
   static const String classifieds    = '/classifieds';
   static const String classifiedDetail = '/classifieds/{id}';
 
+  // ── Payments (Cashfree) ──────────────────────────────────────────────────
+  static const String createPaymentLink = '/payments/create-link';
+  static const String paymentLinkStatus = '/payments/status';
+
   // Bill scan
   static const String billScan = '/bill/scan';
   // AI bill OCR — Gemini call now lives on the backend (key not in APK)
@@ -145,6 +149,19 @@ class AppConstants {
   // gemini-2.0-flash was deprecated 1 June 2026 (free quota = 0) — use 2.5.
   static const String geminiUrl =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
+  // ── Groq AI Vision (second opinion / fallback for bill OCR) ─────────────
+  // Called directly from the app, same pattern as Gemini above. Free tier
+  // (no card required): 30 requests/min, 1,000 requests/day per Groq
+  // project — comfortably covers 100 scans/day even with retries. Tried
+  // whenever Gemini doesn't return a usable result (rate-limited, down, or
+  // a transient error) so a single provider outage doesn't force every
+  // scan into manual review.
+  static const String groqApiKey =
+      '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';
+  static const String groqUrl =
+      'https://api.groq.com/openai/v1/chat/completions';
+  static const String groqModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
   // ── Storage Keys ──────────────────────────────────────────────────────────
   static const String tokenKey        = 'access_token';

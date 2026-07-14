@@ -168,7 +168,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         AndroidUiSettings(
           toolbarTitle: 'Adjust profile picture',
           toolbarColor: AppTheme.primaryColor,
-          statusBarColor: AppTheme.primaryColor,
+          // statusBarColor is deprecated as of image_cropper 10.0.0 (uCrop
+          // 2.2.11 handles edge-to-edge insets on its own now — no more
+          // status-bar/toolbar merging, which is what made the top-right
+          // checkmark hard to tap). statusBarLight: false keeps the status
+          // bar icons white/light, matching the dark-blue toolbar below it.
+          statusBarLight: false,
           toolbarWidgetColor: Colors.white,
           cropStyle: CropStyle.circle,
           initAspectRatio: CropAspectRatioPreset.square,

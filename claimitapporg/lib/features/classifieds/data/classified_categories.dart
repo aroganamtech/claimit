@@ -184,7 +184,8 @@ ClassifiedCategory? categoryById(String id) {
 class ClassifiedTopCategory {
   final String id;          // unique key for this grid item
   final String name;        // display label
-  final IconData icon;
+  final IconData icon;      // fallback Material icon
+  final String? iconAsset;  // preferred — PNG cropped straight from the client's PDF
   final String category;    // value sent as ?category= to the list screen
   final String subcategory; // value sent as ?subcategory= (may be empty)
 
@@ -192,26 +193,28 @@ class ClassifiedTopCategory {
     required this.id,
     required this.name,
     required this.icon,
+    this.iconAsset,
     required this.category,
     this.subcategory = '',
   });
 }
 
-/// "Local Classified" tab — top-level posting categories
-/// (property, rentals, jobs, buy & sell, etc).
+/// "Local Classified" tab — top-level posting categories, matching the
+/// Local Classifieds PDF (Buy & Sell, Vehicle, Property, Jobs, Services,
+/// Electronics, Fashion, Pets, Furniture, Education, Others).
+/// iconAsset images are cropped directly from the client's PDF artwork.
 const List<ClassifiedTopCategory> localClassifiedCategories = [
-  ClassifiedTopCategory(id: 'property',    name: 'Property',    icon: Icons.apartment_rounded,      category: 'property'),
-  ClassifiedTopCategory(id: 'home_needs',  name: 'Home Needs',  icon: Icons.home_rounded,            category: 'home_needs'),
-  ClassifiedTopCategory(id: 'rental',      name: 'Rental',      icon: Icons.house_rounded,           category: 'rental'),
-  ClassifiedTopCategory(id: 'job',         name: 'Job',         icon: Icons.work_rounded,             category: 'job'),
-  ClassifiedTopCategory(id: 'buy_sell',    name: 'Buy & Sell',  icon: Icons.shopping_bag_rounded,     category: 'buy_sell'),
-  ClassifiedTopCategory(id: 'community',   name: 'Community',   icon: Icons.groups_rounded,          category: 'community'),
-  ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicle',     icon: Icons.directions_car_rounded,  category: 'vehicle'),
-  ClassifiedTopCategory(id: 'tuition',     name: 'Tuition',     icon: Icons.school_rounded,           category: 'tuition'),
-  ClassifiedTopCategory(id: 'electronics', name: 'Electronics', icon: Icons.devices_rounded,          category: 'electronics'),
-  ClassifiedTopCategory(id: 'hostel',      name: 'Hostel',      icon: Icons.bed_rounded,              category: 'hostel'),
-  ClassifiedTopCategory(id: 'furniture',   name: 'Furniture',   icon: Icons.chair_rounded,            category: 'furniture'),
-  ClassifiedTopCategory(id: 'others',      name: 'Others',      icon: Icons.more_horiz_rounded,       category: 'others'),
+  ClassifiedTopCategory(id: 'buy_sell',    name: 'Buy & Sell',  icon: Icons.shopping_bag_rounded,    iconAsset: 'assets/images/lc_buy_sell.png',    category: 'buy_sell'),
+  ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicle',     icon: Icons.directions_car_rounded,  iconAsset: 'assets/images/lc_vehicle.png',     category: 'vehicle'),
+  ClassifiedTopCategory(id: 'property',    name: 'Property',    icon: Icons.apartment_rounded,       iconAsset: 'assets/images/lc_property.png',    category: 'property'),
+  ClassifiedTopCategory(id: 'jobs',        name: 'Jobs',        icon: Icons.work_rounded,             iconAsset: 'assets/images/lc_jobs.png',        category: 'jobs'),
+  ClassifiedTopCategory(id: 'services',    name: 'Services',    icon: Icons.handyman_rounded,         iconAsset: 'assets/images/lc_services.png',    category: 'services'),
+  ClassifiedTopCategory(id: 'electronics', name: 'Electronics', icon: Icons.devices_rounded,          iconAsset: 'assets/images/lc_electronics.png', category: 'electronics'),
+  ClassifiedTopCategory(id: 'fashion',     name: 'Fashion',     icon: Icons.checkroom_rounded,        iconAsset: 'assets/images/lc_fashion.png',     category: 'fashion'),
+  ClassifiedTopCategory(id: 'pets',        name: 'Pets',        icon: Icons.pets_rounded,             iconAsset: 'assets/images/lc_pets.png',        category: 'pets'),
+  ClassifiedTopCategory(id: 'furniture',   name: 'Furniture',   icon: Icons.chair_rounded,            iconAsset: 'assets/images/lc_furniture.png',   category: 'furniture'),
+  ClassifiedTopCategory(id: 'education',   name: 'Education',   icon: Icons.school_rounded,           iconAsset: 'assets/images/lc_education.png',   category: 'education'),
+  ClassifiedTopCategory(id: 'others',      name: 'Others',      icon: Icons.more_horiz_rounded,       iconAsset: 'assets/images/lc_others.png',      category: 'others'),
 ];
 
 /// "Local Helpers" tab — every existing service subcategory flattened into
@@ -246,13 +249,15 @@ final List<ClassifiedTopCategory> localHelperCategories = classifiedCategories
 class LocalFindZone {
   final String id;      // stable key, e.g. "shop"
   final String label;   // display label, e.g. "Shop"
-  final IconData icon;
+  final IconData icon;      // fallback Material icon
+  final String? iconAsset;  // preferred — PNG cropped straight from the client's PDF
   final List<ClassifiedSubcategory> subcategories;
 
   const LocalFindZone({
     required this.id,
     required this.label,
     required this.icon,
+    this.iconAsset,
     this.subcategories = const [],
   });
 }
@@ -262,6 +267,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'shop',
     label: 'Shop',
     icon: Icons.shopping_bag_rounded,
+    iconAsset: 'assets/images/lf_shop.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Grocery',               icon: Icons.shopping_basket_rounded),
       ClassifiedSubcategory(name: 'Supermarkets',           icon: Icons.store_rounded),
@@ -279,6 +285,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'eat',
     label: 'Eat',
     icon: Icons.restaurant_rounded,
+    iconAsset: 'assets/images/lf_eat.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Restaurants',        icon: Icons.restaurant_rounded),
       ClassifiedSubcategory(name: 'Cafés',               icon: Icons.local_cafe_rounded),
@@ -293,6 +300,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'beauty',
     label: 'Beauty',
     icon: Icons.face_retouching_natural_rounded,
+    iconAsset: 'assets/images/lf_beauty.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Salons',           icon: Icons.content_cut_rounded),
       ClassifiedSubcategory(name: 'Parlours',         icon: Icons.face_rounded),
@@ -305,6 +313,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'health',
     label: 'Health',
     icon: Icons.favorite_rounded,
+    iconAsset: 'assets/images/lf_health.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Hospitals',       icon: Icons.local_hospital_rounded),
       ClassifiedSubcategory(name: 'Clinics',         icon: Icons.medical_services_rounded),
@@ -322,6 +331,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'fitness',
     label: 'Fitness',
     icon: Icons.fitness_center_rounded,
+    iconAsset: 'assets/images/lf_fitness.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Gyms',           icon: Icons.fitness_center_rounded),
       ClassifiedSubcategory(name: 'Yoga',           icon: Icons.self_improvement_rounded),
@@ -332,8 +342,9 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'edu',
-    label: 'Edu',
+    label: 'Education',
     icon: Icons.school_rounded,
+    iconAsset: 'assets/images/lf_edu.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Play Schools',        icon: Icons.child_care_rounded),
       ClassifiedSubcategory(name: 'Schools',             icon: Icons.school_rounded),
@@ -348,6 +359,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'services',
     label: 'Services',
     icon: Icons.handyman_rounded,
+    iconAsset: 'assets/images/lf_services.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Home Services',           icon: Icons.home_repair_service_rounded),
       ClassifiedSubcategory(name: 'Repairs',                 icon: Icons.build_rounded),
@@ -365,6 +377,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'auto',
     label: 'Auto',
     icon: Icons.directions_car_rounded,
+    iconAsset: 'assets/images/lf_auto.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Service',        icon: Icons.build_rounded),
       ClassifiedSubcategory(name: 'Repairs',        icon: Icons.handyman_rounded),
@@ -380,6 +393,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'stay',
     label: 'Stay',
     icon: Icons.hotel_rounded,
+    iconAsset: 'assets/images/lf_stay.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Hotels',       icon: Icons.hotel_rounded),
       ClassifiedSubcategory(name: 'Lodges',       icon: Icons.house_rounded),
@@ -391,6 +405,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'entertain',
     label: 'Entertain',
     icon: Icons.theaters_rounded,
+    iconAsset: 'assets/images/lf_entertain.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Movies',       icon: Icons.movie_rounded),
       ClassifiedSubcategory(name: 'Gaming',       icon: Icons.play_circle_rounded),
@@ -402,8 +417,9 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'fin',
-    label: 'Fin',
+    label: 'Finance',
     icon: Icons.payments_rounded,
+    iconAsset: 'assets/images/lf_fin.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Insurance',    icon: Icons.shield_rounded),
       ClassifiedSubcategory(name: 'Finance',      icon: Icons.currency_exchange_rounded),
@@ -416,6 +432,7 @@ const List<LocalFindZone> localFindZones = [
     id: 'living',
     label: 'Living',
     icon: Icons.home_rounded,
+    iconAsset: 'assets/images/lf_living.png',
     subcategories: [
       ClassifiedSubcategory(name: 'Home Cleaning',           icon: Icons.cleaning_services_rounded),
       ClassifiedSubcategory(name: 'Electricians',            icon: Icons.electrical_services_rounded),

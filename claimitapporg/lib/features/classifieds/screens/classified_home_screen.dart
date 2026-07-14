@@ -42,6 +42,11 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         centerTitle: true,
         actions: [
           IconButton(
+            tooltip: 'My Listings',
+            icon: const Icon(Icons.list_alt_rounded, color: _navy),
+            onPressed: () => context.push('/classified/mine'),
+          ),
+          IconButton(
             icon: const Icon(Icons.search_rounded, color: _navy),
             onPressed: () => context.push(
               '/classified/list',
@@ -120,16 +125,20 @@ class _TopCategoryBox extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.55),
-              border: Border.all(color: _gold, width: 1.4),
-            ),
-            child: Icon(item.icon, size: 30, color: _navy),
-          ),
+          // PDF-cropped icon art (peach circle already baked in) — falls
+          // back to the old gold-bordered Material icon if ever missing.
+          item.iconAsset != null
+              ? Image.asset(item.iconAsset!, width: 72, height: 72)
+              : Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.55),
+                    border: Border.all(color: _gold, width: 1.4),
+                  ),
+                  child: Icon(item.icon, size: 30, color: _navy),
+                ),
           const SizedBox(height: 8),
           Text(
             item.name.toUpperCase(),

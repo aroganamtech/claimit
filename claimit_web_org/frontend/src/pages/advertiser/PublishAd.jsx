@@ -10,6 +10,18 @@ const AD_LABELS = {
   nearby_deals: 'Nearby Deals Ad',
 }
 
+// Pricing per "Claimit Advertising Packages (Weekly)" — kept in sync with
+// ChooseAdType.jsx, AdDetails.jsx and the backend's AD_PRICES in
+// routers/advertiser.py. Needed here because payment now happens BEFORE
+// the ad is created, so we have to know the amount client-side to open the
+// Cashfree checkout.
+const AD_PRICES = {
+  home_banner:  { standard: 700 },
+  nearby_deals: { premium: 1050, standard: 700 },
+  brand_deals:  { premium: 700,  standard: 700 },
+  promo_reelz:  { premium: 700,  standard: 700 },
+}
+
 export default function PublishAd() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -61,16 +73,21 @@ export default function PublishAd() {
       let thumbnailKey = null
 
       if (creative) {
-        setUploadProgress(isVideo ? 'Uploading video to S3…' : 'Uploading image to S3…')
+        setUploadProgress(isVideo ? 'Uploading video…' : 'Uploading image…')
         creativeKey = await uploadToS3(creative, isVideo ? 'ads-video' : 'ads')
       }
       if (thumbnail) {
-        setUploadProgress('Uploading thumbnail to S3…')
+        setUploadProgress('Uploading…')
         thumbnailKey = await uploadToS3(thumbnail, 'ads-video/thumbnails')
       }
 
-      // ── Send metadata (no files) to backend ───────────────────
-      setUploadProgress('Saving ad…')
+      // ── Build the create-ad payload, but don't submit it yet ──────────
+      // Payment now happens BEFORE the ad is created (real Cashfree
+      // checkout, not a fake success screen). We stash everything needed
+      // to finish the job — including the already-uploaded S3 keys — and
+      // hand off to the Payment page, which submits this payload with a
+      // verified payment_link_id attached once Cashfree confirms PAID.
+      setUploadProgress('Preparing payment…')
       const skip = new Set(['adType', 'pincode', '_hasCreative', '_hasThumbnail'])
       const payload = {
         ad_type: draft.adType || adType,
@@ -84,19 +101,19 @@ export default function PublishAd() {
         if (!skip.has(k) && v !== undefined && v !== null) payload[k] = v
       })
 
-      const data = await api.advertiser.createAd(payload)
+      const tier = draft.tier || 'standard'
+      const amount = (AD_PRICES[adType] || {})[tier] ?? Object.values(AD_PRICES[adType] || { standard: 700 })[0]
+
+      sessionStorage.setItem('pending_ad_payload', JSON.stringify({
+        payload,
+        amount,
+        adTypeLabel: AD_LABELS[adType],
+      }))
       sessionStorage.removeItem('ad_draft')
       sessionStorage.removeItem('ad_creative_name')
       sessionStorage.removeItem('ad_thumb_name')
 
-      navigate('/advertiser/create-ad/payment', {
-        state: {
-          adType: AD_LABELS[adType],
-          publishDate: data.publish_date,
-          endDate: data.end_date,
-          amount: data.amount,
-        }
-      })
+      navigate('/advertiser/create-ad/payment')
     } catch (e) {
       console.error(e)
       alert(e?.response?.data?.detail || e?.message || 'Failed to publish ad. Please try again.')

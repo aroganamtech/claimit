@@ -17,6 +17,7 @@ import os
 
 from utils.s3 import generate_presigned_url_sync as _presign
 from utils.s3 import delete_object as _s3_delete
+from utils.s3 import public_url as _public_url
 from database import (
     users_collection, ads_collection, shops_collection,
     reviews_collection, tickets_collection, transactions_collection,
@@ -34,6 +35,26 @@ from utils.dependencies import get_current_admin
 from utils.notify import notify_user
 
 router = APIRouter()
+
+
+def _dup_key(shop: str, bill_date: str, amount: float, bill_time=None) -> str:
+    """
+    Same fingerprint the main app backend computes in fastapi/backend/app/
+    routes/bill.py (_dup_key) and the Flutter client (BillRewardProvider).
+    Kept in sync so a bill approved here via manual review registers in the
+    SAME dedup namespace as normal /bill/scan submissions — otherwise the
+    app's local duplicate check (and /bill/manual-review's server-side
+    check) can never recognize an already-approved bill and users can keep
+    resubmitting/rescanning it.
+    """
+    import re as _re
+    s = _re.sub(r"[^a-z0-9]", "", (shop or "").lower())
+    amt = f"{amount:.0f}"
+    t = (bill_time or "").strip()
+    if t:
+        return f"{s}|{bill_date}|{t}|{amt}"
+    return f"{s}|{bill_date}|{amt}"
+
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "Krishna2001$%")
@@ -388,7 +409,7 @@ def _serialize_review(r):
         "reward_points": r.get("reward_points"),
         "cashback":      r.get("cashback"),
         "admin_note":    r.get("admin_note") or "",
-        "image_url":     _presign(r.get("image_s3_key")) if r.get("image_s3_key") else None,
+        "image_url":     _public_url(r.get("image_s3_key")) if r.get("image_s3_key") else None,
         "submitted_at": (
             r["submitted_at"].isoformat() if r.get("submitted_at") else
             r["created_at"].isoformat()   if r.get("created_at")   else ""
@@ -424,6 +445,21 @@ async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=D
     uid       = review.get("user_id", "")
     amount    = float(review.get("total_amount", 0))
     shop_name = review.get("shop_name") or "Shop"
+
+    # Prefer the dup_key stored at submission time (POST /bill/manual-review
+    # computes it from the raw request). Fall back to reconstructing it here
+    # for reviews submitted before that field existed, so old pending
+    # reviews don't crash — just skip dedup registration if we truly can't
+    # build a key (no shop/date on record).
+    review_dup_key = review.get("dup_key")
+    if not review_dup_key:
+        _bd = review.get("bill_date")
+        _bd_str = _bd.strftime("%Y-%m-%d") if hasattr(_bd, "strftime") else (str(_bd) if _bd else None)
+        review_dup_key = (
+            _dup_key(shop_name, _bd_str, amount, review.get("bill_time"))
+            if _bd_str else f"review|{review_id}"
+        )
+
     # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
     pts = body.reward_points or round(amount / 10, 1)
     cb  = body.cashback      or round(amount * 0.01, 2)
@@ -470,12 +506,34 @@ async def admin_action_bill_review(review_id: str, body: _ReviewAction, _admin=D
                 "total_scans": 0, "created_at": now,
             })
         await _scans.insert_one({
-            "user_id": uid, "dup_key": f"review|{review_id}",
+            "user_id": uid, "dup_key": review_dup_key,
             "shop_name": shop_name, "total_amount": round(amount, 2),
             "earned_cashback": cb, "earned_points": pts,
             "discount_percent": discount_pct, "discount_value": discount_value,
             "deducted_points": deducted_points,
             "source": "manual_review", "review_id": review_id, "scanned_at": now,
+        })
+        # Permanent history record — this is the ONLY collection the app's
+        # profile history (GET /bill/history) and the shop owner's web
+        # dashboard (GET /shop/bill-scans) read from. bill_scans above is
+        # kept only for dup-detection/audit; without this insert, an
+        # approved manual review never showed up in either place even
+        # though the wallet credit + push notification both worked.
+        await app_db["bill_history"].insert_one({
+            "user_id": uid,
+            "dup_key": review_dup_key,
+            "scan_type": "redeem" if discount_pct else "reward",
+            "shop_name": shop_name,
+            "shop_id": str(shop_id) if shop_id else None,
+            "total_amount": round(amount, 2),
+            "earned_cashback": cb, "earned_points": pts,
+            "discount_percent": discount_pct, "discount_value": discount_value,
+            "deducted_points": deducted_points,
+            "bill_number": review.get("bill_number"),
+            "bill_date": review.get("bill_date"),
+            "bill_time": review.get("bill_time"),
+            "source": "manual_review", "review_id": review_id,
+            "scanned_at": now,
         })
         note_suffix = (f" ₹{discount_value:.0f} redeem-discount deducted from points."
                        if discount_value else "")
@@ -542,6 +600,44 @@ async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_adm
         upsert=True,
     )
     return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}
+
+
+# ── App config: Premium ad slot caps (Nearby Deals + Brand Deals) ─────────────
+
+class _AdSettingsBody(_BM2):
+    max_nearby: int
+    max_brand:  int
+
+
+@router.get("/ad-settings")
+async def get_ad_settings(_admin=Depends(get_current_admin)):
+    """Return current Premium slot caps. Nearby Deals caps are per-location
+    (each pincode gets its own pool of max_nearby slots); Brand Deals caps
+    are global (one shared pool of max_brand slots, not location filtered)."""
+    cfg = await app_db["app_config"].find_one({"key": "premium_slots"})
+    return {
+        "max_nearby": int(cfg.get("max_nearby", 3)) if cfg else 3,
+        "max_brand":  int(cfg.get("max_brand", 3)) if cfg else 3,
+    }
+
+
+@router.put("/ad-settings")
+async def update_ad_settings(body: _AdSettingsBody, _admin=Depends(get_current_admin)):
+    """Upsert Premium slot caps. Takes effect immediately for every new ad
+    booking (existing booked ads are unaffected)."""
+    if body.max_nearby < 0 or body.max_brand < 0:
+        raise HTTPException(status_code=400, detail="Values must be >= 0")
+    await app_db["app_config"].update_one(
+        {"key": "premium_slots"},
+        {"$set": {
+            "key":        "premium_slots",
+            "max_nearby": body.max_nearby,
+            "max_brand":  body.max_brand,
+            "updated_at": datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "max_nearby": body.max_nearby, "max_brand": body.max_brand}
 
 
 # ─── Deleted Users ─────────────────────────────────────────────

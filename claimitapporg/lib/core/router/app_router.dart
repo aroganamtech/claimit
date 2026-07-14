@@ -38,6 +38,8 @@ import '../../features/classifieds/screens/local_find_zone_screen.dart';
 import '../../features/classifieds/data/classified_categories.dart' show LocalFindZone;
 import '../../features/classifieds/screens/classified_list_screen.dart';
 import '../../features/classifieds/screens/add_post_flow.dart';
+import '../../features/classifieds/screens/local_find_add_listing_flow.dart';
+import '../../features/classifieds/screens/my_listings_screen.dart';
 import '../../features/classifieds/screens/classified_detail_screen.dart';
 import '../../features/classifieds/models/classified_post.dart';
 // Bill Reader flow
@@ -186,7 +188,18 @@ class AppRouter {
         GoRoute(
           path: '/shops',
           builder: (context, state) {
-            final cat = state.extra as ShopCategory;
+            final extra = state.extra;
+            // Most callers pass a plain ShopCategory (isTab defaults false).
+            // Callers that specifically need Redeem-only filtering (e.g. the
+            // "Select Redeem Shop" pickers) pass {'category': ..., 'isTab': true}
+            // instead — isTab is what actually turns on the hasRedeem+discount>0
+            // filter in ShopListScreen; id==-1 alone means "no filter" (Nearby/See-All).
+            if (extra is Map) {
+              final cat = extra['category'] as ShopCategory;
+              final isTab = extra['isTab'] as bool? ?? false;
+              return ShopListScreen(category: cat, isTab: isTab);
+            }
+            final cat = extra as ShopCategory;
             return ShopListScreen(category: cat);
           },
         ),
@@ -264,12 +277,36 @@ class AppRouter {
               category: extra['category'] as String? ?? '',
               subcategory: extra['subcategory'] as String? ?? '',
               title: extra['title'] as String? ?? '',
+              listingType: extra['listingType'] as String? ?? 'classified',
             );
           },
         ),
         GoRoute(
           path: '/classified/add',
           builder: (context, state) => const AddPostFlowScreen(),
+        ),
+        GoRoute(
+          path: '/classified/mine',
+          builder: (context, state) => const MyListingsScreen(),
+        ),
+        GoRoute(
+          path: '/local-finds/add',
+          builder: (context, state) {
+            // Accepts either a raw LocalFindZone (REGISTER banner on the
+            // zone screen — no subcategory picked yet) or a Map with both
+            // 'zone' and 'subcategory' (the "+" button while already
+            // browsing a specific subcategory list, e.g. Shop -> Grocery —
+            // pre-fills it so the user isn't asked to pick it again).
+            final extra = state.extra;
+            if (extra is Map) {
+              return LocalFindAddListingFlow(
+                initialZone: extra['zone'] as LocalFindZone?,
+                initialSubcategoryName: extra['subcategory'] as String?,
+              );
+            }
+            final zone = extra as LocalFindZone?;
+            return LocalFindAddListingFlow(initialZone: zone);
+          },
         ),
         GoRoute(
           path: '/classified/detail',

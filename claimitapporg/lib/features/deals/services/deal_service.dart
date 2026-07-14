@@ -34,6 +34,8 @@ class DealDto {
   final int reviews;
   final String dealGroup; // 'nearby' | 'brand'
   final List<String> tags;
+  final String tier; // 'premium' | 'standard'
+  bool get isPremium => tier == 'premium';
 
   const DealDto({
     required this.id,
@@ -53,6 +55,7 @@ class DealDto {
     required this.reviews,
     required this.dealGroup,
     this.tags = const [],
+    this.tier = 'standard',
   });
 
   factory DealDto.fromJson(Map<String, dynamic> j) => DealDto(
@@ -73,6 +76,7 @@ class DealDto {
         reviews: (j['reviews'] as num?)?.toInt() ?? 0,
         dealGroup: j['deal_group'] as String? ?? 'nearby',
         tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
+        tier: (j['tier'] as String? ?? 'standard').trim().toLowerCase(),
       );
 
   Map<String, dynamic> toJson() => {

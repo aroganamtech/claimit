@@ -25,6 +25,7 @@ import TransactionHistory from './pages/advertiser/TransactionHistory'
 // Cross-portal pages
 import HelpSupport from './pages/HelpSupport'
 import { PrivacyPolicy, Terms, Support, RefundPolicy } from './pages/LegalPages'
+import DeleteAccount from './pages/DeleteAccount'
 
 // Sales (L2)
 import SalesDashboard from './pages/sales/SalesDashboard'
@@ -45,7 +46,7 @@ import { OfferManagement, StoreDetailsManagement, RatingsAndReviews, ShopSetting
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
-import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminDeletedUsers } from './pages/admin/AdminPages'
+import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminDeletedUsers } from './pages/admin/AdminPages'
 
 // Protected route
 function ProtectedRoute({ children, requiredRole }) {
@@ -125,6 +126,11 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/refund-policy" element={<RefundPolicy />} />
           <Route path="/support" element={<Support />} />
+          {/* Account deletion — required by Play Console → App content →
+              Data safety. /user/delete is the exact URL already submitted
+              there; /delete-account is a friendlier alias to the same page. */}
+          <Route path="/delete-account" element={<DeleteAccount />} />
+          <Route path="/user/delete" element={<DeleteAccount />} />
 
           {/* ─── L1 Advertiser ─────────────────────────────── */}
           <Route path="/advertiser/auth" element={<AuthPage portal="advertiser" />} />
@@ -234,6 +240,7 @@ export default function App() {
             <Route path="/admin/sales-team"   element={<AdminSalesTeam />} />
             <Route path="/admin/bill-reviews"   element={<AdminBillReviews />} />
             <Route path="/admin/bonus-settings" element={<AdminBonusSettings />} />
+            <Route path="/admin/ad-settings"    element={<AdminAdSettings />} />
             <Route path="/admin/deleted-users"  element={<AdminDeletedUsers />} />
           </Route>
 

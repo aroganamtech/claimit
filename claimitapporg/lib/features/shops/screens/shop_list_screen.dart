@@ -212,8 +212,14 @@ class _ShopListScreenState extends State<ShopListScreen> {
     // • id > 0 (specific category) → respect _isRewards toggle
     // • id == -1 AND NOT isTab (Nearby Shops / See-All) → show ALL shops, no filter
     // • id == 0 (Reward Zone) → filter hasRewards
+    //
+    // BUG FIX: a Reward-only shop (has_redeem wrongly true upstream, e.g.
+    // shop_type missing on an older record) must never surface in a Redeem
+    // list — it has discount == 0, which used to render as a bogus
+    // "0% Disc + 1% Cashback" card. Require discount > 0 too, matching the
+    // same guard shop_detail_screen.dart already uses for its Redeem chip.
     if (widget.isTab) {
-      shops = shops.where((s) => s.hasRedeem).toList();
+      shops = shops.where((s) => s.hasRedeem && s.discount > 0).toList();
     } else if (baseCatId == 0) {
       shops = shops.where((s) => s.hasRewards).toList();
     } else if (baseCatId != -1) {
@@ -221,7 +227,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
       if (_isRewards) {
         shops = shops.where((s) => s.hasRewards).toList();
       } else {
-        shops = shops.where((s) => s.hasRedeem).toList();
+        shops = shops.where((s) => s.hasRedeem && s.discount > 0).toList();
       }
     }
     // baseCatId == -1 AND !isTab → Nearby / See-All: no reward/redeem filter

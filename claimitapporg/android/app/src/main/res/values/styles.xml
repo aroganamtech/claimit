@@ -16,14 +16,12 @@
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 
-    <!-- image_cropper: theme for the native UCropActivity. Newer Android versions
-         force edge-to-edge layout, which makes the toolbar title overlap the
-         status bar icons (as seen on devices like the Moto G86 Power 5G).
-         Opting out restores the classic layout where content/toolbar sits
-         below the status bar on every screen size — consistent across devices. -->
-    <style name="UCropTheme" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
-    </style>
+    <!-- image_cropper: theme for the native UCropActivity. image_cropper
+         10.0.0+ upgraded the bundled uCrop library to 2.2.11, which properly
+         supports edge-to-edge on its own — the old windowOptOutEdgeToEdge-
+         Enforcement/statusBarColor workaround (needed on 8.x, and the actual
+         cause of the top-right done button being hard to tap) is no longer
+         needed and is handled instead via AndroidUiSettings.statusBarLight /
+         navBarLight in the Dart cropImage() call. -->
+    <style name="UCropTheme" parent="Theme.AppCompat.Light.NoActionBar"/>
 </resources>

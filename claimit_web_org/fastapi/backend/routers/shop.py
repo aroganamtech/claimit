@@ -202,6 +202,7 @@ async def _sync_shop_to_app(user_id: str) -> None:
         "added_days_ago":  0,
         "image_name":      "",
         "image_names":     [],
+        "shop_type":       shop.get("shop_type", ""),
         "has_rewards":     shop.get("shop_type", "") == "reward",
         "has_redeem":      shop.get("shop_type", "") == "redeem",
         "about":           shop.get("about", ""),
@@ -565,15 +566,28 @@ async def reply_to_review(request: ReviewReplyRequest, current_user=Depends(get_
 
 
 # ─── Gallery Photos ───────────────────────────────────────────
+# Two upload paths exist on this shop doc:
+#   - legacy: cover_photo_b64 / gallery_photos (raw base64, written by the
+#     old JSON-body upload — dropped for new uploads, kept here only so
+#     shops that still have base64 images from before this fix keep showing)
+#   - current: image_url / image_urls (S3 key + public URL, written by the
+#     presigned-upload endpoints below — same pattern already used during
+#     shop registration in ShopPhotos.jsx)
+# GET /gallery merges both so the edit page always shows whatever the shop
+# actually has, regardless of which path it was uploaded through.
 @router.get("/gallery")
 async def get_gallery(current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
     shop = await shops_collection.find_one({"user_id": user_id})
     if not shop:
-        return {"cover_photo_b64": None, "gallery_photos": []}
+        return {"cover_photo_b64": None, "gallery_photos": [], "cover_url": None, "gallery_urls": []}
     return {
+        # kept for backward compatibility with any older cached frontend
         "cover_photo_b64": shop.get("cover_photo_b64"),
         "gallery_photos": shop.get("gallery_photos", []),
+        # preferred — used by the current edit page
+        "cover_url": shop.get("image_url") or shop.get("cover_photo_b64"),
+        "gallery_urls": shop.get("image_urls") or shop.get("gallery_photos", []),
     }
 
 
@@ -611,16 +625,35 @@ async def delete_gallery_photo(index: int, current_user=Depends(get_current_user
     shop = await shops_collection.find_one({"user_id": user_id})
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
-    gallery = shop.get("gallery_photos", [])
-    if index < 0 or index >= len(gallery):
-        raise HTTPException(status_code=400, detail="Invalid photo index")
-    gallery.pop(index)
-    await shops_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {"gallery_photos": gallery}}
-    )
-    # Mirror updated gallery into app database
-    await _sync_shop_to_app(user_id)
+
+    # Delete from whichever list this shop actually has photos in — new
+    # uploads live in image_s3_keys/image_urls, older shops may still have
+    # gallery_photos (base64).
+    keys = shop.get("image_s3_keys") or []
+    urls = shop.get("image_urls") or []
+    if urls:
+        if index < 0 or index >= len(urls):
+            raise HTTPException(status_code=400, detail="Invalid photo index")
+        urls.pop(index)
+        if index < len(keys):
+            keys.pop(index)
+        await shops_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {"image_s3_keys": keys, "image_urls": urls}}
+        )
+    else:
+        gallery = shop.get("gallery_photos", [])
+        if index < 0 or index >= len(gallery):
+            raise HTTPException(status_code=400, detail="Invalid photo index")
+        gallery.pop(index)
+        await shops_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {"gallery_photos": gallery}}
+        )
+        # Mirror updated gallery into app database (only relevant for the
+        # legacy base64 path — the S3-key path already writes app-facing
+        # fields directly, see gallery/add-key above).
+        await _sync_shop_to_app(user_id)
     return {"ok": True}
 
 

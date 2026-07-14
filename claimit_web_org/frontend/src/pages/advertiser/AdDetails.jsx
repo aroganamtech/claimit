@@ -9,12 +9,16 @@ const AD_LABELS = {
   nearby_deals: 'Nearby Deals Ad',
 }
 
+// Pricing per "Claimit Advertising Packages (Weekly)" — kept in sync with
+// ChooseAdType.jsx and the backend's AD_PRICES in routers/advertiser.py.
 const AD_PRICES = {
-  home_banner: 840,
-  promo_reelz: 1400,
-  brand_deals: 1400,
-  nearby_deals: 1400,
+  home_banner:  { standard: 700 },
+  nearby_deals: { premium: 1050, standard: 700 },
+  brand_deals:  { premium: 700,  standard: 700 },
+  promo_reelz:  { premium: 700,  standard: 700 },
 }
+
+const TIER_LABELS = { premium: 'Premium', standard: 'Standard' }
 
 const DEAL_CATEGORIES = [
   'Restaurant', 'Supermarket', 'Pharmacy', 'Salon', 'Gym',
@@ -283,6 +287,8 @@ export default function AdDetails() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const adType = searchParams.get('type') || 'nearby_deals'
+  const tier = searchParams.get('tier') || Object.keys(AD_PRICES[adType] || { standard: 1 })[0] || 'standard'
+  const price = (AD_PRICES[adType] || {})[tier] ?? Object.values(AD_PRICES[adType] || { 0: 700 })[0]
 
   // Generic fields (all types)
   const [pincode, setPincode] = useState('')
@@ -314,6 +320,7 @@ export default function AdDetails() {
 
     const draft = {
       adType,
+      tier,
       pincode,
       ...extra,
       // store creative filenames — actual files re-attached at publish
@@ -407,9 +414,11 @@ export default function AdDetails() {
 
             {/* Price summary */}
             <div style={{ background: '#1565C0', borderRadius: 12, padding: 24, color: '#fff', marginBottom: 20 }}>
-              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Price Summary</div>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>₹{AD_PRICES[adType] || 1400}</div>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Price includes 18% GST · 7-day campaign</div>
+              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>
+                Price Summary {TIER_LABELS[tier] ? `· ${TIER_LABELS[tier]}` : ''}
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700 }}>₹{price}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Price includes GST · 7-day campaign</div>
             </div>
 
             <button className="btn-primary" onClick={validateAndContinue}>Continue →</button>

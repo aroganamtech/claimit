@@ -1034,6 +1034,157 @@ export function AdminBonusSettings() {
   )
 }
 
+
+// ─── Premium Ad Slot Settings ──────────────────────────────────
+export function AdminAdSettings() {
+  const [maxNearby, setMaxNearby] = useState('')
+  const [maxBrand, setMaxBrand]   = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getAdSettings()
+      .then(cfg => {
+        setMaxNearby(String(cfg.max_nearby ?? 3))
+        setMaxBrand(String(cfg.max_brand ?? 3))
+      })
+      .catch(() => { setMaxNearby('3'); setMaxBrand('3') })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setError('')
+    const n = parseInt(maxNearby, 10)
+    const b = parseInt(maxBrand, 10)
+    if (isNaN(n) || n < 0) { setError('Nearby Deals cap must be a number ≥ 0'); return }
+    if (isNaN(b) || b < 0) { setError('Brand Deals cap must be a number ≥ 0'); return }
+    setSaving(true)
+    try {
+      await api.admin.updateAdSettings({ max_nearby: n, max_brand: b })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Premium Ad Slot Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Set how many Premium slots advertisers can book. Nearby Deals Premium slots
+        are per-location (each pincode gets its own pool). Brand Deals Premium slots
+        are shared across the whole app (not location filtered). Changes apply
+        immediately to new bookings — already-booked ads are unaffected.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current settings…</div>
+      ) : (
+        <div style={{ maxWidth: 520 }}>
+          {/* Current values card */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a237e 0%, #1565C0 100%)',
+            borderRadius: 14, padding: 24, marginBottom: 28, color: '#fff',
+          }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, fontWeight: 600, letterSpacing: 0.5 }}>
+              CURRENT PREMIUM SLOT CAPS
+            </div>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{maxNearby}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Nearby Deals / location</div>
+              </div>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{maxBrand}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Brand Deals (global)</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit form */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 28 }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Max Premium — Nearby Deals (per pincode)
+              </label>
+              <input
+                type="number" min="0" step="1" value={maxNearby}
+                onChange={e => { setMaxNearby(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 3"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Max active/scheduled Premium Nearby Deals allowed at once for the same pincode.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Max Premium — Brand Deals (global)
+              </label>
+              <input
+                type="number" min="0" step="1" value={maxBrand}
+                onChange={e => { setMaxBrand(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 3"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Max active/scheduled Premium Brand Deals allowed at once, app-wide.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            {saved && (
+              <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+                ✓ Settings saved successfully!
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+                color: '#fff', border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+                fontFamily: 'Poppins', transition: 'background 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
+
+          {/* Info box */}
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              When an advertiser tries to book a Premium slot and the cap is reached,
+              they're blocked with a message asking them to pick Standard instead
+              (or a different location, for Nearby Deals). Slots free up automatically
+              7 days after an ad's publish date, once it's no longer active/scheduled.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Deleted Users ────────────────────────────────────────────
 export function AdminDeletedUsers() {
   const [items, setItems] = useState([])

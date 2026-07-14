@@ -6,6 +6,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:provider/provider.dart';
 import '../providers/bill_reward_provider.dart';
 import '../../../core/services/gemini_ocr_service.dart';
+import '../../../core/services/groq_ocr_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillScanningProgressScreen
@@ -108,7 +109,7 @@ class _BillScanningProgressScreenState
     if (!netOk) debugPrint('No internet — skipping AI, using ML Kit only');
 
     // ── Step 1: Try Gemini Vision AI (most accurate) ─────────────────────────
-    bool geminiSucceeded = false;
+    bool aiSucceeded = false;
     if (netOk) {
       try {
         final gemini = await GeminiOcrService.instance
@@ -119,7 +120,7 @@ class _BillScanningProgressScreenState
           billDate   = gemini.billDate;
           billNumber = gemini.billNumber;
           rawText    = gemini.rawJson ?? '';
-          geminiSucceeded = true;
+          aiSucceeded = true;
           debugPrint('Gemini OCR succeeded: $gemini');
         }
       } catch (e) {
@@ -127,8 +128,30 @@ class _BillScanningProgressScreenState
       }
     }
 
-    // ── Step 2: ML Kit fallback (if Gemini unavailable or returned nulls) ────
-    if (!geminiSucceeded || total == null) {
+    // ── Step 1b: Groq Vision AI — second opinion when Gemini didn't return a
+    // usable result (down, rate-limited, or a transient error). This is what
+    // stops a single AI provider hiccup from forcing a perfectly readable
+    // bill into manual review.
+    if (netOk && (!aiSucceeded || total == null)) {
+      try {
+        final groq = await GroqOcrService.instance
+            .extractFromImage(widget.imagePath);
+        if (groq != null && groq.hasAnyData) {
+          total      ??= groq.totalAmount;
+          shopName   ??= groq.shopName;
+          billDate   ??= groq.billDate;
+          billNumber ??= groq.billNumber;
+          if (rawText.isEmpty) rawText = groq.rawJson ?? '';
+          aiSucceeded = true;
+          debugPrint('Groq OCR succeeded: $groq');
+        }
+      } catch (e) {
+        debugPrint('Groq OCR error: $e');
+      }
+    }
+
+    // ── Step 2: ML Kit fallback (if both AIs unavailable or returned nulls) ──
+    if (!aiSucceeded || total == null) {
       try {
         final inputImage = InputImage.fromFilePath(widget.imagePath);
         final recognizer =
@@ -246,15 +269,20 @@ class _BillScanningProgressScreenState
     // If any field is missing, or came from a low-confidence ML Kit stage
     // (blind number guess / secondary shop-name scan), force manual review.
     // The low-confidence flags are only set when the regex extractors actually
-    // ran — a fully successful Gemini scan never trips this. This prevents
-    // showing a wrong amount/shop that the user might blindly confirm — the
-    // confirm screen's default issue message handles this code.
-    // Additionally: any scan done WITHOUT internet (AI never verified it)
-    // always goes to manual review — the confirm screen shows the
-    // "check internet & rescan" option for these.
+    // ran — a fully successful Gemini/Groq scan never trips this. This
+    // prevents showing a wrong amount/shop that the user might blindly
+    // confirm — the confirm screen's default issue message handles this code.
+    //
+    // NOTE: this intentionally does NOT check `netOk` directly. The internet
+    // probe above is only a 3s DNS lookup used to decide whether to bother
+    // calling the AI APIs — it can occasionally report false negatives on a
+    // slow/flaky connection even though the device is online. Gating manual
+    // review on that flaky probe used to force well-read bills (good total +
+    // shop name, from either AI or a high-confidence ML Kit pass) into
+    // manual review for no real reason. What actually matters is whether we
+    // ended up with a trustworthy result, which the checks below cover.
     if (issueCode == null &&
-        ((!netOk && !geminiSucceeded) ||
-            total == null ||
+        (total == null ||
             shopName == null ||
             shopName.isEmpty ||
             _totalLowConfidence ||

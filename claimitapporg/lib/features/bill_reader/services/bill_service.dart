@@ -136,6 +136,15 @@ class BillService {
     if (response.statusCode == 200 || response.statusCode == 201) {
       return response.data as Map<String, dynamic>;
     }
+    if (response.statusCode == 409) {
+      // Server found this exact bill already scanned, already approved, or
+      // already sitting in the review queue — surface its friendly message
+      // instead of "please try again" (which just invites another rescan).
+      final detail = (response.data is Map)
+          ? (response.data as Map)['detail']?.toString()
+          : null;
+      throw Exception(detail ?? 'This bill has already been submitted.');
+    }
     AppError.friendly(Exception('ManualReview HTTP ${response.statusCode}'), '', context: 'BillManualReview');
     throw Exception('Could not submit for review. Please try again.');
   }

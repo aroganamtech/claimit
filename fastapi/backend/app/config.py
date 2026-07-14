@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     firebase_service_account_path: str = ""
     firebase_service_account_json: str = ""
 
+    # Cashfree Payment Gateway (Local Finds / Local Classifieds listing fees).
+    # cashfree_env: "TEST" uses the sandbox API (safe, no real money moves),
+    # "PROD" switches to the live API. Leave the id/key blank until you have
+    # real credentials — payment endpoints return a clear error instead of
+    # crashing when they're unset.
+    cashfree_app_id: str = ""
+    cashfree_secret_key: str = ""
+    cashfree_env: str = "TEST"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

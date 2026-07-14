@@ -97,12 +97,19 @@ class BillReaderIntroScreen extends StatelessWidget {
                 buttonLabel: 'Select Redeem Shop',
                 onTap: () => context.push(
                   '/shops',
-                  extra: const ShopCategory(
-                    id: -1,
-                    name: 'Redeem Zone',
-                    icon: Icons.redeem_rounded,
-                    color: Color(0xFF059669),
-                  ),
+                  // isTab: true turns on the Redeem-only filter (hasRedeem &&
+                  // discount > 0) — without it, id: -1 alone means "no filter"
+                  // (used elsewhere for Nearby/See-All), which was letting
+                  // Reward-only shops appear in this Redeem shop picker.
+                  extra: {
+                    'category': const ShopCategory(
+                      id: -1,
+                      name: 'Redeem Zone',
+                      icon: Icons.redeem_rounded,
+                      color: Color(0xFF059669),
+                    ),
+                    'isTab': true,
+                  },
                 ),
               ),
 

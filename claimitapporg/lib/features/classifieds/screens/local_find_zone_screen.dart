@@ -5,13 +5,17 @@ import '../data/classified_categories.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shows the subcategories inside one Local Finds zone (e.g. "Shop" →
-// Grocery, Supermarkets, Fashion, ...). Tapping a subcategory opens the same
-// browse + "add post" list screen already used by Local Classified, so
-// posting a new listing here works exactly the same way.
+// Grocery, Supermarkets, Fashion, ...), styled to match the client's PDF:
+// zone icon at top, subcategories as a plain text list (no icons), and a
+// blue REGISTER banner at the bottom to list a business under this zone.
+// Tapping a subcategory still opens the same browse + "add post" list
+// screen already used by Local Classified, so posting a new listing here
+// works exactly the same way.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Color _navy = Color(0xFF1E3A5F);
 const Color _gold = Color(0xFFC9A876);
+const Color _registerBlue = Color(0xFF1565C0);
 
 class LocalFindZoneScreen extends StatelessWidget {
   final LocalFindZone zone;
@@ -39,6 +43,13 @@ class LocalFindZoneScreen extends StatelessWidget {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'My Listings',
+            icon: const Icon(Icons.list_alt_rounded, color: _navy),
+            onPressed: () => context.push('/classified/mine'),
+          ),
+        ],
       ),
       body: Container(
         width: double.infinity,
@@ -55,80 +66,145 @@ class LocalFindZoneScreen extends StatelessWidget {
           ),
         ),
         child: SafeArea(
-          child: zone.subcategories.isEmpty
-              ? Center(
-                  child: Text(
-                    '${zone.label} sub-categories coming soon',
-                    style: const TextStyle(color: _navy),
-                  ),
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, kToolbarHeight + 24, 20, 24),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 0.82,
-                  ),
-                  itemCount: zone.subcategories.length,
-                  itemBuilder: (context, i) {
-                    final sub = zone.subcategories[i];
-                    return _ZoneSubcategoryTile(
-                      sub: sub,
-                      onTap: () => context.push(
-                        '/classified/list',
-                        extra: {
-                          'category': zone.id,
-                          'subcategory': sub.name,
-                          'title': sub.name,
-                        },
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(24, kToolbarHeight + 24, 24, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // ── Zone icon (PDF art) ─────────────────────────────────────
+                zone.iconAsset != null
+                    ? Image.asset(zone.iconAsset!, width: 92, height: 92)
+                    : Container(
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withOpacity(0.55),
+                          border: Border.all(color: _gold, width: 1.4),
+                        ),
+                        child: Icon(zone.icon, size: 38, color: _navy),
                       ),
-                    );
-                  },
+                const SizedBox(height: 10),
+                Text(
+                  zone.label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _navy,
+                    letterSpacing: 0.4,
+                  ),
                 ),
+                const SizedBox(height: 28),
+
+                // ── Plain text subcategory list — no icons, matches PDF ────
+                if (zone.subcategories.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      '${zone.label} sub-categories coming soon',
+                      style: const TextStyle(color: _navy),
+                    ),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      children: [
+                        for (int i = 0; i < zone.subcategories.length; i++)
+                          _SubcategoryRow(
+                            name: zone.subcategories[i].name,
+                            showDivider: i != zone.subcategories.length - 1,
+                            onTap: () => context.push(
+                              '/classified/list',
+                              extra: {
+                                'category': zone.id,
+                                'subcategory': zone.subcategories[i].name,
+                                'title': zone.subcategories[i].name,
+                                'listingType': 'local_find',
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 32),
+
+                // ── REGISTER banner — matches the PDF's blue full-width bar ─
+                GestureDetector(
+                  onTap: () => context.push('/local-finds/add', extra: zone),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _registerBlue,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'REGISTER',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _ZoneSubcategoryTile extends StatelessWidget {
-  const _ZoneSubcategoryTile({required this.sub, required this.onTap});
-  final ClassifiedSubcategory sub;
+class _SubcategoryRow extends StatelessWidget {
+  const _SubcategoryRow({
+    required this.name,
+    required this.showDivider,
+    required this.onTap,
+  });
+  final String name;
+  final bool showDivider;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.55),
-              border: Border.all(color: _gold, width: 1.4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 20, color: Color(0xFF9CA3AF)),
+              ],
             ),
-            child: Icon(sub.icon, size: 30, color: _navy),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            sub.name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _navy,
-              height: 1.2,
-            ),
-          ),
-        ],
+            if (showDivider) ...[
+              const SizedBox(height: 12),
+              Container(height: 1, color: const Color(0xFFE5E7EB)),
+            ],
+          ],
+        ),
       ),
     );
   }

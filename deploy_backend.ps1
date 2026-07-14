@@ -5,9 +5,11 @@
 #
 # Run from PowerShell:  .\deploy_backend.ps1
 
-$Key    = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit.pem"
-$Server = "ubuntu@16.170.110.232"
-$Local  = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit_web_org\fastapi\backend\routers"
+$Key       = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit.pem"
+$Server    = "ubuntu@16.170.110.232"
+$Backend   = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit_web_org\fastapi\backend"
+$Local     = "$Backend\routers"
+$LocalUtil = "$Backend\utils"
 
 Write-Host "Locating the backend folder on the server..." -ForegroundColor Cyan
 $RemoteDir = (ssh -i $Key $Server "find /home /opt /srv /var/www -maxdepth 8 -type d -path '*claimit_web_org*backend/routers' 2>/dev/null | head -1").Trim()
@@ -18,16 +20,36 @@ if (-not $RemoteDir) {
     exit 1
 }
 Write-Host "Found: $RemoteDir" -ForegroundColor Green
+$RemoteBackend = $RemoteDir -replace '/routers$', ''
+$RemoteUtils   = "$RemoteBackend/utils"
 
-Write-Host "`nCopying admin.py, bill.py, shop.py..." -ForegroundColor Cyan
-scp -i $Key "$Local\admin.py" "$Local\bill.py" "$Local\shop.py" "${Server}:${RemoteDir}/"
+Write-Host "`nCopying admin.py, bill.py, shop.py, advertiser.py, payments.py..." -ForegroundColor Cyan
+scp -i $Key "$Local\admin.py" "$Local\bill.py" "$Local\shop.py" "$Local\advertiser.py" "$Local\payments.py" "${Server}:${RemoteDir}/"
+
+Write-Host "`nCopying utils/cashfree.py and main.py..." -ForegroundColor Cyan
+scp -i $Key "$LocalUtil\cashfree.py" "${Server}:${RemoteUtils}/"
+scp -i $Key "$Backend\main.py" "${Server}:${RemoteBackend}/"
+
+Write-Host "`nNOTE: .env is never auto-copied. If the server's .env doesn't already have Cashfree keys, add these three lines to it once (SSH in and edit), then re-run this script:" -ForegroundColor Yellow
+Write-Host "  CASHFREE_APP_ID=TEST11132395fbff0f9453ff50349ba659323111" -ForegroundColor Yellow
+Write-Host "  CASHFREE_SECRET_KEY=cfsk_ma_test_0772fe172104da6e95b82060b80c54ca_d56122ce" -ForegroundColor Yellow
+Write-Host "  CASHFREE_ENV=TEST" -ForegroundColor Yellow
 
 Write-Host "`nRestarting the backend..." -ForegroundColor Cyan
 $RemoteScript = @'
 set -e
-if systemctl list-units --type=service --all 2>/dev/null | grep -qi claimit; then
-  SERVICE=$(systemctl list-units --type=service --all | grep -i claimit | awk '{print $1}' | head -1)
+if systemctl list-units --type=service --all 2>/dev/null | grep -qi claimit_web; then
+  # Prefer the web backend service by exact name — this server also runs
+  # claimit.service (the app backend on a different port); a plain
+  # grep -i claimit would match either one unpredictably.
+  SERVICE=$(systemctl list-units --type=service --all | grep -i claimit_web | awk '{print $1}' | head -1)
   echo "Restarting systemd service: $SERVICE"
+  sudo systemctl restart "$SERVICE"
+  sleep 2
+  sudo systemctl is-active "$SERVICE"
+elif systemctl list-units --type=service --all 2>/dev/null | grep -qi claimit; then
+  SERVICE=$(systemctl list-units --type=service --all | grep -i claimit | awk '{print $1}' | head -1)
+  echo "claimit_web.service not found — falling back to: $SERVICE (verify this is the web backend, not the app backend!)"
   sudo systemctl restart "$SERVICE"
   sleep 2
   sudo systemctl is-active "$SERVICE"

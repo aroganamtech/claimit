@@ -13,7 +13,13 @@ export default function ShopDashboard() {
 
   useEffect(() => {
     api.shop.getDashboard()
-      .then(setData)
+      .then(d => {
+        setData(d)
+        // Default tab based on shop type: redeem shops start on redeems tab
+        if ((d?.shop?.shop_type || '').toLowerCase() === 'redeem') {
+          setTab('redeems')
+        }
+      })
       .catch(() => setData({ total_reward_given: 0, total_redeem_used: 0, rewards: [], redeems: [] }))
       .finally(() => setLoading(false))
     // Bill scans recorded by the Claimit app at this shop (read-only)
@@ -21,6 +27,10 @@ export default function ShopDashboard() {
       .then(setScans)
       .catch(() => setScans({ total_scans: 0, scans: [] }))
   }, [])
+
+  const shopType = (data?.shop?.shop_type || '').toLowerCase()
+  const isReward = shopType === 'reward'
+  const isRedeem = shopType === 'redeem'
 
   const tableData =
     tab === 'rewards' ? (data?.rewards || [])
@@ -45,18 +55,22 @@ export default function ShopDashboard() {
           </button>
         </div>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, maxWidth: 1100, marginBottom: 28 }}>
-          <div className="stat-card">
-            <div style={{ fontSize: 24 }}>🎯</div>
-            <div className="stat-value">{data?.total_reward_given ?? 0}</div>
-            <div className="stat-label">Total Reward Given</div>
-          </div>
-          <div className="stat-card">
-            <div style={{ fontSize: 24 }}>🏪</div>
-            <div className="stat-value">{data?.total_redeem_used ?? 0}</div>
-            <div className="stat-label">Total Redeem Used</div>
-          </div>
+        {/* Stats — reward shops hide redeem stat; redeem shops hide reward stat */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isReward || isRedeem ? 3 : 4}, 1fr)`, gap: 16, maxWidth: 1100, marginBottom: 28 }}>
+          {!isRedeem && (
+            <div className="stat-card">
+              <div style={{ fontSize: 24 }}>🎯</div>
+              <div className="stat-value">{data?.total_reward_given ?? 0}</div>
+              <div className="stat-label">Total Reward Given</div>
+            </div>
+          )}
+          {!isReward && (
+            <div className="stat-card">
+              <div style={{ fontSize: 24 }}>🏪</div>
+              <div className="stat-value">{data?.total_redeem_used ?? 0}</div>
+              <div className="stat-label">Total Redeem Used</div>
+            </div>
+          )}
           <div className="stat-card">
             <div style={{ fontSize: 24 }}>❤️</div>
             <div className="stat-value">
@@ -76,14 +90,18 @@ export default function ShopDashboard() {
         {/* Transactions Table */}
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid #eee', display: 'flex', gap: 4 }}>
-            <button
-              className={`tab-btn ${tab === 'rewards' ? 'active' : ''}`}
-              onClick={() => setTab('rewards')}
-            >Rewards</button>
-            <button
-              className={`tab-btn ${tab === 'redeems' ? 'active' : ''}`}
-              onClick={() => setTab('redeems')}
-            >Redeem</button>
+            {!isRedeem && (
+              <button
+                className={`tab-btn ${tab === 'rewards' ? 'active' : ''}`}
+                onClick={() => setTab('rewards')}
+              >Rewards</button>
+            )}
+            {!isReward && (
+              <button
+                className={`tab-btn ${tab === 'redeems' ? 'active' : ''}`}
+                onClick={() => setTab('redeems')}
+              >Redeem</button>
+            )}
             <button
               className={`tab-btn ${tab === 'scans' ? 'active' : ''}`}
               onClick={() => setTab('scans')}

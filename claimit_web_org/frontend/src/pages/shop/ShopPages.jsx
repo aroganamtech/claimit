@@ -2,14 +2,20 @@ import { useState, useEffect } from 'react'
 import ShopSidebar from './ShopSidebar'
 import api from '../../utils/api'
 
-// ─── Helper: file → base64 ─────────────────────────────────────
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
+// Upload a File directly to S3 via presigned URL — same pattern already used
+// during shop registration (ShopPhotos.jsx) and for ad creatives. Avoids
+// sending image bytes through the backend, which was hitting a request body
+// size limit on this edit page and failing with "unable to upload" for
+// anything but tiny images.
+async function uploadShopImageToS3(file) {
+  const presignRes = await api.shop.presignImage()
+  const putRes = await fetch(presignRes.upload_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: file,
   })
+  if (!putRes.ok) throw new Error(`S3 upload failed: ${putRes.status}`)
+  return { key: presignRes.key, url: presignRes.public_url }
 }
 
 // ─── Offer Management ─────────────────────────────────────────────────────────
@@ -127,8 +133,9 @@ export function StoreDetailsManagement() {
   const [editValues, setEditValues] = useState({})
   const [saving, setSaving] = useState(false)
 
-  // Gallery state
-  const [gallery, setGallery] = useState({ cover_photo_b64: null, gallery_photos: [] })
+  // Gallery state — cover_url / gallery_urls are S3 public URLs (preferred);
+  // the backend still falls back to legacy base64 fields for older shops.
+  const [gallery, setGallery] = useState({ cover_url: null, gallery_urls: [] })
   const [galleryLoading, setGalleryLoading] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [uploadingGallery, setUploadingGallery] = useState(false)
@@ -141,8 +148,18 @@ export function StoreDetailsManagement() {
     // Load gallery
     setGalleryLoading(true)
     api.shop.getGallery()
-      .then(setGallery)
-      .catch(() => setGallery({ cover_photo_b64: null, gallery_photos: [] }))
+      // Never trust the API response shape blindly — if the deployed backend
+      // is older/different and omits gallery_urls (or sends something that
+      // isn't an array), gallery.gallery_urls.length below would crash the
+      // whole page. Normalize here so this page can never white-screen on
+      // a shape mismatch, regardless of backend deploy state.
+      .then(res => setGallery({
+        cover_url: res?.cover_url ?? res?.cover_photo_b64 ?? null,
+        gallery_urls: Array.isArray(res?.gallery_urls)
+          ? res.gallery_urls
+          : Array.isArray(res?.gallery_photos) ? res.gallery_photos : [],
+      }))
+      .catch(() => setGallery({ cover_url: null, gallery_urls: [] }))
       .finally(() => setGalleryLoading(false))
   }, [])
 
@@ -151,11 +168,12 @@ export function StoreDetailsManagement() {
     if (!file) return
     setUploadingCover(true)
     try {
-      const b64 = await fileToBase64(file)
-      await api.shop.updateCoverPhoto({ photo_b64: b64 })
-      setGallery(prev => ({ ...prev, cover_photo_b64: b64 }))
+      const { key, url } = await uploadShopImageToS3(file)
+      await api.shop.setCoverPhotoKey({ s3_key: key })
+      setGallery(prev => ({ ...prev, cover_url: url }))
     } catch (err) {
-      alert('Failed to upload cover photo')
+      console.error('Cover upload failed', err)
+      alert('Failed to upload cover photo. Please try a JPG or PNG file.')
     } finally { setUploadingCover(false) }
   }
 
@@ -163,14 +181,21 @@ export function StoreDetailsManagement() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
     setUploadingGallery(true)
+    const failed = []
     try {
       for (const file of files) {
-        const b64 = await fileToBase64(file)
-        await api.shop.addGalleryPhoto({ photo_b64: b64 })
-        setGallery(prev => ({ ...prev, gallery_photos: [...prev.gallery_photos, b64] }))
+        try {
+          const { key, url } = await uploadShopImageToS3(file)
+          await api.shop.addGalleryPhotoKey({ s3_key: key })
+          setGallery(prev => ({ ...prev, gallery_urls: [...(prev.gallery_urls || []), url] }))
+        } catch (err) {
+          console.error('Gallery photo upload failed', err)
+          failed.push(file.name)
+        }
       }
-    } catch (err) {
-      alert('Failed to upload photo')
+      if (failed.length > 0) {
+        alert(`Could not upload: ${failed.join(', ')}. Please try a JPG or PNG file.`)
+      }
     } finally { setUploadingGallery(false) }
   }
 
@@ -180,7 +205,7 @@ export function StoreDetailsManagement() {
       await api.shop.deleteGalleryPhoto(index)
       setGallery(prev => ({
         ...prev,
-        gallery_photos: prev.gallery_photos.filter((_, i) => i !== index)
+        gallery_urls: (prev.gallery_urls || []).filter((_, i) => i !== index)
       }))
     } catch (err) {
       alert('Failed to delete photo')
@@ -301,20 +326,20 @@ export function StoreDetailsManagement() {
                 alignItems: 'center', justifyContent: 'center',
                 border: '2px dashed #ddd', borderRadius: 10,
                 padding: '20px', cursor: 'pointer',
-                background: gallery.cover_photo_b64 ? '#e8f5e9' : '#fafafa'
+                background: gallery.cover_url ? '#e8f5e9' : '#fafafa'
               }}
             >
-              {gallery.cover_photo_b64 ? (
+              {gallery.cover_url ? (
                 <img
-                  src={gallery.cover_photo_b64}
+                  src={gallery.cover_url}
                   alt="cover"
                   style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 8, marginBottom: 8 }}
                 />
               ) : (
                 <span style={{ fontSize: 28, marginBottom: 6 }}>⬆</span>
               )}
-              <span style={{ fontSize: 13, color: gallery.cover_photo_b64 ? '#2e7d32' : '#888' }}>
-                {uploadingCover ? 'Uploading...' : gallery.cover_photo_b64 ? 'Click to change cover photo' : 'Click to upload cover photo'}
+              <span style={{ fontSize: 13, color: gallery.cover_url ? '#2e7d32' : '#888' }}>
+                {uploadingCover ? 'Uploading...' : gallery.cover_url ? 'Click to change cover photo' : 'Click to upload cover photo'}
               </span>
             </label>
           </div>
@@ -359,15 +384,15 @@ export function StoreDetailsManagement() {
 
             {galleryLoading ? (
               <div style={{ color: '#888', fontSize: 13 }}>Loading photos...</div>
-            ) : gallery.gallery_photos.length === 0 && !gallery.cover_photo_b64 ? (
+            ) : gallery.gallery_urls.length === 0 && !gallery.cover_url ? (
               <div style={{ color: '#bbb', fontSize: 13 }}>No photos uploaded yet. Use the upload areas above to add images.</div>
             ) : (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {/* Cover photo thumbnail */}
-                {gallery.cover_photo_b64 && (
+                {gallery.cover_url && (
                   <div style={{ position: 'relative' }}>
                     <img
-                      src={gallery.cover_photo_b64}
+                      src={gallery.cover_url}
                       alt="cover"
                       style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 8, border: '2px solid #1565C0' }}
                     />
@@ -392,7 +417,7 @@ export function StoreDetailsManagement() {
                   </div>
                 )}
                 {/* Gallery thumbnails */}
-                {gallery.gallery_photos.map((src, i) => (
+                {gallery.gallery_urls.map((src, i) => (
                   <div key={i} style={{ position: 'relative' }}>
                     <img
                       src={src}

@@ -10,12 +10,17 @@ class ClassifiedListScreen extends StatefulWidget {
   final String category;
   final String subcategory;
   final String title;
+  // "classified" = Local Classifieds items/services, "local_find" = Local
+  // Finds business listings — determines which "add post" flow the + button
+  // opens (LocalFindAddListingFlow vs AddPostFlowScreen).
+  final String listingType;
 
   const ClassifiedListScreen({
     super.key,
     required this.category,
     required this.subcategory,
     required this.title,
+    this.listingType = 'classified',
   });
 
   @override
@@ -88,6 +93,30 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
         .toList();
   }
 
+  /// Opens the right "add post" flow: the Local Finds business registration
+  /// flow when browsing a Local Finds zone, otherwise the Local Classifieds
+  /// posting flow.
+  void _openAddFlow() {
+    if (widget.listingType == 'local_find') {
+      LocalFindZone? zone;
+      try {
+        zone = localFindZones.firstWhere((z) => z.id == widget.category);
+      } catch (_) {
+        zone = null;
+      }
+      // Pass the subcategory the user is already browsing (e.g. "Grocery")
+      // so the new listing lands in the SAME filtered list instead of
+      // asking them to pick it again — and, critically, so it actually
+      // gets saved with a non-empty subcategory that matches this filter.
+      context.push('/local-finds/add', extra: {
+        'zone': zone,
+        'subcategory': widget.subcategory.isEmpty ? null : widget.subcategory,
+      });
+    } else {
+      context.push('/classified/add');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -153,7 +182,7 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
               ),
               child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
             ),
-            onPressed: () => context.push('/classified/add'),
+            onPressed: _openAddFlow,
           ),
           const SizedBox(width: 4),
         ],
@@ -234,8 +263,7 @@ class _ClassifiedListScreenState extends State<ClassifiedListScreen> {
                               ),
                               const SizedBox(height: 12),
                               ElevatedButton.icon(
-                                onPressed: () =>
-                                    context.push('/classified/add'),
+                                onPressed: _openAddFlow,
                                 icon: const Icon(Icons.add_rounded),
                                 label: const Text('Post First Ad'),
                                 style: ElevatedButton.styleFrom(

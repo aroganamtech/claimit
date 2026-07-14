@@ -89,6 +89,8 @@ const advertiser = {
   createAd:        (payload)      => post('/advertiser/ads/create', payload),
   getTransactions: ()             => get('/advertiser/transactions'),
   getProfile:      ()             => get('/advertiser/profile'),
+  // Premium slot availability — { max, used, remaining, location_scoped }
+  getPremiumSlots: (adType, pincode='000000') => get('/advertiser/premium-slots', { ad_type: adType, pincode }),
 }
 
 // ─── Sales ───────────────────────────────────────────────────
@@ -169,6 +171,9 @@ const admin = {
   // New-user bonus config
   getAppConfig:      ()       => get('/admin/app-config'),
   updateAppConfig:   (payload) => put('/admin/app-config', payload),
+  // Premium ad slot caps (Nearby Deals + Brand Deals)
+  getAdSettings:     ()       => get('/admin/ad-settings'),
+  updateAdSettings:  (payload) => put('/admin/ad-settings', payload),
   // App Users — real Flutter-app end-customers (claimit_db.users)
   listAppUsers:      ()       => get('/admin/app-users'),
   deleteAppUser:     (id)     => del(`/admin/app-users/${id}`),
@@ -179,6 +184,19 @@ const admin = {
   listDeletedUsers:  ()             => get('/admin/deleted-users'),
 }
 
+// ─── Payments (Cashfree Payment Links — advertiser ad bookings) ────
+const payments = {
+  createLink:  (payload) => post('/payments/create-link', payload),
+  checkStatus: (linkId)  => get(`/payments/status/${linkId}`),
+}
+
+// ─── App Account Deletion (public — Claimit app end-users, not the web
+// portal's own advertiser/sales/shop accounts) ──────────────────────
+const appAccount = {
+  sendOtp:         (identifier)                  => post('/app-account/send-otp', { identifier }),
+  verifyAndDelete: (identifier, otp, confirm)     => post('/app-account/verify-and-delete', { identifier, otp, confirm }),
+}
+
 // Default export bundles everything. Pages migrated to the new style
 // can `import api` and use api.advertiser.getDashboard(); pages still
 // using axios style can fall back to api.get/post/put/delete.
@@ -187,7 +205,7 @@ const api = {
   post: (u, b, c) => http.post(u, b, c),
   put: (u, b, c) => http.put(u, b, c),
   delete: (u, c) => http.delete(u, c),
-  auth, advertiser, sales, shop, support, geo, admin,
+  auth, advertiser, sales, shop, support, geo, admin, payments, appAccount,
 }
-export { auth, advertiser, sales, shop, support, geo, admin }
+export { auth, advertiser, sales, shop, support, geo, admin, payments, appAccount }
 export default api

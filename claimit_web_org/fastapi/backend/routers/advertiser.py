@@ -3,8 +3,10 @@ from pydantic import BaseModel
 from database import (
     ads_collection, transactions_collection,
     app_deals_collection, app_reels_collection, app_banners_collection,
+    app_db,
 )
 from utils.dependencies import get_current_user
+from utils.cashfree import get_payment_link_status
 from utils.s3 import (
     generate_presigned_upload_url,
     generate_presigned_url_sync as _presign,
@@ -18,12 +20,71 @@ import json
 
 router = APIRouter()
 
+# Pricing per "Claimit Advertising Packages (Weekly)" — all prices are for a
+# fixed 7-day campaign and are inclusive of GST. Ad types below marked with
+# both a "premium" and "standard" key support the Premium/Standard picker;
+# home_banner is a single package (no tier split).
 AD_PRICES = {
-    "home_banner": 840,
-    "promo_reelz": 1400,
-    "brand_deals": 1400,
-    "nearby_deals": 1400,
+    "home_banner":  {"standard": 700},
+    "nearby_deals": {"premium": 1050, "standard": 700},
+    "brand_deals":  {"premium": 700,  "standard": 700},
+    "promo_reelz":  {"premium": 700,  "standard": 700},
 }
+
+# Premium slots (Nearby Deals + Brand Deals) are scarce inventory. The cap is
+# admin-configurable (see /admin/ad-settings) so it can be raised later
+# without a code change; these are just the fallback defaults.
+DEFAULT_MAX_PREMIUM_NEARBY = 3
+DEFAULT_MAX_PREMIUM_BRAND  = 3
+
+
+def _ad_price(ad_type: str, tier: str) -> int:
+    tiers = AD_PRICES.get(ad_type, {})
+    return tiers.get(tier) or tiers.get("standard") or next(iter(tiers.values()), 700)
+
+
+async def _get_premium_caps() -> dict:
+    """Admin-configurable premium slot caps, stored the same way as the
+    existing new-user-bonus app_config (routers/admin.py), key='premium_slots'."""
+    cfg = await app_db["app_config"].find_one({"key": "premium_slots"})
+    return {
+        "nearby_deals": int(cfg.get("max_nearby", DEFAULT_MAX_PREMIUM_NEARBY)) if cfg else DEFAULT_MAX_PREMIUM_NEARBY,
+        "brand_deals":  int(cfg.get("max_brand", DEFAULT_MAX_PREMIUM_BRAND)) if cfg else DEFAULT_MAX_PREMIUM_BRAND,
+    }
+
+
+async def _premium_slot_usage(ad_type: str, pincode: str, cap: int) -> dict:
+    """Count Premium ads for this ad_type that are still within their 7-day
+    campaign window. Nearby Deals are scoped per-pincode (each location gets
+    its own pool); Brand Deals are global (shown top-of-list everywhere, not
+    location filtered).
+
+    Note: nothing else in this backend flips an ad's `status` from
+    active/scheduled to expired once its 7 days are up, so we can't just
+    trust `status` here — we also check `end_date` live. This is what makes
+    a booked Premium slot free up automatically 7 days after publish, as
+    opposed to staying "booked" forever.
+    """
+    query = {
+        "ad_type": ad_type,
+        "tier": "premium",
+        "status": {"$in": ["active", "scheduled"]},
+    }
+    if ad_type == "nearby_deals":
+        query["pincode"] = pincode
+    candidates = await ads_collection.find(query, {"end_date": 1}).to_list(1000)
+    today = datetime.utcnow().date()
+    used = 0
+    for c in candidates:
+        try:
+            end = datetime.strptime(c.get("end_date", ""), "%d/%m/%Y").date()
+        except (ValueError, TypeError):
+            # Missing/malformed end_date — be conservative and count it as used.
+            used += 1
+            continue
+        if end >= today:
+            used += 1
+    return {"max": cap, "used": used, "remaining": max(0, cap - used)}
 
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm")
 
@@ -75,11 +136,16 @@ async def presign_upload(body: PresignRequest, current_user=Depends(get_current_
 
 class CreateAdRequest(BaseModel):
     ad_type: str
+    tier: str = "standard"  # "premium" | "standard" — ignored for home_banner
     pincode: str = "000000"
     publish_today: bool = True
     scheduled_date: Optional[str] = None
     creative_key: Optional[str] = None
     thumbnail_key: Optional[str] = None
+    # Cashfree payment reference — set by the frontend once
+    # GET /payments/status/{link_id} returns "PAID". Re-verified
+    # server-side below before the ad is created/charged.
+    payment_link_id: Optional[str] = None
     # Home banner
     headline: Optional[str] = None
     sub: Optional[str] = None
@@ -109,7 +175,47 @@ class CreateAdRequest(BaseModel):
 async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
     ad_type = body.ad_type
-    amount  = AD_PRICES.get(ad_type, 1400)
+    tier    = (body.tier or "standard").strip().lower()
+    if tier not in ("premium", "standard"):
+        tier = "standard"
+    amount  = _ad_price(ad_type, tier)
+
+    # Every ad booking now requires a completed Cashfree payment before the
+    # ad is created — mirrors the same Payment Links flow already used on
+    # the mobile app for Local Finds / Local Classifieds. We don't trust the
+    # frontend's word for it: re-check the link's status directly with
+    # Cashfree here.
+    if not body.payment_link_id:
+        raise HTTPException(status_code=402, detail="Payment is required before publishing an ad.")
+    link_status = await get_payment_link_status(body.payment_link_id)
+    if (link_status.get("link_status") or "").upper() != "PAID":
+        raise HTTPException(
+            status_code=402,
+            detail="Payment not completed yet. Please complete the payment and try again.",
+        )
+
+    # Premium is scarce inventory for both Nearby Deals (per-location pool)
+    # and Brand Deals (global pool). Enforce the admin-configured cap here.
+    # Note: since payment already happened above, a cap collision at this
+    # point is a rare race (two advertisers paying for the last slot at
+    # once) — the ad is rejected and the advertiser should be refunded
+    # manually; this trade-off keeps the slot cap always exact rather than
+    # ever over-selling it.
+    if tier == "premium" and ad_type in ("nearby_deals", "brand_deals"):
+        caps = await _get_premium_caps()
+        cap = caps[ad_type]
+        usage = await _premium_slot_usage(ad_type, body.pincode, cap)
+        if usage["remaining"] <= 0:
+            label = "Nearby Deals" if ad_type == "nearby_deals" else "Brand Deals"
+            scope = "for this location" if ad_type == "nearby_deals" else "right now"
+            suggestion = ", or pick a different pincode" if ad_type == "nearby_deals" else ""
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"All {cap} Premium {label} slots {scope} are already booked. "
+                    f"Please choose Standard{suggestion}."
+                ),
+            )
 
     if publish_today := body.publish_today:
         pub_date = datetime.utcnow()
@@ -143,11 +249,13 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     ad_doc = {
         "user_id":    user_id,
         "ad_type":    ad_type,
+        "tier":       tier,
         "pincode":    body.pincode,
         "publish_date": pub_date.strftime("%d/%m/%Y"),
         "end_date":   end_date.strftime("%d/%m/%Y"),
         "amount":     amount,
         "status":     ad_status,
+        "payment_link_id": body.payment_link_id,
         "views":      0,
         "clicks":     0,
         "created_at": datetime.utcnow(),
@@ -227,6 +335,7 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         await app_deals_collection.insert_one({
             "web_ad_id":  ad_id,
             "deal_group": ad_doc["deal_group"],
+            "tier":       tier,
             "name":       ad_doc.get("name", ""),
             "location":   ad_doc.get("location", ""),
             "offer":      ad_doc.get("offer", ""),
@@ -282,6 +391,7 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         "title":      display_title,
         "amount":     amount,
         "date":       pub_date.strftime("%d/%m/%Y"),
+        "payment_link_id": body.payment_link_id,
         "created_at": datetime.utcnow(),
     })
 
@@ -292,6 +402,27 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         "end_date":     ad_doc["end_date"],
         "amount":       amount,
         "status":       ad_status,
+    }
+
+
+# ── Premium slot availability (for the "? Premium vs Standard" + slot counter
+#    on the ad registration page) ───────────────────────────────────────────────
+
+@router.get("/premium-slots")
+async def get_premium_slots(
+    ad_type: str,
+    pincode: str = "000000",
+    current_user=Depends(get_current_user),
+):
+    if ad_type not in ("nearby_deals", "brand_deals"):
+        raise HTTPException(status_code=400, detail="ad_type must be nearby_deals or brand_deals")
+    caps = await _get_premium_caps()
+    cap = caps[ad_type]
+    usage = await _premium_slot_usage(ad_type, pincode, cap)
+    return {
+        "ad_type":       ad_type,
+        "location_scoped": ad_type == "nearby_deals",
+        **usage,
     }
 
 

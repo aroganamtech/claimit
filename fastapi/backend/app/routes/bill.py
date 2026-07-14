@@ -399,6 +399,32 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
             parsed_date = datetime.strptime(data.bill_date, "%Y-%m-%d")
         except ValueError:
             pass
+
+    # ── Duplicate check ────────────────────────────────────────────────────
+    # Manual-review submissions previously had NO duplicate protection at
+    # all, unlike /bill/scan. That let the same physical bill be resubmitted
+    # for review over and over (each rescan created a brand-new pending
+    # review). Compute the same fingerprint /bill/scan uses and block a
+    # resubmit if this exact bill was already scanned normally, already
+    # approved via manual review, or is still sitting in the review queue.
+    dup_key = None
+    if data.shop_name and data.bill_date:
+        dup_key = _dup_key(
+            shop      = data.shop_name,
+            bill_date = data.bill_date,
+            amount    = data.total_amount,
+            bill_time = data.bill_time,
+        )
+        if await db.bill_scans.find_one({"user_id": uid, "dup_key": dup_key}):
+            raise HTTPException(status_code=409, detail="This bill has already been scanned/claimed.")
+        existing_review = await db.bill_manual_reviews.find_one(
+            {"user_id": uid, "dup_key": dup_key, "status": {"$in": ["pending", "approved"]}}
+        )
+        if existing_review:
+            if existing_review.get("status") == "approved":
+                raise HTTPException(status_code=409, detail="This bill has already been approved.")
+            raise HTTPException(status_code=409, detail="This bill is already pending review — no need to resubmit.")
+
     doc = {
         "user_id":       uid,
         "scan_type":     _resolve_scan_type(data.scan_type, data.shop_id),
@@ -412,6 +438,7 @@ async def submit_manual_review(data: ManualReviewRequest, request: Request):
         "has_image":     bool(data.image_base64),
         "image_s3_key":  (await upload_base64(data.image_base64, "bill-reviews")
                   if data.image_base64 else None),
+        "dup_key":       dup_key,
         "status":        "pending",
         "created_at":    datetime.now(timezone.utc),
         "reviewed_at":   None,

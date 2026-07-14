@@ -17,6 +17,16 @@ class ClassifiedPost {
   final bool isAvailable;
   final String createdAt;
 
+  // "classified" = Local Classifieds item/service post (fee Rs.250)
+  // "local_find" = Local Finds business directory listing (fee Rs.730/year)
+  final String listingType;
+  final String businessName; // Local Finds only
+  final String whatsapp;     // Local Finds only (optional)
+  final double? latitude;
+  final double? longitude;
+  final String paymentLinkId;
+  final double amountPaid;
+
   const ClassifiedPost({
     required this.id,
     required this.userId,
@@ -35,7 +45,16 @@ class ClassifiedPost {
     this.photos = const [],
     this.isAvailable = true,
     this.createdAt = '',
+    this.listingType = 'classified',
+    this.businessName = '',
+    this.whatsapp = '',
+    this.latitude,
+    this.longitude,
+    this.paymentLinkId = '',
+    this.amountPaid = 0,
   });
+
+  bool get isLocalFind => listingType == 'local_find';
 
   factory ClassifiedPost.fromJson(Map<String, dynamic> j) => ClassifiedPost(
         id: j['id'] as String? ?? '',
@@ -55,6 +74,13 @@ class ClassifiedPost {
         photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ?? [],
         isAvailable: j['is_available'] as bool? ?? true,
         createdAt: j['created_at']?.toString() ?? '',
+        listingType: j['listing_type'] as String? ?? 'classified',
+        businessName: j['business_name'] as String? ?? '',
+        whatsapp: j['whatsapp'] as String? ?? '',
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
+        paymentLinkId: j['payment_link_id'] as String? ?? '',
+        amountPaid: (j['amount_paid'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -69,5 +95,12 @@ class ClassifiedPost {
         'address': address,
         'payment_method': paymentMethod,
         'photos': photos,
+        'listing_type': listingType,
+        'business_name': businessName,
+        'whatsapp': whatsapp,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        'payment_link_id': paymentLinkId,
+        'amount_paid': amountPaid,
       };
 }

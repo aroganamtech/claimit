@@ -55,8 +55,10 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
         "image_url":     cover_url,
         "image_data":    doc.get("image_data") or "",
         "image_name":    doc.get("image_name") or "",
-        "has_rewards":   bool(doc.get("has_rewards") or doc.get("shop_type") == "reward"),
-        "has_redeem":    bool(doc.get("has_redeem") or doc.get("shop_type") == "redeem"),
+        # Use has_rewards/has_redeem if explicitly stored (even False),
+        # fall back to shop_type only when the field is absent entirely.
+        "has_rewards":   bool(doc["has_rewards"] if "has_rewards" in doc else doc.get("shop_type") == "reward"),
+        "has_redeem":    bool(doc["has_redeem"]  if "has_redeem"  in doc else doc.get("shop_type") == "redeem"),
         "about":         doc.get("about") or "",
         "address":       doc.get("address") or doc.get("shop_address") or "",
         "timing":        doc.get("timing") or "",

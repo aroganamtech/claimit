@@ -121,16 +121,20 @@ class _LocalFindTile extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.55),
-              border: Border.all(color: _gold, width: 1.4),
-            ),
-            child: Icon(zone.icon, size: 30, color: _navy),
-          ),
+          // PDF-cropped icon art (peach circle already baked in) — falls
+          // back to the old gold-bordered Material icon if ever missing.
+          zone.iconAsset != null
+              ? Image.asset(zone.iconAsset!, width: 72, height: 72)
+              : Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.55),
+                    border: Border.all(color: _gold, width: 1.4),
+                  ),
+                  child: Icon(zone.icon, size: 30, color: _navy),
+                ),
           const SizedBox(height: 8),
           Text(
             zone.label.toUpperCase(),

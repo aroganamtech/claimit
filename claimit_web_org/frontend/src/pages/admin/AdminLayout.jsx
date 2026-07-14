@@ -12,6 +12,7 @@ const NAV = [
   { label: 'Sales Team',  icon: '🏅', path: '/admin/sales-team' },
   { label: 'Bill Reviews',   icon: '🧾', path: '/admin/bill-reviews' },
   { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },
+  { label: 'Ad Slot Settings', icon: '⭐', path: '/admin/ad-settings' },
   { label: 'Project PDFs',   icon: '📄', path: '/admin/pdfs' },
   { label: 'Deleted Users',  icon: '🗑', path: '/admin/deleted-users' },
 ]

@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # version name + build number (Play Store versionCode). The +N MUST increase
 # on every Play Store upload. Keep in sync with appVersion/appBuildNumber in
 # lib/core/constants/app_constants.dart (shown in Settings).
-version: 1.0.1+13
+version: 1.0.1+17
 
 environment:
   sdk: ^3.11.5
@@ -52,7 +52,12 @@ dependencies:
   shimmer: ^3.0.0
   fluttertoast: ^9.0.0
   image_picker: ^1.2.2
-  image_cropper: ^8.0.2
+  # v10.0.0+ upgraded the native uCrop library to 2.2.11, which finally
+  # handles Android edge-to-edge properly — fixes the top-right done button
+  # rendering under the status bar / being hard to tap on Android 15+
+  # (e.g. Moto G86 Power 5G). Older 8.x needed a manual theme workaround
+  # that stopped working once Android 16 removed the opt-out API it relied on.
+  image_cropper: ^12.2.1
   camera: ^0.11.0+2
   google_mlkit_text_recognition: ^0.13.1
   file_picker: ^8.0.3  # Updated to the latest version to fix Android namespace issue

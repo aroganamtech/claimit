@@ -1854,12 +1854,19 @@ class _FeaturedZonesSheet extends StatelessWidget {
                             color: Color(0xFF2563EB),
                           ));
                         } else if (label == 'Redeem Zone') {
-                          context.push('/shops', extra: const ShopCategory(
-                            id: -1,
-                            name: 'Redeem Zone',
-                            icon: Icons.redeem_rounded,
-                            color: Color(0xFF059669),
-                          ));
+                          // isTab: true turns on the Redeem-only filter
+                          // (hasRedeem && discount > 0) — without it, id: -1
+                          // alone means "no filter" (used by Nearby/See-All),
+                          // which was letting Reward-only shops leak in here.
+                          context.push('/shops', extra: {
+                            'category': const ShopCategory(
+                              id: -1,
+                              name: 'Redeem Zone',
+                              icon: Icons.redeem_rounded,
+                              color: Color(0xFF059669),
+                            ),
+                            'isTab': true,
+                          });
                         } else if (label == 'Brand Deals') {
                           context.push('/brands');
                         } else if (label == 'Nearby Deals') {

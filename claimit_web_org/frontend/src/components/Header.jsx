@@ -53,7 +53,7 @@ export default function Header() {
     }}>
       {/* Logo */}
       <div
-        onClick={() => navigate('/')}
+        // onClick={() => navigate('/')}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
       >
         <div>
@@ -75,9 +75,9 @@ export default function Header() {
 
       {/* Nav Links */}
       <nav className="header-nav" style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-        {['About us', 'Why claimIT', 'Features', 'Contact us'].map(item => (
+        {/* {['About us', 'Why claimIT', 'Features', 'Contact us'].map(item => (
           <a key={item} href="#" style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 400, textDecoration: 'none' }}>{item}</a>
-        ))}
+        ))} */}
 
         {/* Login / User Button */}
         <div ref={menuRef} style={{ position: 'relative' }}>
@@ -126,7 +126,7 @@ export default function Header() {
             </>
           ) : (
             <>
-              <button
+              {/* <button
                 onClick={() => setShowLoginMenu(!showLoginMenu)}
                 style={{
                   background: '#fff',
@@ -141,8 +141,8 @@ export default function Header() {
                 }}
               >
                 Login ▾
-              </button>
-              {showLoginMenu && (
+              </button> */}
+              {/* {showLoginMenu && (
                 <div style={{
                   position: 'absolute', right: 0, top: '110%',
                   background: '#fff', borderRadius: 10,
@@ -157,9 +157,9 @@ export default function Header() {
                     >
                       {p.label}
                     </button>
-                  ))}
-                </div>
-              )}
+                  ))} */}
+                {/* </div>
+              )} */}
             </>
           )}
         </div>

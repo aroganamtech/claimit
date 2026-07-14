@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from bson import ObjectId
 from ..database import get_db
 from ..utils.auth import get_current_user
-from ..utils.helpers import serialize_doc, prioritize_by_location
+from ..utils.helpers import serialize_doc, prioritize_by_location, sort_by_tier
 from ..utils.s3 import public_url
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
@@ -34,6 +34,12 @@ async def get_nearby_deals(
     cursor = db.deals.find(query).sort("name", 1)
     deals = await cursor.to_list(length=100)
     result = [_fix_image_url(serialize_doc(d)) for d in deals]
+    # Premium-first WITHIN each location group: tier-sort first (stable), then
+    # partition by location — prioritize_by_location's partition is itself
+    # stable, so the premium-first order survives inside both the "local"
+    # and "everywhere else" groups. If the user moves to a new area, that
+    # area's own Premium deals float to the top instead.
+    result = sort_by_tier(result)
     result = prioritize_by_location(result, area or location or "", pincode or "")
     return {"success": True, "deals": result, "total": len(result)}
 
@@ -41,8 +47,6 @@ async def get_nearby_deals(
 @router.get("/brand")
 async def get_brand_deals(
     category: Optional[str] = Query(None),
-    area: Optional[str] = Query(None, description="User's area name — local deals float to top"),
-    pincode: Optional[str] = Query(None, description="User's pincode — local deals float to top"),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -52,7 +56,9 @@ async def get_brand_deals(
     cursor = db.deals.find(query).sort("name", 1)
     deals = await cursor.to_list(length=100)
     result = [_fix_image_url(serialize_doc(d)) for d in deals]
-    result = prioritize_by_location(result, area or "", pincode or "")
+    # Brand Deals are NOT location-scoped — Premium ads rank first everywhere,
+    # regardless of where the user is.
+    result = sort_by_tier(result)
     return {"success": True, "deals": result, "total": len(result)}
 
 

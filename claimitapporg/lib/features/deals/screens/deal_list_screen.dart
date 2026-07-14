@@ -667,10 +667,32 @@ class _DealCardState extends State<_DealCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name + heart
+                    // Name + Premium badge + heart
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (d.isPremium) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            margin: const EdgeInsets.only(right: 6, top: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                  color: const Color(0xFFFBBF24), width: 1),
+                            ),
+                            child: const Text(
+                              'PREMIUM',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFB45309),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ],
                         Expanded(
                           child: Text(
                             d.name,
