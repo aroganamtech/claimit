@@ -30,10 +30,9 @@ Write-Host "`nCopying utils/cashfree.py and main.py..." -ForegroundColor Cyan
 scp -i $Key "$LocalUtil\cashfree.py" "${Server}:${RemoteUtils}/"
 scp -i $Key "$Backend\main.py" "${Server}:${RemoteBackend}/"
 
-Write-Host "`nNOTE: .env is never auto-copied. If the server's .env doesn't already have Cashfree keys, add these three lines to it once (SSH in and edit), then re-run this script:" -ForegroundColor Yellow
-Write-Host "  CASHFREE_APP_ID=TEST11132395fbff0f9453ff50349ba659323111" -ForegroundColor Yellow
-Write-Host "  CASHFREE_SECRET_KEY=cfsk_ma_test_0772fe172104da6e95b82060b80c54ca_d56122ce" -ForegroundColor Yellow
-Write-Host "  CASHFREE_ENV=TEST" -ForegroundColor Yellow
+Write-Host "`nNOTE: .env is never auto-copied. If the server's .env doesn't already have Razorpay keys, add these two lines to it once (SSH in and edit), then re-run this script:" -ForegroundColor Yellow
+Write-Host "  RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxx      (use rzp_test_... for testing)" -ForegroundColor Yellow
+Write-Host "  RAZORPAY_KEY_SECRET=your_razorpay_key_secret" -ForegroundColor Yellow
 
 Write-Host "`nRestarting the backend..." -ForegroundColor Cyan
 $RemoteScript = @'

@@ -125,7 +125,7 @@ class AppConstants {
   static const String classifieds    = '/classifieds';
   static const String classifiedDetail = '/classifieds/{id}';
 
-  // ── Payments (Cashfree) ──────────────────────────────────────────────────
+  // ── Payments (Razorpay) ──────────────────────────────────────────────────
   static const String createPaymentLink = '/payments/create-link';
   static const String paymentLinkStatus = '/payments/status';
 

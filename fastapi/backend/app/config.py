@@ -46,14 +46,14 @@ class Settings(BaseSettings):
     firebase_service_account_path: str = ""
     firebase_service_account_json: str = ""
 
-    # Cashfree Payment Gateway (Local Finds / Local Classifieds listing fees).
-    # cashfree_env: "TEST" uses the sandbox API (safe, no real money moves),
-    # "PROD" switches to the live API. Leave the id/key blank until you have
-    # real credentials — payment endpoints return a clear error instead of
-    # crashing when they're unset.
-    cashfree_app_id: str = ""
-    cashfree_secret_key: str = ""
-    cashfree_env: str = "TEST"
+    # Razorpay Payment Gateway (Local Finds / Local Classifieds listing fees).
+    # Razorpay uses one API for both modes — the key decides which:
+    #   rzp_test_...  -> test mode (safe, no real money moves)
+    #   rzp_live_...  -> live mode (real charges)
+    # Leave the id/secret blank until you have real credentials — payment
+    # endpoints return a clear error instead of crashing when they're unset.
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
 
     class Config:
         env_file = ".env"

@@ -241,8 +241,8 @@ export default function PaymentPage() {
           </h2>
           <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
             {phase === 'verifying'
-              ? "We're confirming your payment with Cashfree — this usually takes a few seconds."
-              : `Publish your ${pending?.adTypeLabel || 'ad'} instantly via secure Cashfree checkout.`}
+              ? "We're confirming your payment with Razorpay — this usually takes a few seconds."
+              : `Publish your ${pending?.adTypeLabel || 'ad'} instantly via secure Razorpay checkout.`}
           </p>
 
           {/* Price Summary */}
@@ -281,7 +281,7 @@ export default function PaymentPage() {
 
           {(phase === 'ready' || phase === 'redirecting') && (
             <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, fontSize: 12.5, color: '#666', lineHeight: 1.6 }}>
-              You'll be redirected to Cashfree's secure hosted checkout page to pay via UPI, Cards, or Netbanking.
+              You'll be redirected to Razorpay's secure hosted checkout page to pay via UPI, Cards, or Netbanking.
               After paying, you'll be brought straight back here.
             </div>
           )}
@@ -301,7 +301,7 @@ export default function PaymentPage() {
               onClick={handlePay}
               disabled={phase === 'redirecting' || !pending}
             >
-              {phase === 'redirecting' ? 'Redirecting to Cashfree…' : `Pay ₹${pending?.amount ?? ''} Now`}
+              {phase === 'redirecting' ? 'Redirecting to Razorpay…' : `Pay ₹${pending?.amount ?? ''} Now`}
             </button>
           )}
         </div>

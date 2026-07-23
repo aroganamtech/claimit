@@ -26,6 +26,7 @@ import TransactionHistory from './pages/advertiser/TransactionHistory'
 import HelpSupport from './pages/HelpSupport'
 import { PrivacyPolicy, Terms, Support, RefundPolicy } from './pages/LegalPages'
 import DeleteAccount from './pages/DeleteAccount'
+import TestPayment from './pages/TestPayment'
 
 // Sales (L2)
 import SalesDashboard from './pages/sales/SalesDashboard'
@@ -131,6 +132,9 @@ export default function App() {
               there; /delete-account is a friendlier alias to the same page. */}
           <Route path="/delete-account" element={<DeleteAccount />} />
           <Route path="/user/delete" element={<DeleteAccount />} />
+
+          {/* Razorpay test payment — temporary, delete after verifying. */}
+          <Route path="/testpayment" element={<TestPayment />} />
 
           {/* ─── L1 Advertiser ─────────────────────────────── */}
           <Route path="/advertiser/auth" element={<AuthPage portal="advertiser" />} />
