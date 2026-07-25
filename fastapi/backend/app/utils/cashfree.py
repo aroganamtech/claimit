@@ -78,7 +78,10 @@ async def create_payment_link(
         "amount": amount_paise,
         "currency": "INR",
         "description": purpose[:2048],  # Razorpay caps description at 2048
-        "reference_id": link_id,        # our own unique id, for our records
+        # Razorpay caps reference_id at 40 chars. Our link_id can be longer
+        # (prefix + Mongo _id + uuid), so keep the last 40 chars — the unique
+        # uuid suffix is preserved, so reference_ids stay unique.
+        "reference_id": link_id if len(link_id) <= 40 else link_id[-40:],
         "customer": {
             "name": customer_name or "Claimit User",
             "contact": customer_phone or "9999999999",

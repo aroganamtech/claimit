@@ -182,6 +182,9 @@ const admin = {
   replyFeedback:     (id, payload)  => post(`/admin/feedback/${id}/reply`, payload),
   deleteFeedback:    (id)           => del(`/admin/feedback/${id}`),
   listDeletedUsers:  ()             => get('/admin/deleted-users'),
+  // Admin ad creation (no payment) — mirrors advertiser upload + create flow
+  presignUpload:     (payload)      => post('/admin/presign-upload', payload),
+  createAd:          (payload)      => post('/admin/ads/create', payload),
 }
 
 // ─── Payments (Cashfree Payment Links — advertiser ad bookings) ────

@@ -11,11 +11,17 @@ Every endpoint reads/writes MongoDB directly — there's no per-user auth check
 because admin can manage any record.
 """
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime, timedelta
 from bson import ObjectId
 import os
+import json
 
 from utils.s3 import generate_presigned_url_sync as _presign
+from utils.s3 import generate_video_url_sync as _video_presign
+from utils.s3 import generate_presigned_upload_url
+from utils.s3 import ALLOWED_VIDEO_TYPES, ALLOWED_IMAGE_TYPES
 from utils.s3 import delete_object as _s3_delete
 from utils.s3 import public_url as _public_url
 from database import (
@@ -657,3 +663,266 @@ async def list_deleted_users(_admin=Depends(get_current_admin)):
         }
         result.append(out)
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Admin ad creation — lets an admin publish the same 4 ad types as advertisers
+# but WITHOUT any payment. Completely separate from the advertiser flow
+# (routers/advertiser.py is untouched); it just reuses the same S3 upload +
+# app-facing collections so admin-created ads appear in the app exactly like
+# paid ones.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# List prices (weekly, GST-incl.) — stored on the ad only for record-keeping;
+# no money is charged for admin-created ads.
+_ADMIN_AD_PRICES = {
+    "home_banner":  {"standard": 700},
+    "nearby_deals": {"premium": 1050, "standard": 700},
+    "brand_deals":  {"premium": 700,  "standard": 700},
+    "promo_reelz":  {"premium": 700,  "standard": 700},
+}
+_ADMIN_VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm")
+
+
+def _admin_ad_price(ad_type: str, tier: str) -> int:
+    tiers = _ADMIN_AD_PRICES.get(ad_type, {})
+    return tiers.get(tier) or tiers.get("standard") or next(iter(tiers.values()), 700)
+
+
+def _admin_is_video_key(key: str) -> bool:
+    return bool(key) and key.lower().endswith(_ADMIN_VIDEO_EXTS)
+
+
+class AdminPresignRequest(BaseModel):
+    filename: str
+    content_type: str
+    folder: str = "ads"
+
+
+@router.post("/presign-upload")
+async def admin_presign_upload(body: AdminPresignRequest, _admin=Depends(get_current_admin)):
+    """Admin-only presigned S3 upload URL (same as advertiser presign, but
+    behind the admin token). Browser PUTs the file directly to S3."""
+    is_video = body.content_type in ALLOWED_VIDEO_TYPES
+    is_image = body.content_type in ALLOWED_IMAGE_TYPES
+    if not is_video and not is_image:
+        raise HTTPException(status_code=400, detail=f"Unsupported type: {body.content_type}")
+    return generate_presigned_upload_url(
+        folder=body.folder,
+        filename=body.filename,
+        content_type=body.content_type,
+        is_video=is_video,
+    )
+
+
+class AdminCreateAdRequest(BaseModel):
+    ad_type: str
+    tier: str = "standard"          # premium | standard (ignored for home_banner)
+    pincode: str = "000000"
+    publish_today: bool = True
+    scheduled_date: Optional[str] = None
+    creative_key: Optional[str] = None
+    thumbnail_key: Optional[str] = None
+    # Home banner
+    headline: Optional[str] = None
+    sub: Optional[str] = None
+    cta_link: Optional[str] = None
+    # Promo reelz
+    shop_name: Optional[str] = None
+    shop_location: Optional[str] = None
+    shop_category: Optional[str] = None
+    caption: Optional[str] = None
+    tag: Optional[str] = None
+    # Deal
+    name: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    timing: Optional[str] = None
+    type: Optional[str] = None
+    cashback: Optional[str] = None
+    distance: Optional[str] = None
+    tags: Optional[str] = None
+    offer: Optional[str] = None
+    title: Optional[str] = None
+
+
+@router.post("/ads/create")
+async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current_admin)):
+    """Create an ad as admin with NO payment. Mirrors the advertiser ad
+    document + app-facing collections so it shows up in the app identically."""
+    ad_type = body.ad_type
+    tier    = (body.tier or "standard").strip().lower()
+    if tier not in ("premium", "standard"):
+        tier = "standard"
+    amount = _admin_ad_price(ad_type, tier)
+
+    if body.publish_today:
+        pub_date = datetime.utcnow()
+    else:
+        try:
+            pub_date = datetime.strptime(body.scheduled_date, "%Y-%m-%d") if body.scheduled_date else datetime.utcnow()
+        except ValueError:
+            pub_date = datetime.utcnow()
+    end_date  = pub_date + timedelta(days=7)
+    ad_status = "active" if body.publish_today else "scheduled"
+
+    creative_s3_key  = body.creative_key or ""
+    thumbnail_s3_key = body.thumbnail_key or ""
+
+    is_video = ad_type == "promo_reelz" or (
+        ad_type == "home_banner" and _admin_is_video_key(creative_s3_key)
+    )
+    creative_url  = (_video_presign(creative_s3_key) if is_video else _presign(creative_s3_key)) if creative_s3_key else ""
+    thumbnail_url = _presign(thumbnail_s3_key) if thumbnail_s3_key else ""
+
+    parsed_tags: list = []
+    if body.tags:
+        try:
+            parsed_tags = json.loads(body.tags)
+        except Exception:
+            parsed_tags = [t.strip() for t in body.tags.split(",") if t.strip()]
+
+    ad_doc = {
+        "user_id":      "admin",
+        "created_by":   "admin",
+        "ad_type":      ad_type,
+        "tier":         tier,
+        "pincode":      body.pincode,
+        "publish_date": pub_date.strftime("%d/%m/%Y"),
+        "end_date":     end_date.strftime("%d/%m/%Y"),
+        "amount":       amount,
+        "status":       ad_status,
+        "payment_link_id": "ADMIN_FREE",
+        "views":        0,
+        "clicks":       0,
+        "created_at":   datetime.utcnow(),
+    }
+
+    if ad_type == "home_banner":
+        ad_doc.update({
+            "headline":     body.headline or body.title or "",
+            "sub":          body.sub or body.description or "",
+            "cta_link":     body.cta_link or "",
+            "media_type":   "video" if is_video else "image",
+            "image_s3_key": "" if is_video else creative_s3_key,
+            "image_url":    "" if is_video else creative_url,
+            "video_s3_key": creative_s3_key if is_video else "",
+            "video_url":    creative_url if is_video else "",
+            "title":        body.headline or body.title or "",
+        })
+    elif ad_type == "promo_reelz":
+        ad_doc.update({
+            "shop_name":        body.shop_name or "",
+            "shop_location":    body.shop_location or "",
+            "shop_category":    body.shop_category or "",
+            "caption":          body.caption or "",
+            "offer":            body.offer or "",
+            "tag":              body.tag or "",
+            "video_s3_key":     creative_s3_key,
+            "video_url":        creative_url,
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":    thumbnail_url,
+            "title":            body.shop_name or "",
+        })
+    elif ad_type in ("brand_deals", "nearby_deals"):
+        ad_doc.update({
+            "name":         body.name or "",
+            "location":     body.location or "",
+            "offer":        body.offer or "",
+            "description":  body.description or "",
+            "address":      body.address or "",
+            "phone":        body.phone or "",
+            "timing":       body.timing or "",
+            "type":         body.type or "",
+            "cashback":     body.cashback or "1% Cashback",
+            "distance":     body.distance or "",
+            "tags":         parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "rating":       4.0,
+            "reviews":      0,
+            "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
+            "title":        body.name or "",
+        })
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown ad_type: {ad_type}")
+
+    result = await ads_collection.insert_one(ad_doc)
+    ad_id  = str(result.inserted_id)
+
+    # Mirror into the app-facing collections (identical to advertiser flow).
+    if ad_type == "home_banner":
+        await app_banners_collection.insert_one({
+            "web_ad_id":    ad_id,
+            "headline":     ad_doc.get("headline", ""),
+            "sub":          ad_doc.get("sub", ""),
+            "cta_link":     ad_doc.get("cta_link", ""),
+            "media_type":   ad_doc.get("media_type", "image"),
+            "image_s3_key": ad_doc.get("image_s3_key", ""),
+            "image_url":    ad_doc.get("image_url", ""),
+            "video_s3_key": ad_doc.get("video_s3_key", ""),
+            "video_url":    ad_doc.get("video_url", ""),
+            "pincode":      body.pincode,
+            "status":       ad_status,
+            "end_date":     end_date.strftime("%d/%m/%Y"),
+            "created_at":   datetime.utcnow(),
+        })
+    elif ad_type in ("brand_deals", "nearby_deals"):
+        await app_deals_collection.insert_one({
+            "web_ad_id":  ad_id,
+            "deal_group": ad_doc["deal_group"],
+            "tier":       tier,
+            "name":       ad_doc.get("name", ""),
+            "location":   ad_doc.get("location", ""),
+            "offer":      ad_doc.get("offer", ""),
+            "cashback":   ad_doc.get("cashback", "1% Cashback"),
+            "distance":   ad_doc.get("distance", ""),
+            "type":       ad_doc.get("type", ""),
+            "category":   ad_doc.get("type", ""),
+            "image_s3_key": creative_s3_key,
+            "image_url":  creative_url,
+            "description": ad_doc.get("description", ""),
+            "address":    ad_doc.get("address", ""),
+            "phone":      ad_doc.get("phone", ""),
+            "timing":     ad_doc.get("timing", ""),
+            "rating":     4.0,
+            "reviews":    0,
+            "tags":       parsed_tags,
+            "pincode":    body.pincode,
+            "status":     ad_status,
+            "end_date":   end_date.strftime("%d/%m/%Y"),
+            "created_at": datetime.utcnow(),
+        })
+    elif ad_type == "promo_reelz":
+        await app_reels_collection.insert_one({
+            "web_ad_id":        ad_id,
+            "shop_name":        ad_doc.get("shop_name", ""),
+            "shop_location":    ad_doc.get("shop_location", ""),
+            "shop_category":    ad_doc.get("shop_category", ""),
+            "caption":          ad_doc.get("caption", ""),
+            "offer":            ad_doc.get("offer", ""),
+            "video_s3_key":     creative_s3_key,
+            "video_url":        creative_url,
+            "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_url":    thumbnail_url,
+            "like_count":       0,
+            "view_count":       0,
+            "liked_by":         [],
+            "tag":              ad_doc.get("tag", ""),
+            "pincode":          body.pincode,
+            "status":           ad_status,
+            "end_date":         end_date.strftime("%d/%m/%Y"),
+            "created_at":       datetime.utcnow(),
+        })
+
+    return {
+        "id":           ad_id,
+        "ad_type":      ad_type,
+        "publish_date": ad_doc["publish_date"],
+        "end_date":     ad_doc["end_date"],
+        "amount":       amount,
+        "status":       ad_status,
+        "created_by":   "admin",
+    }

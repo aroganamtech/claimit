@@ -5,6 +5,7 @@ const NAV = [
   { label: 'Users',       icon: '👥', path: '/admin/users' },
   { label: 'App Users',   icon: '📱', path: '/admin/app-users' },
   { label: 'Ads',         icon: '📢', path: '/admin/ads' },
+  { label: 'Create Ad',   icon: '➕', path: '/admin/create-ad' },
   { label: 'Shops',       icon: '🏪', path: '/admin/shops' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
