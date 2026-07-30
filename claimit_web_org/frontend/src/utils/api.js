@@ -110,27 +110,36 @@ const sales = {
 }
 
 // ─── Shop ────────────────────────────────────────────────────
+// A single user can own MANY shops. The "active" shop the dashboard is
+// currently viewing/managing is remembered in localStorage; every management
+// call appends it as ?shop_id=... so the backend acts on the right shop.
+// (If none is set, the backend falls back to the user's most recent shop.)
+const _activeShopId = () => localStorage.getItem('claimit_active_shop') || ''
+const _shopQ = () => (_activeShopId() ? `?shop_id=${_activeShopId()}` : '')
+
 const shop = {
   register:           (formData) => post('/shop/register', formData),
-  getDashboard:       ()         => get('/shop/dashboard'),
-  getBillScans:       ()         => get('/shop/bill-scans'),
-  getOffer:           ()         => get('/shop/offer'),
-  setOffer:           (payload)  => put('/shop/offer', payload),
-  getStoreDetails:    ()         => get('/shop/store-details'),
-  updateStoreDetails: (patch)    => put('/shop/store-details', patch),
-  getRatings:         ()         => get('/shop/ratings'),
+  // All shops owned by the current user (for the shop switcher)
+  listShops:          ()         => get('/shop/list'),
+  getDashboard:       ()         => get(`/shop/dashboard${_shopQ()}`),
+  getBillScans:       ()         => get(`/shop/bill-scans${_shopQ()}`),
+  getOffer:           ()         => get(`/shop/offer${_shopQ()}`),
+  setOffer:           (payload)  => put(`/shop/offer${_shopQ()}`, payload),
+  getStoreDetails:    ()         => get(`/shop/store-details${_shopQ()}`),
+  updateStoreDetails: (patch)    => put(`/shop/store-details${_shopQ()}`, patch),
+  getRatings:         ()         => get(`/shop/ratings${_shopQ()}`),
   addReview:          (payload)  => post('/shop/ratings', payload),
   replyReview:        (payload)  => post('/shop/ratings/reply', payload),
-  getSettings:        ()         => get('/shop/settings'),
+  getSettings:        ()         => get(`/shop/settings${_shopQ()}`),
   // Gallery — base64 path (used by dashboard ShopPages.jsx)
-  getGallery:         ()           => get('/shop/gallery'),
-  updateCoverPhoto:   (payload)    => post('/shop/gallery/cover', payload),
-  addGalleryPhoto:    (payload)    => post('/shop/gallery/add', payload),
-  deleteGalleryPhoto: (index)      => del(`/shop/gallery/${index}`),
+  getGallery:         ()           => get(`/shop/gallery${_shopQ()}`),
+  updateCoverPhoto:   (payload)    => post(`/shop/gallery/cover${_shopQ()}`, payload),
+  addGalleryPhoto:    (payload)    => post(`/shop/gallery/add${_shopQ()}`, payload),
+  deleteGalleryPhoto: (index)      => del(`/shop/gallery/${index}${_shopQ()}`),
   // Presigned-URL path (used by onboarding — same pattern as brand/nearby deals)
   presignImage:       ()           => post('/shop/gallery/presign', {}),
-  setCoverPhotoKey:   (payload)    => post('/shop/gallery/cover-key', payload),
-  addGalleryPhotoKey: (payload)    => post('/shop/gallery/add-key', payload),
+  setCoverPhotoKey:   (payload)    => post(`/shop/gallery/cover-key${_shopQ()}`, payload),
+  addGalleryPhotoKey: (payload)    => post(`/shop/gallery/add-key${_shopQ()}`, payload),
 }
 
 // ─── Support ─────────────────────────────────────────────────

@@ -47,57 +47,50 @@ async def _broadcast_new_shop(shop_name: str, location: str) -> None:
 _ALLOWED_DISCOUNTS = {5, 10, 15, 20, 25, 30}
 
 # ─── Category string → category_ids mapping ───────────────────────────────────
+# Ids 1-20 match the app's category list (shop_filter_sheet / dashboard /
+# categories screen) and the icon assets icon1.png … icon20.png. Extra aliases
+# map old/alternate wording onto the new ids so existing data still resolves.
 _CATEGORY_MAP: dict[str, int] = {
-    # ID 1 — New Deals / General
-    "new deals": 1,  "hardware": 1,
-    # ID 2 — Groceries
-    "groceries": 2,  "grocery": 2,
-    # ID 3 — Supermarket
-    "supermarket": 3,
-    # ID 4 — Pharmacy
-    "pharmacy": 4,   "medical": 4,
-    # ID 5 — Salon
-    "salon": 5,      "salons": 5,      "beauty": 5,
-    # ID 6 — Gym
-    "gym": 6,        "fitness": 6,
-    # ID 7 — Restaurant
-    "restaurant": 7, "restaurants": 7, "food": 7,   "bakery": 7,
-    # ID 8 — Cafes
-    "cafes": 8,      "cafe": 8,        "coffee": 8,
-    # ID 9 — Clothing
-    "clothing": 9,   "fashion": 9,     "apparel": 9,
-    # ID 10 — Department Store
-    "department": 10, "department store": 10,
-    # ID 11 — Electronics
-    "electronics": 11,
-    # ID 12 — Books
-    "books": 12,     "book": 12,       "stationery": 12,
-    # ID 13 — Toys
-    "toys": 13,      "toy": 13,
-    # ID 14 — Baby
-    "baby": 14,      "baby products": 14,
-    # ID 15 — Home Decor
-    "home decor": 15, "home": 15,
-    # ID 16 — Furniture
-    "furniture": 16,
-    # ID 17 — Spa
-    "spa": 17,
-    # ID 21 — Clinics
-    "clinics": 21,   "clinic": 21,     "hospital": 21, "dental": 21, "dentist": 21,
-    # ID 23 — Pets
-    "pets": 23,      "pet": 23,
-    # ID 24 — Sports
-    "sports": 24,    "sport": 24,
-    # ID 26 — Mobile & Accessories
-    "mobile": 26,    "mobile & accessories": 26,  "accessories": 26,
-    # ID 27 — Computer & Laptop
-    "computer": 27,  "computer & laptop": 27,     "laptop": 27,
-    # ID 28 — Gifts
-    "gifts": 28,     "gift": 28,
-    # ID 29 — Jewellery
-    "jewellery": 29, "jewelry": 29,
-    # ID 30 — Shoes / Footwear
-    "shoes": 30,     "footwear": 30,   "shoe": 30,
+    # ID 1 — Supermarkets
+    "supermarkets": 1, "supermarket": 1,
+    # ID 2 — Grocery / Provision
+    "grocery": 2,      "groceries": 2,    "provision": 2,  "grocery / provision": 2,
+    # ID 3 — Medical Stores
+    "medical": 3,      "medical stores": 3, "pharmacy": 3,
+    # ID 4 — Restaurants
+    "restaurants": 4,  "restaurant": 4,   "food": 4,       "bakery": 4,
+    # ID 5 — Mobile Stores
+    "mobile": 5,       "mobile stores": 5, "mobiles": 5,   "mobile & accessories": 5,
+    # ID 6 — Electronics
+    "electronics": 6,  "computer": 6,     "laptop": 6,
+    # ID 7 — Departmental
+    "departmental": 7, "department": 7,   "department store": 7,
+    # ID 8 — Garment / Fashion
+    "garment": 8,      "garments": 8,     "fashion": 8,    "clothing": 8,  "apparel": 8, "garment / fashion": 8,
+    # ID 9 — Jewellery
+    "jewellery": 9,    "jewelry": 9,
+    # ID 10 — Footwears
+    "footwear": 10,    "footwears": 10,   "shoes": 10,     "shoe": 10,
+    # ID 11 — Coffee Shops
+    "coffee": 11,      "coffee shops": 11, "cafe": 11,     "cafes": 11,
+    # ID 12 — Hospitals
+    "hospitals": 12,   "hospital": 12,    "clinics": 12,   "clinic": 12,
+    # ID 13 — Optical Stores
+    "optical": 13,     "optical stores": 13, "optics": 13,
+    # ID 14 — Diagnostics
+    "diagnostics": 14, "diagnostic": 14,  "labs": 14,      "lab": 14,
+    # ID 15 — Furniture Stores
+    "furniture": 15,   "furniture stores": 15,
+    # ID 16 — Home Decor
+    "home decor": 16,  "home": 16,        "decor": 16,
+    # ID 17 — Beauty Parlours
+    "beauty": 17,      "beauty parlours": 17, "parlour": 17, "spa": 17,
+    # ID 18 — Salons
+    "salons": 18,      "salon": 18,
+    # ID 19 — Baby Stores
+    "baby": 19,        "baby stores": 19, "baby products": 19,
+    # ID 20 — Online Stores
+    "online": 20,      "online stores": 20,
 }
 
 
@@ -105,7 +98,7 @@ def _category_to_ids(category: str) -> list[int]:
     """Map a category string to a list of int category_ids for the app."""
     key = category.strip().lower()
     cid = _CATEGORY_MAP.get(key)
-    return [cid] if cid else [1]          # default to "New deals" (1)
+    return [cid] if cid else [1]          # default to "Supermarkets" (1)
 
 
 def _strip_b64_prefix(data_url: str | None) -> str:
@@ -142,12 +135,16 @@ def _compress_b64_image(b64_raw: str, max_kb: int = 150) -> str:
         return b64_raw
 
 
-async def _sync_shop_to_app(user_id: str) -> None:
+async def _sync_shop_to_app(shop_id) -> None:
     """
-    Sync web shop → app fields. Compresses images and removes raw blobs
-    so the document stays under MongoDB's 16 MB limit.
+    Sync ONE web shop → app fields (scoped by shop _id so it works when a
+    user owns multiple shops). Accepts a shop ObjectId or its string form.
     """
-    shop = await shops_collection.find_one({"user_id": user_id})
+    try:
+        oid = shop_id if isinstance(shop_id, ObjectId) else ObjectId(str(shop_id))
+    except Exception:
+        return
+    shop = await shops_collection.find_one({"_id": oid})
     if not shop:
         return
 
@@ -241,6 +238,44 @@ def serialize(doc):
     return doc
 
 
+async def _resolve_shop(current_user, shop_id: Optional[str] = None):
+    """Return the shop the request should act on when a user may own MANY
+    shops. If shop_id is given it must belong to this user; otherwise fall
+    back to the user's most recently created shop (keeps every existing
+    single-shop caller working unchanged). Returns None if the user has no
+    shop yet."""
+    user_id = str(current_user["_id"])
+    if shop_id:
+        try:
+            oid = ObjectId(shop_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid shop id")
+        shop = await shops_collection.find_one({"_id": oid, "user_id": user_id})
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        return shop
+    return await shops_collection.find_one(
+        {"user_id": user_id}, sort=[("created_at", -1)]
+    )
+
+
+@router.get("/list")
+async def list_my_shops(current_user=Depends(get_current_user)):
+    """All shops owned by the current user — powers the shop switcher."""
+    user_id = str(current_user["_id"])
+    shops = await shops_collection.find({"user_id": user_id}).sort("created_at", 1).to_list(100)
+    return [
+        {
+            "id":        str(s["_id"]),
+            "shop_name": s.get("shop_name", ""),
+            "location":  s.get("location", ""),
+            "shop_type": s.get("shop_type", ""),
+            "status":    s.get("status", ""),
+        }
+        for s in shops
+    ]
+
+
 # ─── Register shop (called from onboarding wizard) ────────────
 @router.post("/register")
 async def register_shop(
@@ -302,24 +337,17 @@ async def register_shop(
         "created_at": datetime.utcnow(),
     }
 
-    existing = await shops_collection.find_one({"user_id": user_id})
-    if existing:
-        # Preserve existing images — only update non-image fields on re-register
-        update_fields = {k: v for k, v in shop_doc.items()
-                         if k not in ("cover_photo_b64", "gallery_photos", "created_at")}
-        await shops_collection.update_one(
-            {"user_id": user_id}, {"$set": update_fields}
-        )
-        shop_doc["id"] = str(existing["_id"])
-    else:
-        result = await shops_collection.insert_one(shop_doc)
-        shop_doc["id"] = str(result.inserted_id)
-        # Brand-new shop — announce to every app user (fire-and-forget,
-        # runs in the background so registration responds instantly)
-        asyncio.create_task(_broadcast_new_shop(shop_name, location))
+    # A single user can now own MANY shops — every registration creates a new
+    # shop record (no more one-shop-per-user overwrite).
+    result = await shops_collection.insert_one(shop_doc)
+    new_id = result.inserted_id
+    shop_doc["id"] = str(new_id)
+    # Brand-new shop — announce to every app user (fire-and-forget,
+    # runs in the background so registration responds instantly)
+    asyncio.create_task(_broadcast_new_shop(shop_name, location))
 
-    # Mirror into app database
-    await _sync_shop_to_app(user_id)
+    # Mirror this specific shop into app database
+    await _sync_shop_to_app(new_id)
 
     if "_id" in shop_doc:
         del shop_doc["_id"]
@@ -328,9 +356,8 @@ async def register_shop(
 
 # ─── Dashboard ────────────────────────────────────────────────
 @router.get("/dashboard")
-async def get_dashboard(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_dashboard(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         return {
             "shop": None,
@@ -374,15 +401,14 @@ async def get_dashboard(current_user=Depends(get_current_user)):
 
 # ─── Bill scans (read-only visibility for the shop owner) ─────────────────────
 @router.get("/bill-scans")
-async def get_bill_scans(current_user=Depends(get_current_user)):
+async def get_bill_scans(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
     """
     Every bill scanned at this owner's shop through the Claimit app —
     read-only, so owners can cross-check customer scans against their sales.
     Matches by shop_id first, plus case-insensitive shop-name match for
     scans where the app only captured the OCR'd name (no shop context).
     """
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         return {"total_scans": 0, "scans": []}
 
@@ -424,29 +450,28 @@ async def get_bill_scans(current_user=Depends(get_current_user)):
 
 # ─── Offer ────────────────────────────────────────────────────
 @router.put("/offer")
-async def update_offer(request: OfferUpdateRequest, current_user=Depends(get_current_user)):
+async def update_offer(request: OfferUpdateRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
     if request.discount_percentage not in _ALLOWED_DISCOUNTS:
         raise HTTPException(
             status_code=400,
             detail=f"discount_percentage must be one of {sorted(_ALLOWED_DISCOUNTS)}",
         )
-    user_id = str(current_user["_id"])
-    result = await shops_collection.update_one(
-        {"user_id": user_id},
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
         {"$set": {"discount_percentage": request.discount_percentage}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
     # Mirror updated discount into app-facing fields (was missing — app's
     # cached "discount" field would otherwise go stale after an offer change).
-    await _sync_shop_to_app(user_id)
+    await _sync_shop_to_app(shop["_id"])
     return {"discount_percentage": request.discount_percentage}
 
 
 @router.get("/offer")
-async def get_offer(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_offer(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         return {"discount_percentage": 0}
     return {"discount_percentage": shop.get("discount_percentage", 0)}
@@ -454,8 +479,10 @@ async def get_offer(current_user=Depends(get_current_user)):
 
 # ─── Store Details ────────────────────────────────────────────
 @router.put("/store-details")
-async def update_store_details(request: StoreUpdateRequest, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
+async def update_store_details(request: StoreUpdateRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
     update_data = {k: v for k, v in request.dict().items() if v is not None}
     if not update_data:
         return {"message": "Nothing to update"}
@@ -477,18 +504,15 @@ async def update_store_details(request: StoreUpdateRequest, current_user=Depends
                 update_data["discount_percentage"] = 0
                 update_data["discount"] = 0
 
-    res = await shops_collection.update_one({"user_id": user_id}, {"$set": update_data})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
+    await shops_collection.update_one({"_id": shop["_id"]}, {"$set": update_data})
     # Keep the app-facing mirror fields consistent with the edit
-    await _sync_shop_to_app(user_id)
+    await _sync_shop_to_app(shop["_id"])
     return {"message": "Store details updated", "patch": update_data}
 
 
 @router.get("/store-details")
-async def get_store_details(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_store_details(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         # Return empty fields rather than 404 so the page can render an empty state.
         return {
@@ -500,9 +524,8 @@ async def get_store_details(current_user=Depends(get_current_user)):
 
 # ─── Ratings & Reviews (NO MORE static demo) ──────────────────
 @router.get("/ratings")
-async def get_ratings(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_ratings(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         return {"average_rating": 0, "total_reviews": 0, "positive_percentage": 0, "reviews": []}
     shop_id = str(shop["_id"])
@@ -576,9 +599,8 @@ async def reply_to_review(request: ReviewReplyRequest, current_user=Depends(get_
 # GET /gallery merges both so the edit page always shows whatever the shop
 # actually has, regardless of which path it was uploaded through.
 @router.get("/gallery")
-async def get_gallery(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_gallery(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         return {"cover_photo_b64": None, "gallery_photos": [], "cover_url": None, "gallery_urls": []}
     return {
@@ -592,37 +614,36 @@ async def get_gallery(current_user=Depends(get_current_user)):
 
 
 @router.post("/gallery/cover")
-async def upload_cover_photo(request: GalleryPhotoRequest, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    res = await shops_collection.update_one(
-        {"user_id": user_id},
+async def upload_cover_photo(request: GalleryPhotoRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
         {"$set": {"cover_photo_b64": request.photo_b64}}
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
     # Mirror updated cover photo into app database
-    await _sync_shop_to_app(user_id)
+    await _sync_shop_to_app(shop["_id"])
     return {"ok": True}
 
 
 @router.post("/gallery/add")
-async def add_gallery_photo(request: GalleryPhotoRequest, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    res = await shops_collection.update_one(
-        {"user_id": user_id},
+async def add_gallery_photo(request: GalleryPhotoRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
         {"$push": {"gallery_photos": request.photo_b64}}
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
     # Mirror updated gallery into app database
-    await _sync_shop_to_app(user_id)
+    await _sync_shop_to_app(shop["_id"])
     return {"ok": True}
 
 
 @router.delete("/gallery/{index}")
-async def delete_gallery_photo(index: int, current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def delete_gallery_photo(index: int, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
@@ -638,7 +659,7 @@ async def delete_gallery_photo(index: int, current_user=Depends(get_current_user
         if index < len(keys):
             keys.pop(index)
         await shops_collection.update_one(
-            {"user_id": user_id},
+            {"_id": shop["_id"]},
             {"$set": {"image_s3_keys": keys, "image_urls": urls}}
         )
     else:
@@ -647,13 +668,13 @@ async def delete_gallery_photo(index: int, current_user=Depends(get_current_user
             raise HTTPException(status_code=400, detail="Invalid photo index")
         gallery.pop(index)
         await shops_collection.update_one(
-            {"user_id": user_id},
+            {"_id": shop["_id"]},
             {"$set": {"gallery_photos": gallery}}
         )
         # Mirror updated gallery into app database (only relevant for the
         # legacy base64 path — the S3-key path already writes app-facing
         # fields directly, see gallery/add-key above).
-        await _sync_shop_to_app(user_id)
+        await _sync_shop_to_app(shop["_id"])
     return {"ok": True}
 
 
@@ -676,40 +697,39 @@ async def presign_shop_image(current_user=Depends(get_current_user)):
 
 
 @router.post("/gallery/cover-key")
-async def set_cover_photo_key(request: GalleryPhotoKeyRequest, current_user=Depends(get_current_user)):
+async def set_cover_photo_key(request: GalleryPhotoKeyRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
     """Store an already-uploaded S3 key as the shop cover photo."""
-    user_id = str(current_user["_id"])
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
     key = request.s3_key
     url = _public_url(key)
-    res = await shops_collection.update_one(
-        {"user_id": user_id},
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
         {"$set": {"image_s3_key": key, "image_url": url}},
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
     return {"ok": True}
 
 
 @router.post("/gallery/add-key")
-async def add_gallery_photo_key(request: GalleryPhotoKeyRequest, current_user=Depends(get_current_user)):
+async def add_gallery_photo_key(request: GalleryPhotoKeyRequest, shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
     """Append an already-uploaded S3 key to the shop gallery."""
-    user_id = str(current_user["_id"])
+    shop = await _resolve_shop(current_user, shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
     key = request.s3_key
     url = _public_url(key)
-    res = await shops_collection.update_one(
-        {"user_id": user_id},
+    await shops_collection.update_one(
+        {"_id": shop["_id"]},
         {"$push": {"image_s3_keys": key, "image_urls": url}},
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shop not found")
     return {"ok": True}
 
 
 # ─── Settings ─────────────────────────────────────────────────
 @router.get("/settings")
-async def get_settings(current_user=Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    shop = await shops_collection.find_one({"user_id": user_id})
+async def get_settings(shop_id: Optional[str] = None, current_user=Depends(get_current_user)):
+    shop = await _resolve_shop(current_user, shop_id)
     next_renewal = ""
     if shop and shop.get("created_at"):
         renewal = shop["created_at"] + timedelta(days=365)

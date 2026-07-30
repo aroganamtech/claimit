@@ -172,7 +172,12 @@ export function ShopPayment() {
       if (basic.lat != null) formData.append('lat', basic.lat)
       if (basic.lng != null) formData.append('lng', basic.lng)
 
-      await api.shop.register(formData)
+      const regRes = await api.shop.register(formData)
+      // A user can own multiple shops — make the shop just created the ACTIVE
+      // one so the cover/gallery key calls below attach to THIS new shop (not
+      // a previously selected shop), and the dashboard opens on it.
+      const newShopId = regRes?.shop?.id
+      if (newShopId) localStorage.setItem('claimit_active_shop', newShopId)
 
       // ── Step 2: Register S3 keys from the photos already uploaded to S3
       // in the ShopPhotos step (presigned-URL flow — same as brand/nearby deals).

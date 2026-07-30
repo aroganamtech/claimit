@@ -1,40 +1,30 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-// Each label maps to a value (lowercase) that must exist in the backend _CATEGORY_MAP
+// Each label maps to a value (lowercase) that must exist in the backend
+// _CATEGORY_MAP. Order + numbering match the app's category ids 1-20 and the
+// icon assets icon1.png … icon20.png.
 const CATEGORIES = [
-  // Food & Grocery
-  { label: 'Grocery',              value: 'grocery'            },  // 2
-  { label: 'Supermarket',          value: 'supermarket'        },  // 3
-  { label: 'Restaurant',           value: 'restaurant'         },  // 7
-  { label: 'Cafe / Bakery',        value: 'cafe'               },  // 8
-  // Health & Wellness
-  { label: 'Pharmacy',             value: 'pharmacy'           },  // 4
-  { label: 'Salon',                value: 'salon'              },  // 5
-  { label: 'Spa',                  value: 'spa'                },  // 17
-  { label: 'Gym / Fitness',        value: 'gym'                },  // 6
-  { label: 'Clinics',              value: 'clinics'            },  // 21
-  // Fashion & Lifestyle
-  { label: 'Clothing',             value: 'clothing'           },  // 9
-  { label: 'Footwear / Shoes',     value: 'footwear'           },  // 30
-  { label: 'Jewellery',            value: 'jewellery'          },  // 29
-  { label: 'Department Store',     value: 'department'         },  // 10
-  // Electronics & Tech
-  { label: 'Electronics',          value: 'electronics'        },  // 11
-  { label: 'Mobile & Accessories', value: 'mobile'             },  // 26
-  { label: 'Computer & Laptop',    value: 'computer'           },  // 27
-  // Books, Toys & Kids
-  { label: 'Books',                value: 'books'              },  // 12
-  { label: 'Toys',                 value: 'toys'               },  // 13
-  { label: 'Baby Products',        value: 'baby'               },  // 14
-  // Home & Living
-  { label: 'Home Decor',           value: 'home decor'         },  // 15
-  { label: 'Furniture',            value: 'furniture'          },  // 16
-  // Other
-  { label: 'Pets',                 value: 'pets'               },  // 23
-  { label: 'Sports',               value: 'sports'             },  // 24
-  { label: 'Gifts',                value: 'gifts'              },  // 28
-  { label: 'Hardware',             value: 'hardware'           },  // 1
+  { label: 'Supermarkets',        value: 'supermarkets' },  // 1
+  { label: 'Grocery / Provision', value: 'grocery'      },  // 2
+  { label: 'Medical Stores',      value: 'medical'      },  // 3
+  { label: 'Restaurants',         value: 'restaurants'  },  // 4
+  { label: 'Mobile Stores',       value: 'mobile'       },  // 5
+  { label: 'Electronics',         value: 'electronics'  },  // 6
+  { label: 'Departmental',        value: 'departmental' },  // 7
+  { label: 'Garment / Fashion',   value: 'garment'      },  // 8
+  { label: 'Jewellery',           value: 'jewellery'    },  // 9
+  { label: 'Footwears',           value: 'footwear'     },  // 10
+  { label: 'Coffee Shops',        value: 'coffee'       },  // 11
+  { label: 'Hospitals',           value: 'hospitals'    },  // 12
+  { label: 'Optical Stores',      value: 'optical'      },  // 13
+  { label: 'Diagnostics',         value: 'diagnostics'  },  // 14
+  { label: 'Furniture Stores',    value: 'furniture'    },  // 15
+  { label: 'Home Decor',          value: 'home decor'   },  // 16
+  { label: 'Beauty Parlours',     value: 'beauty'       },  // 17
+  { label: 'Salons',              value: 'salons'       },  // 18
+  { label: 'Baby Stores',         value: 'baby'         },  // 19
+  { label: 'Online Stores',       value: 'online'       },  // 20
 ]
 
 export default function SelectCategory() {
