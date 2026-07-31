@@ -2506,15 +2506,21 @@ class _CategoryRowState extends State<_CategoryRow> {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              cat.label,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 10,
-                height: 1.2,
-                color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+            // Fixed-height label area (room for up to 2 lines) so every icon
+            // sits on the same line whether its label is 1 or 2 lines long.
+            SizedBox(
+              height: 26,
+              child: Text(
+                cat.label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  height: 1.2,
+                  color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                ),
               ),
             ),
           ],
@@ -2548,15 +2554,18 @@ class _CategoryRowState extends State<_CategoryRow> {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'All',
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.2,
-                color: Color(0xFF2563EB),
-                fontWeight: FontWeight.w600,
+            const SizedBox(
+              height: 26,
+              child: Text(
+                'All',
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  color: Color(0xFF2563EB),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
