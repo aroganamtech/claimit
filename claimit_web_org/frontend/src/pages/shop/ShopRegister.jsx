@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
+import AddressFields, { isAddressComplete, formatAddress } from '../../components/AddressFields'
 
 // ─── Leaflet Map Picker Modal ──────────────────────────────────
 function MapPickerModal({ onConfirm, onClose }) {
@@ -185,9 +186,10 @@ function MapPickerModal({ onConfirm, onClose }) {
 export default function ShopRegister() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
-    shopName: '', shopAddress: '', pincode: '', about: '',
-    location: '', phone: '', timing: '',
+    shopName: '', about: '', phone: '', timing: '',
     lat: null, lng: null,
+    // Structured address (dropdown-driven)
+    address: { country: 'India', state: '', district: '', city: '', pincode: '' },
   })
   const [locating, setLocating] = useState(false)
   const [showMap, setShowMap] = useState(false)
@@ -195,40 +197,47 @@ export default function ShopRegister() {
 
   const handleChange = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
-  // Opens the map modal (same button, same UI — just opens map now)
+  // Opens the map modal (optional — only captures exact lat/lng for distance).
   const handleUseLocation = () => {
     setError('')
     setShowMap(true)
   }
 
-  // Called when user confirms a position on the map
-  const handleMapConfirm = async ({ lat, lng }) => {
+  // Called when user confirms a position on the map — coordinates only; the
+  // address itself comes from the structured dropdown fields.
+  const handleMapConfirm = ({ lat, lng }) => {
     setShowMap(false)
-    setLocating(true)
-    setError('')
-    try {
-      const data = await api.geo.reverse(lat, lng)
-      setForm(prev => ({
-        ...prev,
-        lat,
-        lng,
-        shopAddress: data.address || prev.shopAddress,
-        pincode: data.pincode || prev.pincode,
-      }))
-    } catch {
-      setForm(prev => ({ ...prev, lat, lng }))
-      setError('Could not look up address — coordinates saved. Fill address manually if needed.')
-    } finally {
-      setLocating(false)
-    }
+    setForm(prev => ({ ...prev, lat, lng }))
   }
 
   const handleContinue = () => {
-    if (!form.shopName || !form.shopAddress || !form.pincode || !form.location || !form.phone || !form.timing) {
+    if (!form.shopName || !form.phone || !form.timing) {
       setError('Please fill all required fields')
       return
     }
-    sessionStorage.setItem('shop_basic', JSON.stringify(form))
+    if (!isAddressComplete(form.address)) {
+      setError('Please complete the address — enter a valid pincode and pick your city')
+      return
+    }
+    const a = form.address
+    // Store both the structured fields and the derived single-line values the
+    // existing backend/onboarding steps already expect.
+    const payload = {
+      shopName: form.shopName,
+      about: form.about,
+      phone: form.phone,
+      timing: form.timing,
+      lat: form.lat,
+      lng: form.lng,
+      country: a.country,
+      state: a.state,
+      district: a.district,
+      city: a.city,
+      pincode: a.pincode,
+      shopAddress: formatAddress(a),
+      location: a.city,
+    }
+    sessionStorage.setItem('shop_basic', JSON.stringify(payload))
     navigate('/shop/onboard/photos')
   }
 
@@ -274,21 +283,11 @@ export default function ShopRegister() {
               <input className="input-field" placeholder="your shop name"
                 value={form.shopName} onChange={e => handleChange('shopName', e.target.value)} />
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Shop Address</label>
-              <input className="input-field" placeholder="address of your shop"
-                value={form.shopAddress} onChange={e => handleChange('shopAddress', e.target.value)} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Pincode</label>
-              <input className="input-field" placeholder="Pincode"
-                value={form.pincode} onChange={e => handleChange('pincode', e.target.value)} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>City / Area <span style={{ color: '#e53935' }}>*</span></label>
-              <input className="input-field" placeholder="e.g. Nungambakkam, Chennai"
-                value={form.location} onChange={e => handleChange('location', e.target.value)} />
-            </div>
+            {/* Structured address — dropdowns driven by the pincode lookup */}
+            <AddressFields
+              value={form.address}
+              onChange={(addr) => handleChange('address', addr)}
+            />
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Phone Number <span style={{ color: '#e53935' }}>*</span></label>
               <input className="input-field" placeholder="+91 99999 99999"

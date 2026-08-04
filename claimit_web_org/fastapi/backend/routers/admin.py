@@ -10,11 +10,13 @@ Admin credentials come from the .env file:
 Every endpoint reads/writes MongoDB directly — there's no per-user auth check
 because admin can manage any record.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from bson import ObjectId
+import io
 import os
 import json
 
@@ -340,6 +342,180 @@ async def list_shops_grouped_by_discount(_admin=Depends(get_current_admin)):
             {"discount_percentage": pct, "count": len(shops), "shops": shops}
             for pct, shops in sorted(groups.items())
         ]
+    }
+
+
+# ─── Shops: bulk Excel upload ─────────────────────────────────
+# Admin downloads a predefined template, fills one shop per row (photo pasted
+# into the Image column), and uploads it. Rows are inserted into the SAME
+# claimit_db.shops collection seed.py uses. Images are extracted from the
+# workbook and pushed to S3 (image_s3_key), exactly like the seeder.
+
+@router.get("/shops/bulk-template")
+async def shops_bulk_template(_admin=Depends(get_current_admin)):
+    """Download the predefined .xlsx template for bulk shop upload."""
+    from utils.shop_bulk import build_template_bytes
+    data = build_template_bytes()
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="claimit_shops_template.xlsx"'},
+    )
+
+
+def _to_bool(v) -> bool:
+    return str(v).strip().lower() in ("true", "1", "yes", "y", "✓")
+
+
+def _num(v):
+    """Parse an optional float; blank/invalid → None (so lat/lng stay unset)."""
+    if v is None or str(v).strip() == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
+@router.post("/shops/bulk-upload")
+async def shops_bulk_upload(
+    file: UploadFile = File(...),
+    replace: bool = Query(False, description="Wipe all shops before inserting"),
+    _admin=Depends(get_current_admin),
+):
+    """
+    Parse an uploaded shops workbook and insert the rows into claimit_db.shops.
+    Returns a per-row summary. `replace=true` clears the collection first.
+    """
+    import openpyxl
+    from utils.shop_bulk import (
+        COLUMNS, extract_row_images, parse_categories, derive_location,
+    )
+    from utils.s3 import upload_bytes
+
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx file.")
+
+    raw = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read Excel file: {e}")
+
+    ws = wb["Shops"] if "Shops" in wb.sheetnames else wb.worksheets[0]
+    images = extract_row_images(raw)
+
+    # Map header text → column index (0-based) using the first row.
+    header_cells = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
+    header_lookup = {h: i for i, h in enumerate(header_cells)}
+    # Fall back to positional mapping if headers were altered.
+    col_index = {}
+    for pos, (header, field, kind) in enumerate(COLUMNS):
+        col_index[field] = header_lookup.get(header, pos)
+
+    def cell(row, field):
+        idx = col_index.get(field)
+        if idx is None or idx >= len(row):
+            return None
+        return row[idx]
+
+    errors = []
+    docs = []
+    seen_any = False
+    for r in range(2, ws.max_row + 1):
+        row = [c.value for c in ws[r]]
+        name = cell(row, "name")
+        if name is None or str(name).strip() == "":
+            continue  # skip blank rows silently
+        seen_any = True
+        name = str(name).strip()
+
+        cat_ids, unknown_cats = parse_categories(cell(row, "category_ids"))
+        if not cat_ids:
+            errors.append({"row": r, "name": name,
+                           "error": "No valid category — check the category names."})
+            continue
+        if unknown_cats:
+            errors.append({"row": r, "name": name,
+                           "error": f"Unknown categories skipped: {', '.join(unknown_cats)}"})
+
+        country  = str(cell(row, "country")  or "").strip()
+        state    = str(cell(row, "state")    or "").strip()
+        district = str(cell(row, "district") or "").strip()
+        city     = str(cell(row, "city")     or "").strip()
+        area     = str(cell(row, "area")     or "").strip()
+        pincode  = str(cell(row, "pincode")  or "").strip()
+        address  = str(cell(row, "address")  or "").strip()
+        location = derive_location(area, city, district)
+
+        try:
+            doc = {
+                "name":          name,
+                "category_ids":  cat_ids,
+                # Structured address (same fields as the shop register form).
+                "country":       country,
+                "state":         state,
+                "district":      district,
+                "city":          city,
+                "area":          area,
+                "pincode":       pincode,
+                "address":       address,
+                "shop_address":  address,   # register uses this key
+                "location":      location,  # "Area, City" shown on shop cards
+                "discount":      int(float(cell(row, "discount") or 0)),
+                "rating":        float(cell(row, "rating") or 4.0),
+                "added_days_ago": int(float(cell(row, "added_days_ago") or 0)),
+                "has_rewards":   _to_bool(cell(row, "has_rewards")),
+                "has_redeem":    _to_bool(cell(row, "has_redeem")),
+                "about":         str(cell(row, "about") or "").strip(),
+                "timing":        str(cell(row, "timing") or "").strip(),
+                "phone":         str(cell(row, "phone") or "").strip(),
+                "lat":           _num(cell(row, "lat")),
+                "lng":           _num(cell(row, "lng")),
+            }
+        except (ValueError, TypeError) as e:
+            errors.append({"row": r, "name": name, "error": f"Invalid number: {e}"})
+            continue
+
+        # discount_percentage kept in sync for the admin grouped view.
+        doc["discount_percentage"] = doc["discount"]
+
+        # Pasted photo → S3 (falls back to placeholder-less if none).
+        img = images.get(r)
+        image_key = ""
+        if img:
+            data, ext = img
+            ctype = "image/png" if ext.lower().endswith("png") else "image/jpeg"
+            try:
+                image_key = await upload_bytes(data, "shops", f"shop{ext}", ctype)
+            except Exception as e:  # noqa: BLE001
+                errors.append({"row": r, "name": name, "error": f"Image upload failed: {e}"})
+
+        doc.update({
+            "image_s3_key":    image_key,
+            "image_s3_keys":   [image_key] if image_key else [],
+            "image_url":       "",
+            "image_urls":      [],
+            "image_data":      "",
+            "image_data_list": [],
+            "created_at":      datetime.now(timezone.utc),
+        })
+        docs.append(doc)
+
+    if replace:
+        await shops_collection.delete_many({})
+
+    inserted = 0
+    if docs:
+        res = await shops_collection.insert_many(docs)
+        inserted = len(res.inserted_ids)
+
+    return {
+        "ok": True,
+        "replaced": replace,
+        "inserted": inserted,
+        "skipped_empty": not seen_any,
+        "errors": errors,
     }
 
 

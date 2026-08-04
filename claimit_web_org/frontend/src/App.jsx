@@ -48,6 +48,7 @@ import AdminLogin from './pages/admin/AdminLogin'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminCreateAd from './pages/admin/AdminCreateAd'
+import AdminBulkShops from './pages/admin/AdminBulkShops'
 import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminDeletedUsers } from './pages/admin/AdminPages'
 
 // Protected route
@@ -239,6 +240,7 @@ export default function App() {
             <Route path="/admin/ads"       element={<AdminAds />} />
             <Route path="/admin/create-ad" element={<AdminCreateAd />} />
             <Route path="/admin/shops"     element={<AdminShops />} />
+            <Route path="/admin/bulk-shops" element={<AdminBulkShops />} />
             <Route path="/admin/reviews"   element={<AdminReviews />} />
             <Route path="/admin/tickets"    element={<AdminTickets />} />
             <Route path="/admin/feedback"   element={<AdminFeedback />} />

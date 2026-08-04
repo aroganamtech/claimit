@@ -1779,20 +1779,116 @@ class _ZoneItem {
   });
 }
 
-const _zones = [
-  _ZoneItem(label: 'Reward\nZone', icon: "assets/images/f1.png", route: '/home'),
-  _ZoneItem(label: 'Redeem\nZone', icon: "assets/images/f2.png", route: '/home'),
-  _ZoneItem(label: 'Brand\nDeals', icon: "assets/images/f3.png", route: '/claims'),
-  _ZoneItem(label: 'Nearby\nDeals', icon: "assets/images/f4.png", route: '/claims'),
-  _ZoneItem(label: 'Promo\nReelz', icon: "assets/images/f5.png", route: '/reelz'),
-  _ZoneItem(label: 'Local Finds\nClassifieds', icon: "assets/images/f6.png", route: '/classified'),
+// Page 1 of the Featured Zones popup — 5 zones; a "More" tile is appended in
+// the sheet to flip to page 2. Uses the client's illustrated icons.
+const _zonesPage1 = [
+  _ZoneItem(label: 'Reward\nZone',  icon: "assets/images/zone_1.png", route: '/home'),
+  _ZoneItem(label: 'Redeem\nZone',  icon: "assets/images/zone_2.png", route: '/home'),
+  _ZoneItem(label: 'Local\nFinder', icon: "assets/images/zone_3.png", route: '/classified'),
+  _ZoneItem(label: 'Nearby\nDeals', icon: "assets/images/zone_4.png", route: '/nearby-deals'),
+  _ZoneItem(label: 'Brand\nDeals',  icon: "assets/images/zone_5.png", route: '/brands'),
 ];
 
-class _FeaturedZonesSheet extends StatelessWidget {
+// Page 2 — shown when the user taps "More". The remaining 4 zones.
+const _zonesPage2 = [
+  _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
+  _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
+  _ZoneItem(label: 'Booking\nDeals', icon: "assets/images/zone_8.png", route: ''),
+  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified'),
+];
+
+class _FeaturedZonesSheet extends StatefulWidget {
   const _FeaturedZonesSheet();
 
   @override
+  State<_FeaturedZonesSheet> createState() => _FeaturedZonesSheetState();
+}
+
+class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
+  final _pageCtrl = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  void _goToPage(int p) => _pageCtrl.animateToPage(
+        p,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+
+  void _handleTap(_ZoneItem z) {
+    final label = z.label.replaceAll('\n', ' ');
+    // Page-1 zones keep their existing destinations.
+    if (label == 'Reward Zone') {
+      Navigator.of(context).pop();
+      context.push('/shops', extra: const ShopCategory(
+        id: 0, name: 'Reward Zone',
+        icon: Icons.card_membership_rounded, color: Color(0xFF2563EB),
+      ));
+    } else if (label == 'Redeem Zone') {
+      Navigator.of(context).pop();
+      context.push('/shops', extra: {
+        'category': const ShopCategory(
+          id: -1, name: 'Redeem Zone',
+          icon: Icons.redeem_rounded, color: Color(0xFF059669),
+        ),
+        'isTab': true,
+      });
+    } else if (label == 'Brand Deals') {
+      Navigator.of(context).pop();
+      context.push('/brands');
+    } else if (label == 'Nearby Deals') {
+      Navigator.of(context).pop();
+      context.push('/nearby-deals');
+    } else if (label == 'Promo Reelz') {
+      Navigator.of(context).pop();
+      context.push('/reelz');
+    } else if (z.route.isNotEmpty) {
+      Navigator.of(context).pop();
+      context.push(z.route);
+    } else {
+      // Placeholder zones — functionality added in a later update.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$label — coming soon')),
+      );
+    }
+  }
+
+  Widget _grid(List<Widget> tiles) => GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.95,
+        children: tiles,
+      );
+
+  @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+
+    // Sized so two rows of tiles fit without overflow on any width.
+    final itemW = (MediaQuery.of(context).size.width - 40 - 16) / 3;
+    final gridH = (itemW / 0.95) * 2 + 8 + 6;
+
+    final page1 = _grid([
+      ..._zonesPage1.map((z) => _ZoneTile(zone: z, onTap: () => _handleTap(z))),
+      // "More" — flips to page 2 (does not close the sheet).
+      _ZoneTile(
+        zone: const _ZoneItem(label: 'More', icon: Icons.grid_view_rounded, route: ''),
+        onTap: () => _goToPage(1),
+      ),
+    ]);
+
+    final page2 = _grid(
+      _zonesPage2.map((z) => _ZoneTile(zone: z, onTap: () => _handleTap(z))).toList(),
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -1813,12 +1909,20 @@ class _FeaturedZonesSheet extends StatelessWidget {
           ),
           Row(
             children: [
+              if (_page == 1)
+                GestureDetector(
+                  onTap: () => _goToPage(0),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: primary),
+                  ),
+                ),
               Text(
                 'Featured Zones',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: primary,
                 ),
               ),
               const SizedBox(width: 6),
@@ -1833,56 +1937,29 @@ class _FeaturedZonesSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.95,
-            children: _zones
-                .map((z) => _ZoneTile(
-                      zone: z,
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        final label = z.label.replaceAll('\n', ' ');
-                        if (label == 'Reward Zone') {
-                          context.push('/shops', extra: const ShopCategory(
-                            id: 0,
-                            name: 'Reward Zone',
-                            icon: Icons.card_membership_rounded,
-                            color: Color(0xFF2563EB),
-                          ));
-                        } else if (label == 'Redeem Zone') {
-                          // isTab: true turns on the Redeem-only filter
-                          // (hasRedeem && discount > 0) — without it, id: -1
-                          // alone means "no filter" (used by Nearby/See-All),
-                          // which was letting Reward-only shops leak in here.
-                          context.push('/shops', extra: {
-                            'category': const ShopCategory(
-                              id: -1,
-                              name: 'Redeem Zone',
-                              icon: Icons.redeem_rounded,
-                              color: Color(0xFF059669),
-                            ),
-                            'isTab': true,
-                          });
-                        } else if (label == 'Brand Deals') {
-                          context.push('/brands');
-                        } else if (label == 'Nearby Deals') {
-                          context.push('/nearby-deals');
-                        } else if (label == 'Promo Reelz') {
-                          context.push('/reelz');
-                        } else if (label == 'Local Finds Classifieds') {
-                          context.push('/classified');
-                        } else {
-                          context.go(z.route);
-                        }
-                      },
-                    ))
-                .toList(),
+          SizedBox(
+            height: gridH,
+            child: PageView(
+              controller: _pageCtrl,
+              onPageChanged: (p) => setState(() => _page = p),
+              children: [page1, page2],
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // Page dots
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(2, (i) => AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: _page == i ? 18 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: _page == i ? primary : const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            )),
+          ),
         ],
       ),
     );
@@ -1921,10 +1998,21 @@ class _ZoneTile extends StatelessWidget {
                             color: Color(0xFFD97706),
                           ),
                         )
-                      : Icon(
-                          zone.icon as IconData,
-                          size: 32,
-                          color: const Color(0xFFD97706),
+                      : Container(
+                          // Yellow circle so Material-icon zones (page 2 / More)
+                          // match the page-1 PNG zone icons' look.
+                          width: 56,
+                          height: 56,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFD54F),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            zone.icon as IconData,
+                            size: 30,
+                            color: const Color(0xFF1565C0),
+                          ),
                         ),
                 ),
               ),

@@ -200,21 +200,22 @@ class ClassifiedTopCategory {
 }
 
 /// "Local Classified" tab — top-level posting categories, matching the
-/// Local Classifieds PDF (Buy & Sell, Vehicle, Property, Jobs, Services,
-/// Electronics, Fashion, Pets, Furniture, Education, Others).
-/// iconAsset images are cropped directly from the client's PDF artwork.
+/// Local Classifieds design (Buy & Sell, Vehicles, Property, Jobs, Services,
+/// Electronics, Pets, Education, Events, Fashion, Agriculture, Living).
+/// iconAsset images are cropped directly from the client's design artwork.
 const List<ClassifiedTopCategory> localClassifiedCategories = [
   ClassifiedTopCategory(id: 'buy_sell',    name: 'Buy & Sell',  icon: Icons.shopping_bag_rounded,    iconAsset: 'assets/images/lc_buy_sell.png',    category: 'buy_sell'),
-  ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicle',     icon: Icons.directions_car_rounded,  iconAsset: 'assets/images/lc_vehicle.png',     category: 'vehicle'),
+  ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicles',    icon: Icons.directions_car_rounded,  iconAsset: 'assets/images/lc_vehicle.png',     category: 'vehicle'),
   ClassifiedTopCategory(id: 'property',    name: 'Property',    icon: Icons.apartment_rounded,       iconAsset: 'assets/images/lc_property.png',    category: 'property'),
   ClassifiedTopCategory(id: 'jobs',        name: 'Jobs',        icon: Icons.work_rounded,             iconAsset: 'assets/images/lc_jobs.png',        category: 'jobs'),
   ClassifiedTopCategory(id: 'services',    name: 'Services',    icon: Icons.handyman_rounded,         iconAsset: 'assets/images/lc_services.png',    category: 'services'),
   ClassifiedTopCategory(id: 'electronics', name: 'Electronics', icon: Icons.devices_rounded,          iconAsset: 'assets/images/lc_electronics.png', category: 'electronics'),
-  ClassifiedTopCategory(id: 'fashion',     name: 'Fashion',     icon: Icons.checkroom_rounded,        iconAsset: 'assets/images/lc_fashion.png',     category: 'fashion'),
   ClassifiedTopCategory(id: 'pets',        name: 'Pets',        icon: Icons.pets_rounded,             iconAsset: 'assets/images/lc_pets.png',        category: 'pets'),
-  ClassifiedTopCategory(id: 'furniture',   name: 'Furniture',   icon: Icons.chair_rounded,            iconAsset: 'assets/images/lc_furniture.png',   category: 'furniture'),
   ClassifiedTopCategory(id: 'education',   name: 'Education',   icon: Icons.school_rounded,           iconAsset: 'assets/images/lc_education.png',   category: 'education'),
-  ClassifiedTopCategory(id: 'others',      name: 'Others',      icon: Icons.more_horiz_rounded,       iconAsset: 'assets/images/lc_others.png',      category: 'others'),
+  ClassifiedTopCategory(id: 'events',      name: 'Events',      icon: Icons.celebration_rounded,      iconAsset: 'assets/images/lc_events.png',      category: 'events'),
+  ClassifiedTopCategory(id: 'fashion',     name: 'Fashion',     icon: Icons.checkroom_rounded,        iconAsset: 'assets/images/lc_fashion.png',     category: 'fashion'),
+  ClassifiedTopCategory(id: 'agriculture', name: 'Agriculture', icon: Icons.agriculture_rounded,      iconAsset: 'assets/images/lc_agriculture.png', category: 'agriculture'),
+  ClassifiedTopCategory(id: 'living',      name: 'Living',      icon: Icons.weekend_rounded,          iconAsset: 'assets/images/lc_living.png',      category: 'living'),
 ];
 
 /// "Local Helpers" tab — every existing service subcategory flattened into

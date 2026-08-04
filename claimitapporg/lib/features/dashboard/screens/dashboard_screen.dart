@@ -1784,17 +1784,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(width: 10),
 
-              // ── Location (from user profile) ────────────────────────
-              GestureDetector(
-                onTap: () => context.push('/location'),
-                child: ConstrainedBox(
-                  // Cap the location chip so long names like
-                  // "Chennai, Tamil Nadu" don't overflow the AppBar Row.
-                  constraints: const BoxConstraints(maxWidth: 140),
+              // ── Location (from user profile) — Expanded so it absorbs the
+              // remaining width and ellipsizes, instead of two fixed Spacers
+              // that could push the row past the screen edge (right overflow).
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => context.push('/location'),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Flexible(
                         child: Text(
@@ -1818,7 +1816,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(width: 8),
 
               // ── Search ──────────────────────────
               Container(
@@ -2117,6 +2115,10 @@ class _BannerSlide extends StatefulWidget {
   State<_BannerSlide> createState() => _BannerSlideState();
 }
 
+/// Shared mute state for ALL home banner ads — tapping the mute icon on any
+/// slide mutes/unmutes every banner video on the home page.
+final ValueNotifier<bool> homeBannerMuted = ValueNotifier<bool>(false);
+
 class _BannerSlideState extends State<_BannerSlide> {
   VideoPlayerController? _ctrl;
   bool _videoReady = false;
@@ -2130,7 +2132,15 @@ class _BannerSlideState extends State<_BannerSlide> {
     super.initState();
     _coveredByAnotherRoute = homeShellCovered.value;
     homeShellCovered.addListener(_onShellCoveredChanged);
+    homeBannerMuted.addListener(_onMuteChanged);
     if (widget.data.isVideo) _initVideo();
+  }
+
+  // Any banner's mute toggle flips the shared flag — every slide re-applies
+  // its sound + refreshes its mute icon so they all stay in sync.
+  void _onMuteChanged() {
+    if (mounted) setState(() {});
+    _applyPlayState();
   }
 
   // Fires the instant Scan Bill / National Ads / a shop page / any other
@@ -2196,7 +2206,7 @@ class _BannerSlideState extends State<_BannerSlide> {
     final ctrl = _ctrl;
     if (ctrl == null || !_videoReady) return;
     final shouldPlay = widget.isActive && widget.visible && !_coveredByAnotherRoute;
-    ctrl.setVolume(shouldPlay ? 1.0 : 0);
+    ctrl.setVolume((shouldPlay && !homeBannerMuted.value) ? 1.0 : 0);
     if (shouldPlay) {
       if (!ctrl.value.isPlaying) ctrl.play();
     } else {
@@ -2232,6 +2242,7 @@ class _BannerSlideState extends State<_BannerSlide> {
   void dispose() {
     _disposed = true;
     homeShellCovered.removeListener(_onShellCoveredChanged);
+    homeBannerMuted.removeListener(_onMuteChanged);
     _ctrl?.dispose();
     super.dispose();
   }
@@ -2322,13 +2333,43 @@ class _BannerSlideState extends State<_BannerSlide> {
         ],
       );
     }
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: _ctrl!.value.size.width,
-        height: _ctrl!.value.size.height,
-        child: VideoPlayer(_ctrl!),
-      ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: _ctrl!.value.size.width,
+            height: _ctrl!.value.size.height,
+            child: VideoPlayer(_ctrl!),
+          ),
+        ),
+        // Mute / unmute toggle for the top banner ad video.
+        Positioned(
+          bottom: 10,
+          right: 10,
+          child: GestureDetector(
+            onTap: () {
+              // Toggle the SHARED flag → every banner slide mutes/unmutes.
+              homeBannerMuted.value = !homeBannerMuted.value;
+            },
+            child: Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.45),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                homeBannerMuted.value ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2867,18 +2908,24 @@ class _DealCardState extends State<_DealCard> {
                       ),
                       // const SizedBox(height: 10),
 
-                      // Distance + type — starts at same left edge as name
+                      // Distance + type — starts at same left edge as name.
+                      // Distance text flexes + ellipsizes so a long value
+                      // (or a location used as distance) never overflows the row.
                       Row(
                         children: [
-                          Text(
-                            d.distance,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color.fromARGB(255, 119, 120, 123),
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: Text(
+                              d.distance,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color.fromARGB(255, 119, 120, 123),
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           _Chip(label: d.type),
                         ],
                       ),

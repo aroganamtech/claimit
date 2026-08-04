@@ -34,6 +34,7 @@ import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
 import '../../features/classifieds/screens/local_finds_screen.dart';
+import '../../features/classifieds/screens/local_finds_categories_screen.dart';
 import '../../features/classifieds/screens/local_find_zone_screen.dart';
 import '../../features/classifieds/data/classified_categories.dart' show LocalFindZone;
 import '../../features/classifieds/screens/classified_list_screen.dart';
@@ -288,6 +289,10 @@ class AppRouter {
         GoRoute(
           path: '/classified/mine',
           builder: (context, state) => const MyListingsScreen(),
+        ),
+        GoRoute(
+          path: '/local-finds/categories',
+          builder: (context, state) => const LocalFindsCategoriesScreen(),
         ),
         GoRoute(
           path: '/local-finds/add',

@@ -14,12 +14,14 @@ class ClassifiedService {
     String? category,
     String? subcategory,
     String? search,
+    String? listingType,   // "local_find" to fetch only Local Finds businesses
   }) async {
     try {
       final params = <String, dynamic>{};
       if (category != null && category.isNotEmpty) params['category'] = category;
       if (subcategory != null && subcategory.isNotEmpty) params['subcategory'] = subcategory;
       if (search != null && search.isNotEmpty) params['search'] = search;
+      if (listingType != null && listingType.isNotEmpty) params['listing_type'] = listingType;
 
       final resp = await _api.get(AppConstants.classifieds, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {

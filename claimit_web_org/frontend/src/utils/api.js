@@ -152,6 +152,10 @@ const support = {
 // ─── Geo ─────────────────────────────────────────────────────
 const geo = {
   reverse: (lat, lng) => post('/geo/reverse', { lat, lng }),
+  // Address dropdown data (India Post-backed)
+  getCountries: ()               => get('/geo/countries'),
+  getStates:    (country='India') => get('/geo/states', { country }),
+  lookupPincode:(pincode)        => get(`/geo/pincode/${pincode}`),
 }
 
 // ─── Admin ───────────────────────────────────────────────────
@@ -166,6 +170,14 @@ const admin = {
   listShops:    ()          => get('/admin/shops'),
   updateShop:   (id, p)     => put(`/admin/shops/${id}`, p),
   deleteShop:   (id)        => del(`/admin/shops/${id}`),
+  // Bulk shop upload (Excel). Template download returns an .xlsx blob.
+  downloadShopTemplate: () =>
+    http.get('/admin/shops/bulk-template', { responseType: 'blob' }).then(r => r.data),
+  bulkUploadShops: (formData, replace = false) =>
+    http.post('/admin/shops/bulk-upload', formData, {
+      params: { replace },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data),
   listReviews:  ()          => get('/admin/reviews'),
   deleteReview: (id)        => del(`/admin/reviews/${id}`),
   listTickets:  ()          => get('/admin/tickets'),

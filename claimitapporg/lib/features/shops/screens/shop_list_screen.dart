@@ -789,60 +789,56 @@ class _ShopCard extends StatelessWidget {
                     const SizedBox(height: 6),
 
                     // Offer tag — differs by tab context
-                    if (isRedeemMode)
-                      // Redeem tab: dynamic discount % + static 1% cashback
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF7ED),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: const Color(0xFFFB923C).withOpacity(0.45)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.local_offer_rounded,
-                                size: 11, color: Color(0xFFF97316)),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${shop.discount}% Disc + 1% Cashback',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFFC2410C)),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      // Rewards tab: static — user earns reward points + 1% cashback
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: const Color(0xFF93C5FD).withOpacity(0.7)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.card_giftcard_rounded,
-                                size: 11, color: Color(0xFF2563EB)),
-                            SizedBox(width: 4),
-                            Text(
-                              'Free Reward + 1% Cashback',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1D4ED8)),
-                            ),
-                          ],
+                    // Offer badge (Redeem vs Rewards). Wrapped in FittedBox so
+                    // the pill scales down to fit narrow cards instead of
+                    // overflowing to the right.
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isRedeemMode
+                                ? const Color(0xFFFFF7ED)
+                                : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: (isRedeemMode
+                                        ? const Color(0xFFFB923C)
+                                        : const Color(0xFF93C5FD))
+                                    .withOpacity(0.55)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                  isRedeemMode
+                                      ? Icons.local_offer_rounded
+                                      : Icons.card_giftcard_rounded,
+                                  size: 11,
+                                  color: isRedeemMode
+                                      ? const Color(0xFFF97316)
+                                      : const Color(0xFF2563EB)),
+                              const SizedBox(width: 4),
+                              Text(
+                                isRedeemMode
+                                    ? '${shop.discount}% Disc + 1% Cashback'
+                                    : 'Free Reward + 1% Cashback',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isRedeemMode
+                                        ? const Color(0xFFC2410C)
+                                        : const Color(0xFF1D4ED8)),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
+                    ),
 
                     const SizedBox(height: 6),
 

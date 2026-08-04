@@ -425,51 +425,60 @@ class _ShopFilterSheetState extends State<ShopFilterSheet> {
 
   // ── Rating chips ────────────────────────────────────────────────────────────
   Widget _buildRatingRow() {
+    // Each chip takes an equal share of the row (Expanded) and its content is
+    // wrapped in a FittedBox, so all five always fit any screen width without
+    // overflowing to the right.
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [1.0, 2.0, 3.0, 4.0, 5.0].map((r) {
         final active = _rating == r;
-        return GestureDetector(
-          onTap: () => setState(() => _rating = active ? null : r),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFFFEF3C7) : Colors.white,
-              border: Border.all(
-                color: active
-                    ? const Color(0xFFF59E0B)
-                    : const Color(0xFFE5E7EB),
-                width: active ? 2 : 1,
-              ),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: active
-                  ? [BoxShadow(
-                      color: const Color(0xFFF59E0B).withOpacity(0.2),
-                      blurRadius: 4, offset: const Offset(0, 2))]
-                  : [],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${r.toInt()}.0',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: GestureDetector(
+              onTap: () => setState(() => _rating = active ? null : r),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+                decoration: BoxDecoration(
+                  color: active ? const Color(0xFFFEF3C7) : Colors.white,
+                  border: Border.all(
                     color: active
-                        ? const Color(0xFFB45309)
-                        : const Color(0xFF374151),
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0xFFE5E7EB),
+                    width: active ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: active
+                      ? [BoxShadow(
+                          color: const Color(0xFFF59E0B).withOpacity(0.2),
+                          blurRadius: 4, offset: const Offset(0, 2))]
+                      : [],
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${r.toInt()}.0',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: active
+                              ? const Color(0xFFB45309)
+                              : const Color(0xFF374151),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(
+                        Icons.star_rounded,
+                        size: 20,
+                        color: Color(0xFFF59E0B),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 3),
-                // Stars always yellow — matches design
-                const Icon(
-                  Icons.star_rounded,
-                  size: 22,
-                  color: Color(0xFFF59E0B),
-                ),
-              ],
+              ),
             ),
           ),
         );

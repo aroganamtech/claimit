@@ -9,19 +9,24 @@ import 'package:image_picker/image_picker.dart';
 import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
-import '../widgets/listing_flow_widgets.dart';
 import '../../auth/providers/auth_provider.dart';
 
-const double _listingFee = 250; // Rs./post, per the Local Classifieds PDF
+// ─────────────────────────────────────────────────────────────────────────────
+// "Create Your Ad" — Local Classifieds self-posting flow (3 steps + success):
+//   Step 1  Choose a category
+//   Step 2  About Your Ad   — headline, description (25 words), contact, photos
+//   Step 3  Preview Your Ad — summary + payment (static for now; Razorpay later)
+// then a Payment Successful screen. User is already signed in.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// "Claimit Local Classifieds — Self Posting Flow" (from the PDF), minus the
-// Register/Login step — this app already has the user signed in. Per the
-// client's latest update, the Subcategory step is no longer needed.
-//
-//   Select Category → Title + Description → Upload Photo → Contact Details
-//   → Review → Make Payment → Publish
-// ─────────────────────────────────────────────────────────────────────────────
+const Color _blue = Color(0xFF1565C0);
+const Color _ink = Color(0xFF1E293B);
+const Color _muted = Color(0xFF64748B);
+const Color _gold = Color(0xFFF4B400);
+const Color _banner = Color(0xFFE8F0FE);
+
+const double _baseFee = 199; // ₹/post (30 days)
+const double _gstRate = 0.18;
 
 class AddPostFlowScreen extends StatefulWidget {
   const AddPostFlowScreen({super.key});
@@ -31,16 +36,14 @@ class AddPostFlowScreen extends StatefulWidget {
 }
 
 class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
-  // 0=category, 1=title+desc, 2=photo, 3=contact, 4=review, 5=payment
-  int _step = 0;
+  int _step = 0; // 0 category, 1 about, 2 preview, 3 success
 
-  ClassifiedTopCategory? _category;
-
-  final _titleCtrl = TextEditingController();
+  String? _categoryId;
+  final _headCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  late TextEditingController _phoneCtrl;
-
-  XFile? _photo;
+  late final TextEditingController _phoneCtrl;
+  final List<String> _photos = []; // base64
+  String _payMethod = 'upi';
   bool _submitting = false;
 
   @override
@@ -52,341 +55,722 @@ class _AddPostFlowScreenState extends State<AddPostFlowScreen> {
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
+    _headCtrl.dispose();
     _descCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
   }
 
-  void _next() => setState(() => _step++);
+  ClassifiedTopCategory? get _category {
+    if (_categoryId == null) return null;
+    for (final c in localClassifiedCategories) {
+      if (c.id == _categoryId) return c;
+    }
+    return null;
+  }
+
+  double get _gst => double.parse((_baseFee * _gstRate).toStringAsFixed(2));
+  double get _total => double.parse((_baseFee + _gst).toStringAsFixed(2));
+
+  int get _wordCount =>
+      _descCtrl.text.trim().isEmpty ? 0 : _descCtrl.text.trim().split(RegExp(r'\s+')).length;
+
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
   void _back() {
-    if (_step == 0) {
+    if (_step == 0 || _step == 3) {
       context.pop();
     } else {
       setState(() => _step--);
     }
   }
 
-  String get _title {
-    switch (_step) {
-      case 0: return 'Select Category';
-      case 1: return 'Create Your Listing';
-      case 2: return 'Upload Photo';
-      case 3: return 'Contact Details';
-      case 4: return 'Review Listing';
-      case 5: return 'Make Payment';
-      default: return 'Add your new Post';
+  Future<void> _pickPhotos() async {
+    if (_photos.length >= 3) { _snack('You can add up to 3 photos'); return; }
+    try {
+      final files = await ImagePicker().pickMultiImage(imageQuality: 65, maxWidth: 1200);
+      for (final f in files) {
+        if (_photos.length >= 3) break;
+        _photos.add(base64Encode(await f.readAsBytes()));
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      _snack('Could not add photos');
     }
   }
 
-  Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1000);
-    if (picked != null) setState(() => _photo = picked);
+  bool _validateAbout() {
+    if (_headCtrl.text.trim().isEmpty) { _snack('Enter the ad headline'); return false; }
+    if (_descCtrl.text.trim().isEmpty) { _snack('Write a short description'); return false; }
+    if (_wordCount > 25) { _snack('Description must be 25 words or fewer'); return false; }
+    if (_phoneCtrl.text.trim().isEmpty) { _snack('Enter a contact number'); return false; }
+    return true;
   }
 
-  Future<void> _publish() async {
+  Future<void> _payAndPublish() async {
     if (_submitting || _category == null) return;
     setState(() => _submitting = true);
 
-    final photos = <String>[];
-    if (_photo != null) {
-      photos.add(base64Encode(await _photo!.readAsBytes()));
-    }
-
+    // Static payment placeholder — real Razorpay wired in later.
     final post = ClassifiedPost(
       id: '', userId: '', userName: '', userPhone: '',
       category: _category!.category,
       subcategory: '',
-      title: _titleCtrl.text.trim(),
+      title: _headCtrl.text.trim(),
       description: _descCtrl.text.trim(),
       price: 0,
       yearsOfExp: 0,
       pincode: '',
       area: '',
       address: '',
-      photos: photos,
+      photos: _photos,
       listingType: 'classified',
-      amountPaid: _listingFee,
+      whatsapp: _phoneCtrl.text.trim(),
+      amountPaid: _total,
     );
 
     final result = await ClassifiedService.instance.createPost(post);
     if (!mounted) return;
     setState(() => _submitting = false);
-
     if (result != null) {
-      context.pushReplacement('/classified/list', extra: {
-        'category': _category!.category,
-        'subcategory': '',
-        'title': _category!.name,
-      });
+      setState(() => _step = 3);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to publish. Please try again.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      _snack('Could not publish. Please try again.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_step == 3) return _successScreen();
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _back();
-      },
+      onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); },
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Color(0xFF1E40AF), size: 20),
-            onPressed: _back,
-          ),
-          title: Text(
-            _title,
-            style: const TextStyle(
-              color: Color(0xFF1E293B),
-              fontWeight: FontWeight.bold,
-              fontSize: 17,
+        backgroundColor: const Color(0xFFF7F9FC),
+        appBar: _appBar('Create Your Ad'),
+        body: Column(
+          children: [
+            _progressCard(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: _step == 0
+                    ? _stepCategory()
+                    : _step == 1
+                        ? _stepAbout()
+                        : _stepPreview(),
+              ),
             ),
-          ),
-        ),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildStep(),
-          ),
+            if (_step != 0) _bottomBar(),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStep() {
-    switch (_step) {
-      case 0: return _stepCategory();
-      case 1: return _stepTitleDescription();
-      case 2: return _stepPhoto();
-      case 3: return _stepContact();
-      case 4: return _stepReview();
-      case 5: return _stepPayment();
-      default: return const SizedBox.shrink();
-    }
+  AppBar _appBar(String title) => AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _blue, size: 20),
+          onPressed: _back,
+        ),
+        title: Text(title,
+            style: const TextStyle(color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
+      );
+
+  Widget _progressCard() {
+    const titles = ['Choose a category', 'About Your Ad', 'Preview Your Ad'];
+    const subs = [
+      'Select the most relevant category for your ad',
+      'Tell us about your Ad',
+      'Review your ad and complete payment',
+    ];
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Step ${_step + 1}/3',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _blue)),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: (_step + 1) / 3,
+              minHeight: 8,
+              backgroundColor: const Color(0xFFDCE7F5),
+              valueColor: const AlwaysStoppedAnimation(_blue),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(titles[_step],
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: _ink)),
+          const SizedBox(height: 4),
+          Text(subs[_step], style: const TextStyle(fontSize: 13, color: _muted)),
+        ],
+      ),
+    );
   }
 
-  // ── Step 0: Select Category ────────────────────────────────────────────────
+  // ── Step 1: category ────────────────────────────────────────────────────────
   Widget _stepCategory() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const ListingStepTitle('Select category'),
-        const SizedBox(height: 16),
-        Expanded(
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, mainAxisSpacing: 16, crossAxisSpacing: 8, childAspectRatio: 0.82,
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _categoryId,
+              hint: const Text('Select your business category',
+                  style: TextStyle(color: _muted)),
+              items: localClassifiedCategories
+                  .map((c) => DropdownMenuItem(
+                        value: c.id,
+                        child: Row(children: [
+                          if (c.iconAsset != null)
+                            Image.asset(c.iconAsset!, width: 26, height: 26),
+                          const SizedBox(width: 10),
+                          Text(c.name),
+                        ]),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _categoryId = v),
             ),
-            itemCount: localClassifiedCategories.length,
-            itemBuilder: (context, i) {
-              final cat = localClassifiedCategories[i];
-              return GestureDetector(
-                onTap: () => setState(() { _category = cat; _step = 1; }),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    cat.iconAsset != null
-                        ? Image.asset(cat.iconAsset!, width: 64, height: 64)
-                        : Container(
-                            width: 64, height: 64,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle, color: const Color(0xFFF1F5F9),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Icon(cat.icon, size: 26, color: const Color(0xFF334155)),
-                          ),
-                    const SizedBox(height: 6),
-                    Text(cat.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                  ],
-                ),
-              );
+          ),
+        ),
+        const SizedBox(height: 18),
+        _categoryBanner(),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () {
+              if (_categoryId == null) { _snack('Please choose a category'); return; }
+              setState(() => _step = 1);
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Continue',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
           ),
         ),
       ],
     );
   }
 
-  // ── Step 1: Title + 25-word description ────────────────────────────────────
-  Widget _stepTitleDescription() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _categoryBanner() => Container(
+        padding: const EdgeInsets.fromLTRB(16, 16, 10, 16),
+        decoration: BoxDecoration(color: _banner, borderRadius: BorderRadius.circular(16)),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('We Have ${localClassifiedCategories.length}+ Category in Local Classifieds',
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w800, color: _blue, height: 1.3)),
+                  const SizedBox(height: 6),
+                  const Text('Find trusted businesses',
+                      style: TextStyle(fontSize: 12.5, color: _muted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Expanded(flex: 4, child: _BannerArt()),
+          ],
+        ),
+      );
+
+  // ── Step 2: about ───────────────────────────────────────────────────────────
+  Widget _stepAbout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Head of the Ad'),
+        _field(_headCtrl, 'Enter Ad Headline'),
+        _label('Write About Your Ad'),
+        Container(
+          decoration: _boxDeco(),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: TextField(
+            controller: _descCtrl,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'Max 25 Words',
+              border: InputBorder.none,
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('$_wordCount/25',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: _wordCount > 25 ? Colors.red : _muted)),
+          ),
+        ),
+        _label('Contact Number'),
+        _field(_phoneCtrl, 'Enter Mobile Number',
+            keyboard: TextInputType.phone,
+            formatters: [FilteringTextInputFormatter.digitsOnly]),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('This number will be visible to interested people.',
+              style: TextStyle(fontSize: 12, color: _muted)),
+        ),
+        _label('Upload Photos'),
+        _photoPicker(),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('Add up to 3 photos', style: TextStyle(fontSize: 12, color: _muted)),
+        ),
+      ],
+    );
+  }
+
+  Widget _photoPicker() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: _pickPhotos,
+          child: Container(
+            width: double.infinity,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: const Color(0xFFCBD5E1), width: 1.4, style: BorderStyle.solid),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.upload_rounded, color: _muted, size: 28),
+                SizedBox(height: 8),
+                Text('Tap to Upload or browse',
+                    style: TextStyle(color: _muted, fontWeight: FontWeight.w600, fontSize: 13)),
+                SizedBox(height: 2),
+                Text('Supports: JPG or PNG (Max 50MB)',
+                    style: TextStyle(color: _muted, fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
+        if (_photos.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: _photos.asMap().entries.map((e) => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(base64Decode(e.value),
+                          width: 76, height: 76, fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: -6, right: -6,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _photos.removeAt(e.key)),
+                        child: const CircleAvatar(
+                          radius: 11, backgroundColor: Colors.white,
+                          child: Icon(Icons.cancel, color: Colors.redAccent, size: 20)),
+                      ),
+                    ),
+                  ],
+                )).toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Step 3: preview + payment ───────────────────────────────────────────────
+  Widget _stepPreview() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _previewCard(),
+        const SizedBox(height: 20),
+        const Text('Ad Publication Summary',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink)),
+        const SizedBox(height: 10),
+        _summaryBox(),
+        const SizedBox(height: 20),
+        const Text('Payment Details',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink)),
+        const SizedBox(height: 10),
+        _paymentBox(),
+        const SizedBox(height: 20),
+        const Text('Choose Payment Method',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink)),
+        const SizedBox(height: 10),
+        _payMethods(),
+      ],
+    );
+  }
+
+  Widget _previewCard() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _banner,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
         children: [
-          const ListingStepTitle('Create your listing'),
-          const SizedBox(height: 16),
-          ListingField(controller: _titleCtrl, hint: 'Title of your listing'),
-          const SizedBox(height: 12),
-          WordLimitedField(controller: _descCtrl, hint: 'Brief description (up to 25 words)'),
-          const SizedBox(height: 28),
-          ListingPrimaryButton(
-            label: 'Continue',
-            onTap: () {
-              if (_titleCtrl.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a title')));
-                return;
-              }
-              _next();
-            },
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: _photos.isNotEmpty
+                ? Image.memory(base64Decode(_photos.first),
+                    width: 84, height: 84, fit: BoxFit.cover)
+                : Container(width: 84, height: 84, color: Colors.white,
+                    child: const Icon(Icons.image_rounded, color: _blue)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(_headCtrl.text.trim().isEmpty ? 'Your ad title' : _headCtrl.text.trim(),
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ink)),
+                const SizedBox(height: 4),
+                Text(_phoneCtrl.text.trim(),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _blue)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                  child: Text(_category?.name ?? '',
+                      style: const TextStyle(fontSize: 11.5, color: _ink, fontWeight: FontWeight.w500)),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ── Step 2: Upload Photo ────────────────────────────────────────────────────
-  Widget _stepPhoto() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const ListingStepTitle('Upload photo'),
-        const SizedBox(height: 4),
-        const Text('One clear photo of your item or service.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-        const SizedBox(height: 16),
-        GestureDetector(
-          onTap: _pickPhoto,
-          child: Container(
-            width: double.infinity,
-            height: 180,
-            decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: _photo == null
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 48, height: 48,
-                        decoration: const BoxDecoration(color: Color(0xFFF3E8FF), shape: BoxShape.circle),
-                        child: const Icon(Icons.upload_rounded, color: Color(0xFF7C3AED), size: 24),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text('Tap to upload', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                    ],
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: FutureBuilder<Uint8List>(
-                      future: _photo!.readAsBytes(),
-                      builder: (context, snap) => snap.hasData
-                          ? Image.memory(snap.data!, fit: BoxFit.cover, width: double.infinity)
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-          ),
-        ),
-        const Spacer(),
-        ListingPrimaryButton(label: _photo == null ? 'Skip' : 'Continue', onTap: _next),
-      ],
-    );
-  }
-
-  // ── Step 3: Contact Details ─────────────────────────────────────────────────
-  Widget _stepContact() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const ListingStepTitle('Contact details'),
-        const SizedBox(height: 4),
-        const Text('Confirm your mobile number — it will be shown with the listing.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-        const SizedBox(height: 16),
-        ListingField(
-          controller: _phoneCtrl, hint: 'Mobile number',
-          keyboardType: TextInputType.phone,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        ),
-        const Spacer(),
-        ListingPrimaryButton(
-          label: 'Continue',
-          onTap: () {
-            if (_phoneCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Please confirm your mobile number')));
-              return;
-            }
-            _next();
-          },
-        ),
-      ],
-    );
-  }
-
-  // ── Step 4: Review ──────────────────────────────────────────────────────────
-  Widget _stepReview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const ListingStepTitle('Review your listing'),
-        const SizedBox(height: 16),
-        Expanded(
-          child: SingleChildScrollView(
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_category != null) _reviewRow('Category', _category!.name),
-                  _reviewRow('Title', _titleCtrl.text),
-                  _reviewRow('Description', _descCtrl.text),
-                  _reviewRow('Phone', _phoneCtrl.text),
-                  _reviewRow('Photo', _photo == null ? 'None' : 'Added'),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        ListingPrimaryButton(label: 'Continue to Payment', onTap: _next),
-      ],
-    );
-  }
-
-  Widget _reviewRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+  Widget _summaryBox() => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: _banner, borderRadius: BorderRadius.circular(12)),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)))),
-            Expanded(child: Text(value.isEmpty ? '—' : value, style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)))),
+            _summaryCell('Duration', '30 Days'),
+            _divider(),
+            _summaryCell('Visibility', 'Local'),
+            _divider(),
+            _summaryCell('Ad Type', 'Classifieds Ad'),
           ],
         ),
       );
 
-  // ── Step 5: Payment ─────────────────────────────────────────────────────────
-  Widget _stepPayment() {
-    if (_submitting) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)));
+  Widget _summaryCell(String k, String v) => Expanded(
+        child: Column(
+          children: [
+            Text(k, style: const TextStyle(fontSize: 11.5, color: _muted)),
+            const SizedBox(height: 4),
+            Text(v,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ink)),
+          ],
+        ),
+      );
+
+  Widget _divider() =>
+      Container(width: 1, height: 34, color: Colors.white);
+
+  Widget _paymentBox() => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: _banner, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          children: [
+            _payRow('Basic Charge (30 Days)', '₹${_baseFee.toStringAsFixed(2)}'),
+            const SizedBox(height: 8),
+            _payRow('GST (18%)', '₹${_gst.toStringAsFixed(2)}'),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Divider(height: 1, color: Colors.white),
+            ),
+            _payRow('Total Amount', '₹${_total.toStringAsFixed(2)}', bold: true),
+          ],
+        ),
+      );
+
+  Widget _payRow(String k, String v, {bool bold = false}) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(k,
+              style: TextStyle(
+                  fontSize: bold ? 15 : 13.5,
+                  color: bold ? _ink : _muted,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w500)),
+          Text(v,
+              style: TextStyle(
+                  fontSize: bold ? 16 : 14,
+                  color: bold ? _blue : _ink,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w600)),
+        ],
+      );
+
+  Widget _payMethods() {
+    Widget tile(String id, String label, IconData icon) {
+      final active = _payMethod == id;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _payMethod = id),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: active ? _blue : const Color(0xFFE2E8F0), width: active ? 1.6 : 1),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: _ink)),
+                    Icon(active ? Icons.radio_button_checked : Icons.radio_button_off,
+                        size: 16, color: active ? _blue : const Color(0xFFB0BEC5)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Icon(icon, size: 20, color: _muted),
+              ],
+            ),
+          ),
+        ),
+      );
     }
-    return PaymentStep(
-      amount: _listingFee,
-      purpose: 'Local Classifieds Listing — ${_category?.name ?? ''}',
-      onPaid: _publish,
+
+    return Row(children: [
+      tile('upi', 'UPI', Icons.account_balance_wallet_rounded),
+      tile('cards', 'Cards', Icons.credit_card_rounded),
+      tile('netbanking', 'Netbanking', Icons.account_balance_rounded),
+    ]);
+  }
+
+  // ── Bottom bar (Back + Continue) ────────────────────────────────────────────
+  Widget _bottomBar() => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _back,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _blue,
+                    side: const BorderSide(color: _blue),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: _submitting
+                      ? null
+                      : () {
+                          if (_step == 1) {
+                            if (_validateAbout()) setState(() => _step = 2);
+                          } else {
+                            _payAndPublish();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 22, height: 22,
+                          child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                      : Text(_step == 2 ? 'Continue' : 'Continue',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  // ── Success screen ──────────────────────────────────────────────────────────
+  Widget _successScreen() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: _appBar('Create Your Ad'),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 74, height: 74,
+                decoration: const BoxDecoration(color: Color(0xFFE7F7EC), shape: BoxShape.circle),
+                child: const Icon(Icons.check_circle_rounded, color: Color(0xFF1B7A3D), size: 46),
+              ),
+              const SizedBox(height: 16),
+              const Text('Payment Successful!',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _ink)),
+              const SizedBox(height: 6),
+              RichText(
+                textAlign: TextAlign.center,
+                text: const TextSpan(
+                  style: TextStyle(fontSize: 14, color: _ink),
+                  children: [
+                    TextSpan(text: 'Your Local Classifieds has been '),
+                    TextSpan(text: 'Live Now',
+                        style: TextStyle(color: _blue, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              _previewCard(),
+              const SizedBox(height: 22),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: const Text('Ad Publication Summary',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink)),
+              ),
+              const SizedBox(height: 10),
+              _summaryBox(),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => context.pushReplacement('/classified/list', extra: {
+                    'category': _category?.category ?? '',
+                    'subcategory': '',
+                    'title': _category?.name ?? 'Classifieds',
+                  }),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Continue',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Small helpers ───────────────────────────────────────────────────────────
+  Widget _label(String t) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 6),
+        child: Text(t, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: _ink)),
+      );
+
+  BoxDecoration _boxDeco() => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      );
+
+  Widget _field(TextEditingController c, String hint,
+      {TextInputType? keyboard, List<TextInputFormatter>? formatters}) {
+    return Container(
+      decoration: _boxDeco(),
+      child: TextField(
+        controller: c,
+        keyboardType: keyboard,
+        inputFormatters: formatters,
+        decoration: InputDecoration(
+          hintText: hint,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
+      ),
+    );
+  }
+}
+
+// Decorative map-pin + emoji cluster for the category banner.
+class _BannerArt extends StatelessWidget {
+  const _BannerArt();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 118,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: const [
+          Positioned(
+            left: 12, top: 26,
+            child: Icon(Icons.location_on, color: Color(0xFFE53935), size: 52),
+          ),
+          Positioned(right: 4, top: 0, child: _EmojiChip('🏪')),
+          Positioned(right: 30, top: 34, child: _EmojiChip('🧺')),
+          Positioned(right: 0, top: 62, child: _EmojiChip('🍴')),
+          Positioned(left: 6, bottom: 0, child: _EmojiChip('👩')),
+          Positioned(left: 44, bottom: 4, child: _EmojiChip('📱')),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmojiChip extends StatelessWidget {
+  final String emoji;
+  const _EmojiChip(this.emoji);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36, height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 5)],
+      ),
+      child: Text(emoji, style: const TextStyle(fontSize: 19)),
     );
   }
 }

@@ -291,6 +291,11 @@ async def register_shop(
     category: str = Form(...),
     shop_type: str = Form(...),
     discount_percentage: int = Form(15),
+    # Structured address (dropdown-driven; pincode/location above are derived)
+    country: str = Form(""),
+    state: str = Form(""),
+    district: str = Form(""),
+    city: str = Form(""),
     current_user=Depends(get_current_user),
 ):
     shop_type = (shop_type or "").strip().lower()
@@ -326,6 +331,11 @@ async def register_shop(
         "location": location,
         "phone": phone,
         "timing": timing,
+        # Structured address
+        "country": country,
+        "state": state,
+        "district": district,
+        "city": city,
         "category": category,
         "shop_type": shop_type,
         "discount_percentage": discount_percentage,

@@ -564,12 +564,12 @@ class _RedeemEligibilityScreenState extends State<RedeemEligibilityScreen>
                   child: Column(
                     children: [
                       const Text(
-                        'I AM ELIGIBLE FOR THE',
+                        'I AM ELIGIBLE FOR',
                         style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 20,
                             letterSpacing: 2.0,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFF9CA3AF)),
+                            color: Color.fromARGB(255, 11, 11, 11)),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 14),

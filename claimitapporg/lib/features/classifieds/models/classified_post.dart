@@ -22,6 +22,10 @@ class ClassifiedPost {
   final String listingType;
   final String businessName; // Local Finds only
   final String whatsapp;     // Local Finds only (optional)
+  final String email;        // Local Finds only (optional)
+  final String website;      // Local Finds only (optional)
+  final String social;       // Local Finds only (optional)
+  final String plan;         // Local Finds only: free | standard | premium
   final double? latitude;
   final double? longitude;
   final String paymentLinkId;
@@ -48,6 +52,10 @@ class ClassifiedPost {
     this.listingType = 'classified',
     this.businessName = '',
     this.whatsapp = '',
+    this.email = '',
+    this.website = '',
+    this.social = '',
+    this.plan = 'free',
     this.latitude,
     this.longitude,
     this.paymentLinkId = '',
@@ -77,6 +85,10 @@ class ClassifiedPost {
         listingType: j['listing_type'] as String? ?? 'classified',
         businessName: j['business_name'] as String? ?? '',
         whatsapp: j['whatsapp'] as String? ?? '',
+        email: j['email'] as String? ?? '',
+        website: j['website'] as String? ?? '',
+        social: j['social'] as String? ?? '',
+        plan: j['plan'] as String? ?? 'free',
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
         paymentLinkId: j['payment_link_id'] as String? ?? '',
@@ -98,6 +110,10 @@ class ClassifiedPost {
         'listing_type': listingType,
         'business_name': businessName,
         'whatsapp': whatsapp,
+        'email': email,
+        'website': website,
+        'social': social,
+        'plan': plan,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
         'payment_link_id': paymentLinkId,

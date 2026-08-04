@@ -37,6 +37,28 @@ def _serialize(doc: dict) -> dict:
     return doc
 
 
+# ── Local Finds business plans (see the Local Finds PDF) ──────────────────────
+# price is per year in rupees; photo_limit caps how many photos a listing on
+# that plan may store. NOTE: the Premium price below is a placeholder — change
+# "premium" price once finalised. Free is fully functional; paid-plan payment
+# (Razorpay) is intentionally deferred and wired in later.
+LOCAL_FIND_PLANS = {
+    "free":     {"price": 0,    "photo_limit": 1},
+    "standard": {"price": 999,  "photo_limit": 5},
+    "premium":  {"price": 1999, "photo_limit": 15},
+}
+
+
+def _plan(name: str) -> dict:
+    return LOCAL_FIND_PLANS.get((name or "free").strip().lower(), LOCAL_FIND_PLANS["free"])
+
+
+@router.get("/plans")
+async def get_local_find_plans(current_user: dict = Depends(get_current_user)):
+    """Plan catalogue for the Local Finds registration screen."""
+    return {"plans": LOCAL_FIND_PLANS}
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -45,11 +67,14 @@ async def list_classifieds(
     subcategory: Optional[str] = Query(None),
     pincode: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    listing_type: Optional[str] = Query(None),  # "local_find" | "classified"
     limit: int = Query(default=20, le=50),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
     query: dict = {}
+    if listing_type:
+        query["listing_type"] = listing_type
     if category:
         query["category"] = category
     if subcategory:
@@ -115,15 +140,22 @@ class CreateClassifiedRequest(BaseModel):
     photos: List[str] = []   # S3 keys (uploaded via /classifieds/upload-photo)
 
     # "classified" = Local Classifieds item/service post (fee Rs.250)
-    # "local_find" = Local Finds business directory listing (fee Rs.730/year)
+    # "local_find" = Local Finds business directory listing (plan-based)
     listing_type: str = "classified"
     business_name: str = ""       # Local Finds only
     whatsapp: str = ""            # Local Finds only (optional)
+    # Local Finds business contact details (all optional)
+    email: str = ""
+    website: str = ""
+    social: str = ""
+    # Local Finds plan: "free" | "standard" | "premium". Controls photo limit
+    # and (later) whether payment is required. Free is fully functional now.
+    plan: str = "free"
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-    # Cashfree payment reference captured once the listing fee is paid —
-    # set by the app after /payments/status/{link_id} returns "PAID".
+    # Payment reference captured once a paid plan's fee is paid (deferred —
+    # Razorpay wired in later; free plan needs none).
     payment_link_id: str = ""
     amount_paid: float = 0
 
@@ -134,6 +166,11 @@ async def create_classified(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
+    # For Local Finds listings, cap the stored photos to the plan's limit
+    # (Free 1 / Standard 5 / Premium 15). Classifieds keep their photos as-is.
+    photos = body.photos
+    if body.listing_type == "local_find":
+        photos = body.photos[: _plan(body.plan)["photo_limit"]]
     doc = {
         "user_id": current_user["_id"],
         "user_name": current_user.get("name", "User"),
@@ -148,10 +185,14 @@ async def create_classified(
         "area": body.area,
         "address": body.address,
         "payment_method": body.payment_method,
-        "photos": body.photos,   # list of S3 keys
+        "photos": photos,   # list of S3 keys (capped by plan for local_find)
         "listing_type": body.listing_type,
         "business_name": body.business_name,
         "whatsapp": body.whatsapp,
+        "email": body.email,
+        "website": body.website,
+        "social": body.social,
+        "plan": (body.plan or "free").strip().lower(),
         "latitude": body.latitude,
         "longitude": body.longitude,
         "payment_link_id": body.payment_link_id,
@@ -202,6 +243,10 @@ class UpdateClassifiedRequest(BaseModel):
     address: Optional[str] = None
     business_name: Optional[str] = None
     whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    social: Optional[str] = None
+    plan: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     photos: Optional[List[str]] = None
