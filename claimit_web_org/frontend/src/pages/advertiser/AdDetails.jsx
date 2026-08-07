@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AdvertiserSidebar from './AdvertiserSidebar'
+import api from '../../utils/api'
 
 const AD_LABELS = {
   home_banner: 'Home Page Banner Ad',
@@ -82,27 +83,108 @@ function HomeBannerFields({ data, onChange }) {
 }
 
 // ─── Promo Reelz fields ───────────────────────────────────────────────────────
+// Shop details are NOT typed by hand — a mistyped name never matches a real
+// shop, so the reel can't link to shop details in the app. Instead the owner
+// enters their registered mobile number and we fetch their live (activated)
+// shop from the DB and attach it. Only shops with a redeem/reward type show;
+// bulk-uploaded sample shops are excluded.
 function PromoReelzFields({ data, onChange }) {
+  const [mobile, setMobile] = useState('')
+  const [shops, setShops] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const fetchShops = async () => {
+    setMsg('')
+    const digits = mobile.replace(/[^0-9]/g, '')
+    if (digits.length < 10) { setMsg('Enter a valid 10-digit mobile number'); return }
+    setBusy(true)
+    setShops([])
+    // Clear any previously picked shop when re-searching.
+    onChange('shop_id', ''); onChange('shop_name', ''); onChange('shop_location', ''); onChange('shop_category', '')
+    try {
+      const res = await api.shop.lookupActiveByMobile(digits)
+      const list = res.shops || []
+      setShops(list)
+      if (list.length === 0) {
+        setMsg('No activated shop found for this number. Please create a shop first (register a Redeem or Reward shop), then come back to post your reel.')
+      }
+    } catch (e) {
+      setMsg(e?.response?.data?.detail || 'Could not fetch shops. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const pick = (s) => {
+    onChange('shop_id', s.id)
+    onChange('shop_name', s.shop_name)
+    onChange('shop_location', s.location || s.address || '')
+    onChange('shop_category', s.category || '')
+  }
+
   return (
     <>
       <div style={rowStyle}>
-        <label style={labelStyle}>Shop / Brand Name <span style={{ color: '#e53935' }}>*</span></label>
-        <input className="input-field" placeholder="e.g. FitZone Gym" value={data.shop_name || ''} onChange={e => onChange('shop_name', e.target.value)} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
-        <div>
-          <label style={labelStyle}>Shop Location <span style={{ color: '#e53935' }}>*</span></label>
-          <input className="input-field" placeholder="e.g. Anna Nagar, Chennai" value={data.shop_location || ''} onChange={e => onChange('shop_location', e.target.value)} />
+        <label style={labelStyle}>Shop Mobile Number <span style={{ color: '#e53935' }}>*</span></label>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <input className="input-field" placeholder="10-digit registered mobile number"
+            value={mobile}
+            onChange={e => setMobile(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+            style={{ flex: 1 }} />
+          <button type="button" onClick={fetchShops} disabled={busy}
+            style={{
+              padding: '10px 20px', border: 'none', borderRadius: 8,
+              background: '#1565C0', color: '#fff', fontWeight: 700, fontSize: 14,
+              cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              opacity: busy ? 0.6 : 1,
+            }}>
+            {busy ? 'Fetching…' : 'Fetch Shop'}
+          </button>
         </div>
-        <div>
-          <label style={labelStyle}>Category <span style={{ color: '#e53935' }}>*</span></label>
-          <select className="input-field" value={data.shop_category || ''} onChange={e => onChange('shop_category', e.target.value)}
-            style={inputStyle}>
-            <option value="">Select category</option>
-            {DEAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+          We fetch your live shop from Claimit — no manual typing, so the reel links to your real shop.
+        </p>
       </div>
+
+      {msg && (
+        <div style={{
+          background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 8,
+          padding: '10px 14px', color: '#8a6d00', fontSize: 13, marginBottom: 16,
+        }}>{msg}</div>
+      )}
+
+      {shops.map(s => {
+        const selected = data.shop_id === s.id
+        return (
+          <div key={s.id} onClick={() => pick(s)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: 14, marginBottom: 10,
+              border: `1.5px solid ${selected ? '#1565C0' : '#e0e0e0'}`, borderRadius: 10,
+              background: selected ? '#f0f4ff' : '#fff', cursor: 'pointer',
+            }}>
+            <input type="radio" checked={selected} readOnly />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{s.shop_name}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>
+                {(s.location || s.address || '')}{s.shop_type ? ` · ${s.shop_type} shop` : ''}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {data.shop_id && (
+        <div style={{
+          background: '#e8f5e9', border: '1px solid #b6e0ba', borderRadius: 8,
+          padding: '10px 14px', color: '#2e7d32', fontSize: 13, marginBottom: 18,
+        }}>
+          Selected: <b>{data.shop_name}</b>
+          {data.shop_location ? ` — ${data.shop_location}` : ''}
+          {data.shop_category ? ` · ${data.shop_category}` : ''}
+        </div>
+      )}
+
       <div style={rowStyle}>
         <label style={labelStyle}>Reel Caption <span style={{ color: '#e53935' }}>*</span></label>
         <textarea className="input-field" placeholder="Write a catchy caption for your reel..." value={data.caption || ''} onChange={e => onChange('caption', e.target.value)} rows={3} style={{ resize: 'vertical' }} />
@@ -306,8 +388,11 @@ export default function AdDetails() {
     if (adType === 'home_banner') {
       if (!extra.headline || !extra.sub) { setError('Headline and sub-text are required'); return }
     } else if (adType === 'promo_reelz') {
-      if (!extra.shop_name || !extra.shop_location || !extra.shop_category || !extra.caption || !extra.offer) {
-        setError('Please fill all required fields'); return
+      if (!extra.shop_id || !extra.shop_name) {
+        setError('Fetch and select your shop by mobile number first'); return
+      }
+      if (!extra.caption || !extra.offer) {
+        setError('Please fill the reel caption and offer text'); return
       }
     } else {
       // brand_deals / nearby_deals

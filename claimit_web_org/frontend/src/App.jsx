@@ -36,6 +36,7 @@ import { YourTeam, Earning, SalesSettings } from './pages/sales/SalesExtra'
 // Shop (L3)
 import ChooseService from './pages/shop/ChooseService'
 import ShopRegister from './pages/shop/ShopRegister'
+import ShopClaim from './pages/shop/ShopClaim'
 import ShopPhotos from './pages/shop/ShopPhotos'
 import SelectCategory from './pages/shop/SelectCategory'
 import ChooseShopType from './pages/shop/ChooseShopType'
@@ -49,6 +50,7 @@ import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminCreateAd from './pages/admin/AdminCreateAd'
 import AdminBulkShops from './pages/admin/AdminBulkShops'
+import AdminCategoryImages from './pages/admin/AdminCategoryImages'
 import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminDeletedUsers } from './pages/admin/AdminPages'
 
 // Protected route
@@ -194,6 +196,9 @@ export default function App() {
           <Route path="/shop/onboard" element={
             <ProtectedRoute requiredRole="shop"><ChooseService /></ProtectedRoute>
           } />
+          <Route path="/shop/onboard/claim" element={
+            <ProtectedRoute requiredRole="shop"><ShopClaim /></ProtectedRoute>
+          } />
           <Route path="/shop/onboard/register" element={
             <ProtectedRoute requiredRole="shop"><ShopRegister /></ProtectedRoute>
           } />
@@ -241,6 +246,7 @@ export default function App() {
             <Route path="/admin/create-ad" element={<AdminCreateAd />} />
             <Route path="/admin/shops"     element={<AdminShops />} />
             <Route path="/admin/bulk-shops" element={<AdminBulkShops />} />
+            <Route path="/admin/category-images" element={<AdminCategoryImages />} />
             <Route path="/admin/reviews"   element={<AdminReviews />} />
             <Route path="/admin/tickets"    element={<AdminTickets />} />
             <Route path="/admin/feedback"   element={<AdminFeedback />} />

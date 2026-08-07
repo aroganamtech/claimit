@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import smtplib
 import ssl
@@ -185,51 +186,50 @@ async def send_otp_sms(phone: str, otp: str) -> bool:
     """
     Route OTP delivery based on identifier type:
       • Email address  → SMTP email
-      • Phone number   → Twilio SMS (auto-formatted to E.164)
-    Falls back to console log if the respective provider is not configured.
+      • Phone number   → Twilio WhatsApp (SMS is intentionally NOT used)
+
+    Production WhatsApp (business-initiated) requires an APPROVED template, so
+    when `twilio_otp_template_sid` is set the OTP is sent via that Content
+    template with the code as variable {{1}}. If no template SID is set we fall
+    back to a plain-body message — that only works in the Twilio WhatsApp
+    sandbox (testing). Never sends SMS.
     """
     # ── Email path ────────────────────────────────────────────────────────────
     if "@" in phone:
         return await send_otp_email(phone, otp)
 
-    # ── WhatsApp path ─────────────────────────────────────────────────────────
+    # ── WhatsApp path (only) ──────────────────────────────────────────────────
     e164_phone = _format_e164(phone)
-    message_body = (
-        f"🔐 *Your Claimit OTP is: {otp}*\n\n"
-        f"Valid for 10 minutes. Do not share this code with anyone."
-    )
-
     client = _get_twilio_client()
-
-    # Prefer WhatsApp if a WhatsApp sender number is configured
     whatsapp_from = getattr(settings, "twilio_whatsapp_number", "").strip()
-    if client and whatsapp_from:
-        try:
+    template_sid = getattr(settings, "twilio_otp_template_sid", "").strip()
+
+    if not (client and whatsapp_from):
+        print(f"⚠️  Twilio WhatsApp not configured — OTP for {e164_phone}: {otp}")
+        return True
+
+    try:
+        if template_sid:
+            # Production: approved authentication template, {{1}} = the code.
             message = client.messages.create(
-                body=message_body,
+                from_=f"whatsapp:{whatsapp_from}",
+                to=f"whatsapp:{e164_phone}",
+                content_sid=template_sid,
+                content_variables=json.dumps({"1": otp}),
+            )
+        else:
+            # Sandbox / testing only — free-form body (no template).
+            message = client.messages.create(
+                body=(
+                    f"🔐 *Your Claimit OTP is: {otp}*\n\n"
+                    f"Valid for 10 minutes. Do not share this code with anyone."
+                ),
                 from_=f"whatsapp:{whatsapp_from}",
                 to=f"whatsapp:{e164_phone}",
             )
-            print(f"✅ OTP WhatsApp sent to {e164_phone} | Twilio SID: {message.sid}")
-            return True
-        except Exception as e:
-            print(f"❌ Twilio WhatsApp failed for {e164_phone}: {e}")
-            # Fall through to SMS fallback below
+        print(f"✅ OTP WhatsApp sent to {e164_phone} | Twilio SID: {message.sid}")
+    except Exception as e:
+        print(f"❌ Twilio WhatsApp failed for {e164_phone}: {e}")
 
-    # ── SMS fallback ──────────────────────────────────────────────────────────
-    sms_from = settings.twilio_phone_number.strip()
-    if client and sms_from:
-        try:
-            message = client.messages.create(
-                body=f"Your Claimit OTP is: {otp}. Valid for 10 minutes. Do not share it with anyone.",
-                from_=sms_from,
-                to=e164_phone,
-            )
-            print(f"✅ OTP SMS sent to {e164_phone} | Twilio SID: {message.sid}")
-            return True
-        except Exception as e:
-            print(f"❌ Twilio SMS failed for {e164_phone}: {e}")
-    else:
-        print(f"⚠️  Twilio not configured — OTP for {e164_phone}: {otp}")
-
+    # Never breaks the login flow — the OTP is stored in the DB regardless.
     return True

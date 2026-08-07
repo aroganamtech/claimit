@@ -1171,25 +1171,25 @@ final _banners = [
 
 final _categories = [
   _CatData(label: 'Supermarkets',          icon: Icons.local_grocery_store_rounded, color: Color(0xFF3B82F6)),
-  _CatData(label: 'Grocery /\nProvision',  icon: Icons.shopping_basket_rounded,   color: Color(0xFF10B981)),
-  _CatData(label: 'Medical\nStores',       icon: Icons.local_pharmacy_rounded,    color: Color(0xFF06B6D4)),
+  _CatData(label: 'Fruits &\nVegetables',  icon: Icons.eco_rounded,               color: Color(0xFF10B981)),
+  _CatData(label: 'Pharmacies',            icon: Icons.local_pharmacy_rounded,    color: Color(0xFF06B6D4)),
   _CatData(label: 'Restaurants',           icon: Icons.restaurant_rounded,        color: Color(0xFFEC4899)),
-  _CatData(label: 'Mobile\nStores',        icon: Icons.smartphone_rounded,        color: Color(0xFF0284C7)),
+  _CatData(label: 'Cafes',                 icon: Icons.local_cafe_rounded,        color: Color(0xFF92400E)),
+  _CatData(label: 'Fashion',               icon: Icons.checkroom_rounded,         color: Color(0xFFDB2777)),
+  _CatData(label: 'Footwear',              icon: Icons.directions_walk_rounded,   color: Color(0xFF0369A1)),
+  _CatData(label: 'Bakery &\nSweets',      icon: Icons.cake_rounded,              color: Color(0xFFF59E0B)),
   _CatData(label: 'Electronics',           icon: Icons.devices_rounded,           color: Color(0xFF7C3AED)),
-  _CatData(label: 'Departmental',          icon: Icons.apartment_rounded,         color: Color(0xFF0EA5E9)),
-  _CatData(label: 'Garment/\nFashion',     icon: Icons.checkroom_rounded,         color: Color(0xFFDB2777)),
-  _CatData(label: 'Jewellery',             icon: Icons.diamond_rounded,           color: Color(0xFFB45309)),
-  _CatData(label: 'Footwears',             icon: Icons.directions_run_rounded,    color: Color(0xFF0369A1)),
-  _CatData(label: 'Coffee\nShops',         icon: Icons.local_cafe_rounded,        color: Color(0xFF92400E)),
-  _CatData(label: 'Hospitals',             icon: Icons.local_hospital_rounded,    color: Color(0xFFDC2626)),
-  _CatData(label: 'Optical\nStores',       icon: Icons.visibility_rounded,        color: Color(0xFF0D9488)),
-  _CatData(label: 'Diagnostics',           icon: Icons.biotech_rounded,           color: Color(0xFF6366F1)),
-  _CatData(label: 'Furniture\nStores',     icon: Icons.chair_rounded,             color: Color(0xFF78350F)),
-  _CatData(label: 'Home Decor',            icon: Icons.weekend_rounded,           color: Color(0xFFF59E0B)),
-  _CatData(label: 'Beauty\nParlours',      icon: Icons.face_retouching_natural_rounded, color: Color(0xFFEC4899)),
-  _CatData(label: 'Salons',                icon: Icons.content_cut_rounded,       color: Color(0xFFF59E0B)),
+  _CatData(label: 'Mobile',                icon: Icons.smartphone_rounded,        color: Color(0xFF0284C7)),
+  _CatData(label: 'Furniture',             icon: Icons.chair_rounded,             color: Color(0xFF78350F)),
+  _CatData(label: 'Home\nFurnishing',      icon: Icons.king_bed_rounded,          color: Color(0xFFF59E0B)),
+  _CatData(label: 'Home\nAppliances',      icon: Icons.kitchen_rounded,           color: Color(0xFF0EA5E9)),
   _CatData(label: 'Baby\nStores',          icon: Icons.child_care_rounded,        color: Color(0xFFEC4899)),
-  _CatData(label: 'Online\nStores',        icon: Icons.shopping_cart_rounded,     color: Color(0xFF4F46E5)),
+  _CatData(label: 'Books &\nStationery',   icon: Icons.menu_book_rounded,         color: Color(0xFF6366F1)),
+  _CatData(label: 'Salons',                icon: Icons.content_cut_rounded,       color: Color(0xFFF59E0B)),
+  _CatData(label: 'Beauty\nParlours',      icon: Icons.spa_rounded,               color: Color(0xFFEC4899)),
+  _CatData(label: 'Optical',               icon: Icons.visibility_rounded,        color: Color(0xFF0D9488)),
+  _CatData(label: 'Diagnostic\nCentres',   icon: Icons.biotech_rounded,           color: Color(0xFF6366F1)),
+  _CatData(label: 'Hospitals',             icon: Icons.local_hospital_rounded,    color: Color(0xFFDC2626)),
 ];
 
 final _nearbyDeals = [
@@ -2493,8 +2493,8 @@ class _CategoryRowState extends State<_CategoryRow> {
     // Asset icons: icon1.png … icon30.png (1-based index)
     final assetPath = 'assets/icons/category_icon/icon${globalIndex + 1}.png';
 
-    // Use screen width for responsive icon size: ~13% of width, clamped 48–60
-    final iconSize = (MediaQuery.of(context).size.width * 0.11).clamp(40.0, 52.0);
+    // Use screen width for responsive icon size: ~13% of width, clamped 48–62
+    final iconSize = (MediaQuery.of(context).size.width * 0.13).clamp(48.0, 62.0);
 
     return SizedBox(
       width: width,
@@ -2551,16 +2551,20 @@ class _CategoryRowState extends State<_CategoryRow> {
             // sits on the same line whether its label is 1 or 2 lines long.
             SizedBox(
               height: 26,
-              child: Text(
-                cat.label,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10,
-                  height: 1.2,
-                  color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              width: double.infinity,
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    cat.label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.2,
+                      color: active ? const Color(0xFF2563EB) : Theme.of(context).colorScheme.onSurface,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -2622,7 +2626,9 @@ class _CategoryRowState extends State<_CategoryRow> {
     // 5 icons visible at a time (same density as the old pages)
     final slotW = MediaQuery.of(context).size.width / 5;
 
-    return SizedBox(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: SizedBox(
       height: catRowH,
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) {
@@ -2679,7 +2685,7 @@ class _CategoryRowState extends State<_CategoryRow> {
           },
         ),
       ),
-    );
+    ));
   }
 }
 

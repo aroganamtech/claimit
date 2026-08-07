@@ -705,7 +705,7 @@ class _ShopCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.07),
@@ -720,12 +720,12 @@ class _ShopCard extends StatelessWidget {
             // ── Left rectangular image ──────────────────────────────────
             ClipRRect(
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                bottomLeft: Radius.circular(16),
+                topLeft: Radius.circular(14),
+                bottomLeft: Radius.circular(14),
               ),
               child: SizedBox(
-                width: 130,
-                height: 130,
+                width: 120,
+                height: 110,
                 child: _shopImageWidget(shop, fit: BoxFit.cover),
               ),
             ),
@@ -770,21 +770,13 @@ class _ShopCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
 
-                    // Location
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on_rounded,
-                            size: 28, color: Color(0xFF9CA3AF)),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            shop.location,
-                            style: const TextStyle(
-                                fontSize: 13, color: Color(0xFF6B7280)),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    // Location (no icon — matches the home nearby-deals card)
+                    Text(
+                      shop.location,
+                      style: const TextStyle(
+                          fontSize: 13, color: Color(0xFF6B7280)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 6),
 

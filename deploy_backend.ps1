@@ -7,7 +7,7 @@
 
 $Key       = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit.pem"
 $Server    = "ubuntu@16.170.110.232"
-$Backend   = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit_web_org\fastapi\backend"
+$Backend   = "F:\my_project_git\claimit\claimit_web_org\fastapi\backend"
 $Local     = "$Backend\routers"
 $LocalUtil = "$Backend\utils"
 
@@ -26,9 +26,12 @@ $RemoteUtils   = "$RemoteBackend/utils"
 Write-Host "`nCopying admin.py, bill.py, shop.py, advertiser.py, payments.py..." -ForegroundColor Cyan
 scp -i $Key "$Local\admin.py" "$Local\bill.py" "$Local\shop.py" "$Local\advertiser.py" "$Local\payments.py" "${Server}:${RemoteDir}/"
 
-Write-Host "`nCopying utils/cashfree.py and main.py..." -ForegroundColor Cyan
-scp -i $Key "$LocalUtil\cashfree.py" "${Server}:${RemoteUtils}/"
+Write-Host "`nCopying utils/cashfree.py, utils/shop_bulk.py and main.py..." -ForegroundColor Cyan
+scp -i $Key "$LocalUtil\cashfree.py" "$LocalUtil\shop_bulk.py" "${Server}:${RemoteUtils}/"
 scp -i $Key "$Backend\main.py" "${Server}:${RemoteBackend}/"
+
+Write-Host "`nEnsuring openpyxl is installed on the server (needed for bulk shop upload)..." -ForegroundColor Cyan
+ssh -i $Key $Server "cd $RemoteBackend && (source venv/bin/activate 2>/dev/null; source .venv/bin/activate 2>/dev/null; pip install --quiet openpyxl) || pip3 install --user --quiet openpyxl"
 
 Write-Host "`nNOTE: .env is never auto-copied. If the server's .env doesn't already have Razorpay keys, add these two lines to it once (SSH in and edit), then re-run this script:" -ForegroundColor Yellow
 Write-Host "  RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxx      (use rzp_test_... for testing)" -ForegroundColor Yellow

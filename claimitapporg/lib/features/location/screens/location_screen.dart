@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/network/api_client.dart';
 import '../../auth/providers/auth_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +40,12 @@ class _LocationScreenState extends State<LocationScreen> {
   String? _selectedLocation;
   List<Map<String, dynamic>> _results = [];
 
+  // Dynamic "cities in this district (with shop counts)" — driven by the
+  // location the user picks. Falls back to the static popular list below.
+  List<Map<String, dynamic>> _nearbyCities = [];
+  String _nearbyDistrict = '';
+  bool _loadingNearby = false;
+
   final List<Map<String, dynamic>> _popularLocations = const [
     {'name': 'Anna Nagar',      'count': 24},
     {'name': 'Thoraipakkam',    'count': 23},
@@ -64,8 +71,55 @@ class _LocationScreenState extends State<LocationScreen> {
       final saved = context.read<AuthProvider>().user?.location;
       if (saved != null && saved.isNotEmpty) {
         setState(() => _selectedLocation = saved);
+        _loadNearby(saved);
+      } else if (LocationService.lastArea.isNotEmpty) {
+        _loadNearby(LocationService.lastArea);
       }
     });
+  }
+
+  // Ask the backend which cities in this place's district have shops, with
+  // counts, and show them in place of the static "Popular locations" list.
+  Future<void> _loadNearby(String place) async {
+    final p = place.split(',').first.trim();
+    if (p.isEmpty) return;
+    setState(() => _loadingNearby = true);
+    try {
+      final resp = await ApiClient().get(
+        '/locations/nearby-cities',
+        queryParams: {'place': p},
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final cities = (resp.data['cities'] as List?) ?? [];
+        setState(() {
+          _nearbyDistrict = resp.data['district'] as String? ?? '';
+          _nearbyCities = cities
+              .map<Map<String, dynamic>>((c) => {
+                    'name': (c['name'] ?? '').toString(),
+                    'count': (c['count'] as num?)?.toInt() ?? 0,
+                  })
+              .where((c) => (c['name'] as String).isNotEmpty)
+              .toList();
+        });
+      }
+    } catch (_) {
+      // Silent — the static popular list stays as the fallback.
+    } finally {
+      if (mounted) setState(() => _loadingNearby = false);
+    }
+  }
+
+  // Preview a place: keep the user on this screen and refresh the district's
+  // cities below, instead of navigating away immediately.
+  void _previewLocation(String label) {
+    setState(() {
+      _selectedLocation = label;
+      _searchCtrl.clear();
+      _results = [];
+      _isSearching = false;
+    });
+    _loadNearby(label);
   }
 
   @override
@@ -375,7 +429,7 @@ class _LocationScreenState extends State<LocationScreen> {
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _ManualEntry(onConfirm: _selectLocation),
+                child: _ManualEntry(onConfirm: _previewLocation),
               ),
             ],
 
@@ -423,7 +477,7 @@ class _LocationScreenState extends State<LocationScreen> {
             title: Text(label,
                 style: const TextStyle(
                     fontSize: 14, fontWeight: FontWeight.w500)),
-            onTap: () => _selectLocation(label),
+            onTap: () => _previewLocation(label),
           );
         },
       );
@@ -517,20 +571,39 @@ class _LocationScreenState extends State<LocationScreen> {
             const SizedBox(height: 20),
           ],
 
-          // Popular locations
-          const Text(
-            'Popular locations',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF111827),
-            ),
+          // Popular locations — becomes "Cities in <District>" once a place
+          // is picked, listing the district's cities that have shops.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _nearbyDistrict.isNotEmpty
+                      ? 'Cities in $_nearbyDistrict'
+                      : (_nearbyCities.isNotEmpty
+                          ? 'Cities with shops'
+                          : 'Popular locations'),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              if (_loadingNearby)
+                const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _blue),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: _popularLocations.map((loc) {
+            children: (_nearbyCities.isNotEmpty
+                    ? _nearbyCities
+                    : _popularLocations)
+                .map((loc) {
               final name     = loc['name'] as String;
               final count    = loc['count'] as int;
               final isActive = _selectedLocation == name;

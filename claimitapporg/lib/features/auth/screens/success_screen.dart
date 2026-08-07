@@ -89,16 +89,17 @@ class _SuccessScreenState extends State<SuccessScreen>
           children: [
             // ── Top: home page logo — centered ──────────────────────────────
             Padding(
-              padding: const EdgeInsets.only(top: 28, left: 20, right: 20),
+              padding: const EdgeInsets.only(top: 40, left: 20, right: 20),
               child: Center(
                 child: Image.asset(
                   'assets/images/home_main_logo.png',
-                  height: 36,
+                  height: 38,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => _FallbackLogo(),
                 ),
               ),
             ),
+
 
             // ── Centre: animated check circle ───────────────────────────────
             Expanded(

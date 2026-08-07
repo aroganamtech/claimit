@@ -39,6 +39,9 @@ app_db      = client[APP_DB_NAME]
 app_deals_collection        = app_db["deals"]
 app_reels_collection        = app_db["reels"]
 app_shops_collection        = app_db["shops"]
+# Per-category image pools (admin uploads up to 15 images per category; shops
+# with no own photo show a random image from their category).
+category_images_collection  = app_db["category_images"]
 app_banners_collection      = app_db["banners"]
 app_bill_reviews_collection = app_db["bill_manual_reviews"]
 app_notifications_collection = app_db["notifications"]

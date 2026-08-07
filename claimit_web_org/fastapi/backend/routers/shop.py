@@ -5,10 +5,16 @@ from database import (
 )
 from models.schemas import OfferUpdateRequest, StoreUpdateRequest, ReviewCreate, ReviewReplyRequest, GalleryPhotoRequest, GalleryPhotoKeyRequest
 from utils.dependencies import get_current_user
+from utils.auth import generate_otp, store_otp, verify_otp
+from pydantic import BaseModel
 from bson import ObjectId
 from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
+import os
+import smtplib
+import ssl
+from email.mime.text import MIMEText
 from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign, generate_presigned_upload_url, public_url as _public_url
 from utils.fcm import send_push_to_tokens
 from database import app_db as _app_db
@@ -51,46 +57,55 @@ _ALLOWED_DISCOUNTS = {5, 10, 15, 20, 25, 30}
 # categories screen) and the icon assets icon1.png … icon20.png. Extra aliases
 # map old/alternate wording onto the new ids so existing data still resolves.
 _CATEGORY_MAP: dict[str, int] = {
-    # ID 1 — Supermarkets
+    # 1 — Supermarkets
     "supermarkets": 1, "supermarket": 1,
-    # ID 2 — Grocery / Provision
-    "grocery": 2,      "groceries": 2,    "provision": 2,  "grocery / provision": 2,
-    # ID 3 — Medical Stores
-    "medical": 3,      "medical stores": 3, "pharmacy": 3,
-    # ID 4 — Restaurants
-    "restaurants": 4,  "restaurant": 4,   "food": 4,       "bakery": 4,
-    # ID 5 — Mobile Stores
-    "mobile": 5,       "mobile stores": 5, "mobiles": 5,   "mobile & accessories": 5,
-    # ID 6 — Electronics
-    "electronics": 6,  "computer": 6,     "laptop": 6,
-    # ID 7 — Departmental
-    "departmental": 7, "department": 7,   "department store": 7,
-    # ID 8 — Garment / Fashion
-    "garment": 8,      "garments": 8,     "fashion": 8,    "clothing": 8,  "apparel": 8, "garment / fashion": 8,
-    # ID 9 — Jewellery
-    "jewellery": 9,    "jewelry": 9,
-    # ID 10 — Footwears
-    "footwear": 10,    "footwears": 10,   "shoes": 10,     "shoe": 10,
-    # ID 11 — Coffee Shops
-    "coffee": 11,      "coffee shops": 11, "cafe": 11,     "cafes": 11,
-    # ID 12 — Hospitals
-    "hospitals": 12,   "hospital": 12,    "clinics": 12,   "clinic": 12,
-    # ID 13 — Optical Stores
-    "optical": 13,     "optical stores": 13, "optics": 13,
-    # ID 14 — Diagnostics
-    "diagnostics": 14, "diagnostic": 14,  "labs": 14,      "lab": 14,
-    # ID 15 — Furniture Stores
-    "furniture": 15,   "furniture stores": 15,
-    # ID 16 — Home Decor
-    "home decor": 16,  "home": 16,        "decor": 16,
-    # ID 17 — Beauty Parlours
-    "beauty": 17,      "beauty parlours": 17, "parlour": 17, "spa": 17,
-    # ID 18 — Salons
-    "salons": 18,      "salon": 18,
-    # ID 19 — Baby Stores
-    "baby": 19,        "baby stores": 19, "baby products": 19,
-    # ID 20 — Online Stores
-    "online": 20,      "online stores": 20,
+    # 2 — Fruits & Vegetables
+    "fruits & vegetables": 2, "fruits and vegetables": 2, "fruits_vegetables": 2,
+    "fruits": 2, "vegetables": 2, "veggies": 2, "fruits & veg": 2,
+    # 3 — Pharmacies
+    "pharmacies": 3, "pharmacy": 3, "medical": 3, "medical store": 3,
+    "medical stores": 3, "chemist": 3,
+    # 4 — Restaurants
+    "restaurants": 4, "restaurant": 4, "food": 4, "hotel": 4,
+    # 5 — Cafes
+    "cafes": 5, "cafe": 5, "café": 5, "coffee": 5, "coffee shop": 5, "coffee shops": 5,
+    # 6 — Fashion
+    "fashion": 6, "garment": 6, "garments": 6, "clothing": 6, "clothes": 6, "apparel": 6,
+    # 7 — Footwear
+    "footwear": 7, "footwears": 7, "shoes": 7, "shoe": 7,
+    # 8 — Bakery & Sweets
+    "bakery & sweets": 8, "bakery and sweets": 8, "bakery_sweets": 8, "bakery": 8,
+    "sweets": 8, "cakes": 8, "sweet shop": 8,
+    # 9 — Electronics
+    "electronics": 9, "electronic": 9, "electronics store": 9,
+    # 10 — Mobile
+    "mobile": 10, "mobiles": 10, "mobile store": 10, "mobile stores": 10,
+    "mobile & accessories": 10,
+    # 11 — Furniture
+    "furniture": 11, "furniture store": 11, "furniture stores": 11,
+    # 12 — Home Furnishing
+    "home furnishing": 12, "home_furnishing": 12, "home furnishings": 12,
+    "furnishing": 12, "home decor": 12, "home linen": 12, "curtains": 12,
+    # 13 — Home Appliances
+    "home appliances": 13, "home_appliances": 13, "appliances": 13,
+    "home appliance": 13, "kitchen appliances": 13,
+    # 14 — Baby Stores
+    "baby stores": 14, "baby_stores": 14, "baby": 14, "baby store": 14, "baby products": 14,
+    # 15 — Books & Stationery
+    "books & stationery": 15, "books and stationery": 15, "books_stationery": 15,
+    "books": 15, "book": 15, "stationery": 15, "book store": 15, "bookstore": 15,
+    # 16 — Salons
+    "salons": 16, "salon": 16,
+    # 17 — Beauty Parlours
+    "beauty parlours": 17, "beauty_parlours": 17, "beauty parlour": 17,
+    "beauty": 17, "parlour": 17, "parlor": 17, "spa": 17,
+    # 18 — Optical
+    "optical": 18, "optical store": 18, "optical stores": 18, "optics": 18, "eyewear": 18,
+    # 19 — Diagnostic Centres
+    "diagnostic centres": 19, "diagnostic_centres": 19, "diagnostic centre": 19,
+    "diagnostic center": 19, "diagnostics": 19, "diagnostic": 19, "labs": 19, "lab": 19,
+    # 20 — Hospitals
+    "hospitals": 20, "hospital": 20, "clinic": 20, "clinics": 20,
 }
 
 
@@ -291,6 +306,8 @@ async def register_shop(
     category: str = Form(...),
     shop_type: str = Form(...),
     discount_percentage: int = Form(15),
+    plan: str = Form(""),              # "premium" | "standard" | "other"
+    amount: float = Form(0),           # amount paid for the chosen plan
     # Structured address (dropdown-driven; pincode/location above are derived)
     country: str = Form(""),
     state: str = Form(""),
@@ -339,6 +356,8 @@ async def register_shop(
         "category": category,
         "shop_type": shop_type,
         "discount_percentage": discount_percentage,
+        "plan": (plan or "").strip().lower(),
+        "amount_paid": amount,
         "cover_photo_b64": None,
         "gallery_photos": [],
         "status": "pending",
@@ -362,6 +381,201 @@ async def register_shop(
     if "_id" in shop_doc:
         del shop_doc["_id"]
     return {"ok": True, "shop": shop_doc}
+
+
+# ─── Claim a bulk-uploaded shop by mobile number ─────────────────────────────
+# Flow: enter mobile → show unclaimed shops with that number → email OTP →
+# pick redeem/reward → plan (premium/standard/other custom amount) → static
+# payment → shop becomes the user's and shows in the app by its type.
+
+def _digits10(s: str) -> str:
+    d = re.sub(r"[^0-9]", "", s or "")
+    return d[-10:] if len(d) >= 10 else d
+
+
+@router.get("/lookup")
+async def lookup_shops_by_mobile(phone: str, current_user=Depends(get_current_user)):
+    """Unclaimed shops (bulk-uploaded, no owner yet) whose phone matches."""
+    want = _digits10(phone)
+    if len(want) < 10:
+        return {"shops": []}
+    cursor = shops_collection.find(
+        {"$or": [{"user_id": {"$exists": False}}, {"user_id": ""}, {"user_id": None}]}
+    )
+    out = []
+    async for s in cursor:
+        if _digits10(s.get("phone", "")) == want:
+            out.append({
+                "id":       str(s["_id"]),
+                "shop_name": s.get("shop_name") or s.get("name", ""),
+                "address":  s.get("shop_address") or s.get("address", ""),
+                "location": s.get("location", ""),
+                "category": s.get("category", ""),
+                "phone":    s.get("phone", ""),
+            })
+    return {"shops": out}
+
+
+@router.get("/lookup-active")
+async def lookup_active_shops_by_mobile(phone: str, current_user=Depends(get_current_user)):
+    """Activated shops whose phone matches — used by the Promo Reelz ad flow so a
+    reel links to a real, live shop instead of a hand-typed name. A shop counts
+    as activated when it has a redeem/reward type; bulk-uploaded sample shops
+    (no type yet) are intentionally excluded."""
+    want = _digits10(phone)
+    if len(want) < 10:
+        return {"shops": []}
+    cursor = shops_collection.find({"shop_type": {"$in": ["redeem", "reward"]}})
+    out = []
+    async for s in cursor:
+        if _digits10(s.get("phone", "")) == want:
+            out.append({
+                "id":        str(s["_id"]),
+                "shop_name": s.get("shop_name") or s.get("name", ""),
+                "address":   s.get("shop_address") or s.get("address", ""),
+                "location":  s.get("location", ""),
+                "category":  s.get("category", ""),
+                "shop_type": s.get("shop_type", ""),
+                "phone":     s.get("phone", ""),
+            })
+    return {"shops": out}
+
+
+def _send_email(to_email: str, subject: str, html: str) -> bool:
+    user = os.getenv("SMTP_USERNAME", "")
+    pw = os.getenv("SMTP_PASSWORD", "")
+    if not user or not pw:
+        return False
+    msg = MIMEText(html, "html")
+    msg["Subject"] = subject
+    msg["From"] = f"Claimit <{user}>"
+    msg["To"] = to_email
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP(os.getenv("SMTP_HOST", "smtp.gmail.com"),
+                      int(os.getenv("SMTP_PORT", "587")), timeout=8) as srv:
+        srv.ehlo()
+        srv.starttls(context=ctx)
+        srv.login(user, pw)
+        srv.sendmail(user, to_email, msg.as_string())
+    return True
+
+
+class EmailOtpSend(BaseModel):
+    email: str
+
+
+@router.post("/email-otp/send")
+async def send_shop_email_otp(body: EmailOtpSend, current_user=Depends(get_current_user)):
+    email = body.email.strip().lower()
+    otp = generate_otp()
+    await store_otp("shop_email", email, otp)
+    sent = False
+    try:
+        sent = _send_email(
+            email, f"{otp} is your Claimit verification code",
+            f"<p style='font-family:Arial'>Your Claimit shop verification code is "
+            f"<b style='font-size:22px'>{otp}</b>.<br>Valid for 10 minutes.</p>",
+        )
+    except Exception:
+        sent = False
+    resp = {"ok": True, "sent": sent}
+    if not sent:                       # SMTP not configured → surface for testing
+        resp["dev_otp"] = otp
+    return resp
+
+
+class EmailOtpVerify(BaseModel):
+    email: str
+    otp: str
+
+
+@router.post("/email-otp/verify")
+async def verify_shop_email_otp(body: EmailOtpVerify, current_user=Depends(get_current_user)):
+    ok = await verify_otp("shop_email", body.email.strip().lower(), body.otp.strip())
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    return {"ok": True, "verified": True}
+
+
+class ClaimShopBody(BaseModel):
+    shop_id: str
+    shop_type: str                 # "redeem" | "reward"
+    discount_percentage: int = 15  # redeem only
+    plan: str = ""                 # "premium" | "standard" | "other"
+    amount: float = 0
+    email: str = ""
+    image_key: str = ""            # optional new image (S3 key from presign)
+
+
+@router.post("/claim")
+async def claim_shop(body: ClaimShopBody, current_user=Depends(get_current_user)):
+    st = (body.shop_type or "").strip().lower()
+    if st not in ("reward", "redeem"):
+        raise HTTPException(status_code=400, detail="shop_type must be 'reward' or 'redeem'")
+    try:
+        oid = ObjectId(body.shop_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid shop id")
+    shop = await shops_collection.find_one({"_id": oid})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    if shop.get("user_id"):
+        raise HTTPException(status_code=400, detail="This shop is already registered")
+
+    disc = 0 if st == "reward" else (
+        body.discount_percentage if body.discount_percentage in _ALLOWED_DISCOUNTS else 15)
+
+    updates = {
+        "user_id":     str(current_user["_id"]),
+        "user_email":  (body.email or current_user.get("email", "")).strip(),
+        "shop_type":   st,
+        "has_rewards": st == "reward",
+        "has_redeem":  st == "redeem",
+        "discount_percentage": disc,
+        "discount":    disc,
+        "plan":        (body.plan or "").strip().lower(),
+        "amount_paid": body.amount,
+        "status":      "active",
+        # normalise keys so dashboard + app read them consistently
+        "shop_name":   shop.get("shop_name") or shop.get("name", ""),
+        "shop_address": shop.get("shop_address") or shop.get("address", ""),
+        "claimed_at":  datetime.utcnow(),
+    }
+    if body.image_key:
+        updates["image_s3_key"] = body.image_key
+        updates["image_s3_keys"] = [body.image_key]
+    await shops_collection.update_one({"_id": oid}, {"$set": updates})
+    try:
+        await _sync_shop_to_app(oid)
+    except Exception:
+        pass
+    return {"ok": True, "shop_id": body.shop_id, "shop_type": st}
+
+
+class ShopImageBody(BaseModel):
+    shop_id: str
+    image_key: str
+
+
+@router.patch("/image")
+async def update_shop_image(body: ShopImageBody, current_user=Depends(get_current_user)):
+    """Owner replaces a shop's image (bulk shops start with a category image)."""
+    try:
+        oid = ObjectId(body.shop_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid shop id")
+    shop = await shops_collection.find_one({"_id": oid, "user_id": str(current_user["_id"])})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    await shops_collection.update_one(
+        {"_id": oid},
+        {"$set": {"image_s3_key": body.image_key, "image_s3_keys": [body.image_key]}},
+    )
+    try:
+        await _sync_shop_to_app(oid)
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 # ─── Dashboard ────────────────────────────────────────────────

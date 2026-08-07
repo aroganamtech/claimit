@@ -5,26 +5,26 @@ import { useNavigate } from 'react-router-dom'
 // _CATEGORY_MAP. Order + numbering match the app's category ids 1-20 and the
 // icon assets icon1.png … icon20.png.
 const CATEGORIES = [
-  { label: 'Supermarkets',        value: 'supermarkets' },  // 1
-  { label: 'Grocery / Provision', value: 'grocery'      },  // 2
-  { label: 'Medical Stores',      value: 'medical'      },  // 3
-  { label: 'Restaurants',         value: 'restaurants'  },  // 4
-  { label: 'Mobile Stores',       value: 'mobile'       },  // 5
-  { label: 'Electronics',         value: 'electronics'  },  // 6
-  { label: 'Departmental',        value: 'departmental' },  // 7
-  { label: 'Garment / Fashion',   value: 'garment'      },  // 8
-  { label: 'Jewellery',           value: 'jewellery'    },  // 9
-  { label: 'Footwears',           value: 'footwear'     },  // 10
-  { label: 'Coffee Shops',        value: 'coffee'       },  // 11
-  { label: 'Hospitals',           value: 'hospitals'    },  // 12
-  { label: 'Optical Stores',      value: 'optical'      },  // 13
-  { label: 'Diagnostics',         value: 'diagnostics'  },  // 14
-  { label: 'Furniture Stores',    value: 'furniture'    },  // 15
-  { label: 'Home Decor',          value: 'home decor'   },  // 16
-  { label: 'Beauty Parlours',     value: 'beauty'       },  // 17
-  { label: 'Salons',              value: 'salons'       },  // 18
-  { label: 'Baby Stores',         value: 'baby'         },  // 19
-  { label: 'Online Stores',       value: 'online'       },  // 20
+  { label: 'Supermarkets',        value: 'supermarkets'       },  // 1
+  { label: 'Fruits & Vegetables', value: 'fruits_vegetables'  },  // 2
+  { label: 'Pharmacies',          value: 'pharmacies'         },  // 3
+  { label: 'Restaurants',         value: 'restaurants'        },  // 4
+  { label: 'Cafes',               value: 'cafes'              },  // 5
+  { label: 'Fashion',             value: 'fashion'            },  // 6
+  { label: 'Footwear',            value: 'footwear'           },  // 7
+  { label: 'Bakery & Sweets',     value: 'bakery_sweets'      },  // 8
+  { label: 'Electronics',         value: 'electronics'        },  // 9
+  { label: 'Mobile',              value: 'mobile'             },  // 10
+  { label: 'Furniture',           value: 'furniture'          },  // 11
+  { label: 'Home Furnishing',     value: 'home_furnishing'    },  // 12
+  { label: 'Home Appliances',     value: 'home_appliances'    },  // 13
+  { label: 'Baby Stores',         value: 'baby_stores'        },  // 14
+  { label: 'Books & Stationery',  value: 'books_stationery'   },  // 15
+  { label: 'Salons',              value: 'salons'             },  // 16
+  { label: 'Beauty Parlours',     value: 'beauty_parlours'    },  // 17
+  { label: 'Optical',             value: 'optical'            },  // 18
+  { label: 'Diagnostic Centres',  value: 'diagnostic_centres' },  // 19
+  { label: 'Hospitals',           value: 'hospitals'          },  // 20
 ]
 
 export default function SelectCategory() {

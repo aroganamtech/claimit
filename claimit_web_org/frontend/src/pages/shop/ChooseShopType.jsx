@@ -3,15 +3,30 @@ import { useNavigate } from 'react-router-dom'
 
 const DISCOUNT_OPTIONS = [5, 10, 15, 20, 25, 30]
 
+const PLANS = [
+  { id: 'premium',  name: 'Premium',  price: 1999, note: 'Top placement + full visibility' },
+  { id: 'standard', name: 'Standard', price: 999,  note: 'Priority listing' },
+  { id: 'other',    name: 'Other',    price: 0,    note: 'Enter any amount' },
+]
+
 export default function ChooseShopType() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState('')
   const [discount, setDiscount] = useState(15)   // default 15 %
+  const [planId, setPlanId] = useState('premium')
+  const [customAmount, setCustomAmount] = useState('')
+
+  const planAmount = planId === 'other'
+    ? Number(customAmount || 0)
+    : (PLANS.find(p => p.id === planId)?.price || 0)
 
   const handleContinue = () => {
     if (!selected) return
+    if (planId === 'other' && planAmount <= 0) return
     sessionStorage.setItem('shop_type', selected)
     sessionStorage.setItem('shop_discount', String(discount))
+    sessionStorage.setItem('shop_plan', planId)
+    sessionStorage.setItem('shop_amount', String(planAmount))
     navigate('/shop/onboard/review')
   }
 
@@ -125,11 +140,54 @@ export default function ChooseShopType() {
             </div>
           )}
 
+          {/* Plan picker — Premium / Standard / Other custom amount */}
+          <div style={{ fontWeight: 700, fontSize: 15, margin: '4px 0 12px' }}>Choose your plan</div>
+          {PLANS.map(p => (
+            <div
+              key={p.id}
+              onClick={() => setPlanId(p.id)}
+              style={{
+                border: `1.5px solid ${planId === p.id ? '#1565C0' : '#eee'}`,
+                borderRadius: 10, padding: '14px 18px', marginBottom: 10,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
+                background: planId === p.id ? '#f0f4ff' : '#fff'
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div>
+                <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>{p.note}</div>
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1565C0', whiteSpace: 'nowrap' }}>
+                {p.id === 'other' ? 'Custom' : `₹${p.price}`}
+              </div>
+              <div style={{
+                width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                border: `2px solid ${planId === p.id ? '#1565C0' : '#bbb'}`,
+                background: planId === p.id ? '#1565C0' : '#fff'
+              }} />
+            </div>
+          ))}
+          {planId === 'other' && (
+            <input
+              type="number"
+              min="1"
+              placeholder="Enter amount (₹)"
+              value={customAmount}
+              onChange={e => setCustomAmount(e.target.value.replace(/[^0-9]/g, ''))}
+              style={{
+                width: '100%', padding: '12px 14px', border: '1.5px solid #ccd4f0',
+                borderRadius: 10, fontSize: 15, boxSizing: 'border-box',
+                fontFamily: 'inherit', marginBottom: 12
+              }}
+            />
+          )}
+          <div style={{ height: 8 }} />
+
           <button
             className="btn-primary"
             onClick={handleContinue}
-            style={{ marginBottom: 12, opacity: selected ? 1 : 0.5 }}
-            disabled={!selected}
+            style={{ marginBottom: 12, opacity: (selected && !(planId === 'other' && planAmount <= 0)) ? 1 : 0.5 }}
+            disabled={!selected || (planId === 'other' && planAmount <= 0)}
           >
             Continue
           </button>

@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../data/classified_categories.dart';
@@ -71,8 +73,18 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
 
   // Step 1
   final _nameCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();          // door / street line
   String? _categoryId;
+
+  // Structured address (pincode-driven, like the website form).
+  static const String _country = 'India';
+  final _pincodeCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _districtCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  List<String> _areas = [];
+  String? _selectedArea;
+  bool _pinLoading = false;
 
   // Step 2
   final _emailCtrl = TextEditingController();
@@ -93,9 +105,55 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
   void dispose() {
     _nameCtrl.dispose();
     _addressCtrl.dispose();
+    _pincodeCtrl.dispose();
+    _stateCtrl.dispose();
+    _districtCtrl.dispose();
+    _cityCtrl.dispose();
     _emailCtrl.dispose();
     _websiteCtrl.dispose();
     super.dispose();
+  }
+
+  // Look up state / district / area list from a 6-digit pincode using the
+  // free India Post API (same source the website uses). Dynamic, no key.
+  Future<void> _lookupPincode(String pin) async {
+    if (pin.length != 6) return;
+    setState(() => _pinLoading = true);
+    try {
+      final resp = await http
+          .get(Uri.parse('https://api.postalpincode.in/pincode/$pin'))
+          .timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        if (data is List && data.isNotEmpty && data[0]['Status'] == 'Success') {
+          final offices = (data[0]['PostOffice'] as List?) ?? [];
+          if (offices.isNotEmpty) {
+            final first = offices.first as Map;
+            _stateCtrl.text = (first['State'] ?? '').toString();
+            _districtCtrl.text = (first['District'] ?? '').toString();
+            if (_cityCtrl.text.trim().isEmpty) {
+              _cityCtrl.text = (first['District'] ?? '').toString();
+            }
+            _areas = offices
+                .map<String>((o) => ((o as Map)['Name'] ?? '').toString())
+                .where((s) => s.isNotEmpty)
+                .toSet()
+                .toList();
+            _selectedArea = _areas.isNotEmpty ? _areas.first : null;
+          }
+        } else {
+          _stateCtrl.text = '';
+          _districtCtrl.text = '';
+          _areas = [];
+          _selectedArea = null;
+          _snack('No records found for this pincode');
+        }
+      }
+    } catch (_) {
+      _snack('Could not look up pincode. Check your connection.');
+    } finally {
+      if (mounted) setState(() => _pinLoading = false);
+    }
   }
 
   _Plan get _plan => _plans.firstWhere((p) => p.id == _planId);
@@ -113,7 +171,9 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
   bool _validateStep() {
     if (_step == 0) {
       if (_nameCtrl.text.trim().isEmpty) { _snack('Enter your business name'); return false; }
-      if (_addressCtrl.text.trim().isEmpty) { _snack('Enter your business address'); return false; }
+      if (_pincodeCtrl.text.trim().length != 6) { _snack('Enter a valid 6-digit pincode'); return false; }
+      if (_stateCtrl.text.trim().isEmpty) { _snack('Enter your pincode to fill state & district'); return false; }
+      if (_addressCtrl.text.trim().isEmpty) { _snack('Enter your street / door address'); return false; }
       if (_categoryId == null) { _snack('Select a business category'); return false; }
     }
     return true;
@@ -173,9 +233,13 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
       description: '',
       price: _plan.price.toDouble(),
       yearsOfExp: 0,
-      pincode: '',
-      area: '',
+      pincode: _pincodeCtrl.text.trim(),
+      area: _selectedArea ?? '',
       address: _addressCtrl.text.trim(),
+      country: _country,
+      state: _stateCtrl.text.trim(),
+      district: _districtCtrl.text.trim(),
+      city: _cityCtrl.text.trim(),
       photos: _photos,
       listingType: 'local_find',
       businessName: _nameCtrl.text.trim(),
@@ -373,8 +437,20 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
       children: [
         _label('Business Name'),
         _field(_nameCtrl, 'Enter your business name'),
-        _label('Business Address'),
-        _field(_addressCtrl, 'Enter your business address', maxLines: 2),
+        _label('Country'),
+        _readonlyField(_country),
+        _label('Pincode'),
+        _pincodeField(),
+        _label('State'),
+        _readonlyField(_stateCtrl.text.isEmpty ? 'Auto-filled from pincode' : _stateCtrl.text),
+        _label('District'),
+        _readonlyField(_districtCtrl.text.isEmpty ? 'Auto-filled from pincode' : _districtCtrl.text),
+        _label('City'),
+        _field(_cityCtrl, 'City / town'),
+        _label('Area'),
+        _areaDropdown(),
+        _label('Address (Door No, Street)'),
+        _field(_addressCtrl, 'Enter your street / door address', maxLines: 2),
         _label('Business Category'),
         Container(
           decoration: _boxDeco(),
@@ -571,6 +647,85 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
           hintText: hint,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
+      ),
+    );
+  }
+
+  // Pincode entry — looks up state/district/area as soon as 6 digits are typed.
+  Widget _pincodeField() {
+    return Container(
+      decoration: _boxDeco(),
+      child: TextField(
+        controller: _pincodeCtrl,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(6),
+        ],
+        onChanged: (v) {
+          if (v.length == 6) {
+            _lookupPincode(v);
+          } else {
+            setState(() {
+              _stateCtrl.text = '';
+              _districtCtrl.text = '';
+              _areas = [];
+              _selectedArea = null;
+            });
+          }
+        },
+        decoration: InputDecoration(
+          hintText: 'Enter 6-digit pincode',
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          suffixIcon: _pinLoading
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _blue)),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  // Read-only, auto-filled field (state / district / country).
+  Widget _readonlyField(String text) {
+    final empty = text.startsWith('Auto-filled');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 14, color: empty ? const Color(0xFF94A3B8) : _ink)),
+    );
+  }
+
+  // Area dropdown — post offices returned for the entered pincode.
+  Widget _areaDropdown() {
+    if (_areas.isEmpty) {
+      return _readonlyField('Enter pincode to load areas');
+    }
+    return Container(
+      decoration: _boxDeco(),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: _selectedArea,
+          hint: const Text('Select area'),
+          items: _areas
+              .map((a) => DropdownMenuItem(value: a, child: Text(a)))
+              .toList(),
+          onChanged: (v) => setState(() => _selectedArea = v),
         ),
       ),
     );

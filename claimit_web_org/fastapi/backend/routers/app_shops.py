@@ -11,19 +11,50 @@ Serves the Flutter app's /shops requests.
 """
 
 from fastapi import APIRouter, Query, HTTPException
-from database import app_shops_collection, reviews_collection
+from database import app_shops_collection, reviews_collection, category_images_collection
 from utils.s3 import generate_presigned_url_sync as _presign
 from bson import ObjectId
 from typing import Optional
 from datetime import datetime
 import math
+import random
 
 router = APIRouter()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
+async def _load_category_images() -> dict:
+    """category_id → [s3 keys] for shops that have no own photo."""
+    m: dict = {}
+    async for d in category_images_collection.find():
+        keys = d.get("keys") or []
+        if keys:
+            m[d.get("category_id")] = keys
+    return m
+
+
+def _category_cover(doc: dict, cat_images: dict) -> str:
+    """A stable random image (seeded by shop id) from the shop's first category
+    that has an image pool. Empty string if none available."""
+    if not cat_images:
+        return ""
+    cids = []
+    for c in (doc.get("category_ids") or []):
+        try:
+            cids.append(int(c))
+        except (ValueError, TypeError):
+            pass
+    for cid in cids:
+        keys = cat_images.get(cid)
+        if keys:
+            rnd = random.Random(f"{doc.get('_id')}:{cid}")
+            return _presign(rnd.choice(keys)) or ""
+    return ""
+
+
+def _serialize_shop(doc: dict, include_gallery: bool = False,
+                    cat_images: dict = None) -> dict:
     """Convert a MongoDB shops document → Flutter ShopItem JSON shape."""
     sid = str(doc["_id"])
 
@@ -35,6 +66,9 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
             from urllib.parse import urlparse
             key = urlparse(stored_url).path.lstrip("/")
             cover_url = _presign(key) or ""
+    # Final fallback: a random image from the shop's category pool.
+    if not cover_url:
+        cover_url = _category_cover(doc, cat_images)
 
     gallery_urls = []
     if include_gallery:
@@ -74,6 +108,15 @@ def _serialize_shop(doc: dict, include_gallery: bool = False) -> dict:
     return result
 
 
+# Plan tier ordering — Premium shops surface first, then Standard, then every
+# other shop (custom "other" plan, free, or bulk-uploaded shops with no plan).
+_PLAN_ORDER = {"premium": 0, "standard": 1}
+
+
+def _plan_rank(doc: dict) -> int:
+    return _PLAN_ORDER.get((doc.get("plan") or "").strip().lower(), 2)
+
+
 def _haversine_km(lat1, lng1, lat2, lng2) -> float:
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -108,7 +151,10 @@ async def list_shops(
     projection = {"cover_photo_b64": 0, "gallery_photos": 0, "image_data_list": 0}
 
     docs = await app_shops_collection.find(query, projection).limit(limit).to_list(limit)
-    shops = [_serialize_shop(d, include_gallery=False) for d in docs]
+    # Premium first, then Standard, then everyone else (stable within a tier).
+    docs.sort(key=_plan_rank)
+    cat_images = await _load_category_images()
+    shops = [_serialize_shop(d, include_gallery=False, cat_images=cat_images) for d in docs]
     return {"shops": shops}
 
 
@@ -130,6 +176,7 @@ async def nearby_shops(
             pass
 
     docs = await app_shops_collection.find(query, projection).to_list(500)
+    cat_images = await _load_category_images()
 
     nearby = []
     for d in docs:
@@ -142,12 +189,13 @@ async def nearby_shops(
         except Exception:
             continue
         if dist <= radius_km:
-            shop = _serialize_shop(d, include_gallery=False)
+            shop = _serialize_shop(d, include_gallery=False, cat_images=cat_images)
             shop["distance"] = f"{dist:.1f} Km"
-            nearby.append((dist, shop))
+            nearby.append((_plan_rank(d), dist, shop))
 
-    nearby.sort(key=lambda x: x[0])
-    return {"shops": [s for _, s in nearby]}
+    # Premium first, then Standard, then others — distance breaks ties.
+    nearby.sort(key=lambda x: (x[0], x[1]))
+    return {"shops": [s for _, _, s in nearby]}
 
 
 # ── GET /shops/search ─────────────────────────────────────────────────────────
@@ -162,7 +210,8 @@ async def search_shops(q: str = Query(..., min_length=1)):
         ]
     }
     docs = await app_shops_collection.find(query, projection).limit(30).to_list(30)
-    return {"shops": [_serialize_shop(d, include_gallery=False) for d in docs]}
+    cat_images = await _load_category_images()
+    return {"shops": [_serialize_shop(d, include_gallery=False, cat_images=cat_images) for d in docs]}
 
 
 # ── GET /shops/{id} ───────────────────────────────────────────────────────────
@@ -178,7 +227,8 @@ async def get_shop(shop_id: str):
     doc = await app_shops_collection.find_one({"_id": oid}, projection)
     if not doc:
         raise HTTPException(status_code=404, detail="Shop not found")
-    return {"shop": _serialize_shop(doc, include_gallery=True)}
+    cat_images = await _load_category_images()
+    return {"shop": _serialize_shop(doc, include_gallery=True, cat_images=cat_images)}
 
 
 # ── GET /shops/{id}/reviews ───────────────────────────────────────────────────

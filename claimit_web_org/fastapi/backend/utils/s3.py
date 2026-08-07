@@ -64,6 +64,13 @@ def _sync_delete(key: str):
     _s3_client().delete_object(Bucket=_bucket(), Key=key)
 
 
+def download_bytes(s3_key: str) -> bytes:
+    """Fetch an object's raw bytes by key (accepts a key or a full URL)."""
+    key = _normalize_key(s3_key)
+    resp = _s3_client().get_object(Bucket=_bucket(), Key=key)
+    return resp["Body"].read()
+
+
 async def delete_object(s3_key: str) -> bool:
     """
     Best-effort delete of a bucket object (accepts a raw key OR a full URL).

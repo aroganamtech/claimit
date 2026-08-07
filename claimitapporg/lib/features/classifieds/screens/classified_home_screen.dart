@@ -83,6 +83,12 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         title: const Text('Local Classifieds',
             style: TextStyle(color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
+          // Create Ad — opens the category page (self-posting flow).
+          IconButton(
+            tooltip: 'Create Ad',
+            icon: const Icon(Icons.post_add, color: _blue),
+            onPressed: () => context.push('/classified/add'),
+          ),
           IconButton(
             tooltip: 'My Listings',
             icon: const Icon(Icons.list_alt_rounded, color: _blue),
@@ -95,7 +101,20 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
-            _sectionHeader('Local Classifieds Categories', _openAll),
+            // ── Ads first: the created classifieds with their details ──────────
+            _sectionHeader('Latest Ads', _openAll),
+            const SizedBox(height: 12),
+            if (_loading)
+              const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator(color: _blue)))
+            else if (_recent.isEmpty)
+              _emptyRecent()
+            else
+              ..._recent.map(_recentCard),
+            const SizedBox(height: 22),
+            // ── Browse by category ─────────────────────────────────────────────
+            _sectionHeader('Categories', _openAll),
             const SizedBox(height: 12),
             _searchBar(),
             const SizedBox(height: 18),
@@ -109,17 +128,6 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
               _categoriesGrid(cats),
             const SizedBox(height: 20),
             _findBanner(),
-            const SizedBox(height: 22),
-            _sectionHeader('Recent Classifieds', _openAll),
-            const SizedBox(height: 12),
-            if (_loading)
-              const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator(color: _blue)))
-            else if (_recent.isEmpty)
-              _emptyRecent()
-            else
-              ..._recent.take(10).map(_recentCard),
           ],
         ),
       ),
@@ -168,7 +176,7 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
                 ),
               ),
             ),
-            Icon(Icons.mic_none_rounded, color: _muted.withOpacity(0.7), size: 22),
+            // Icon(Icons.mic_none_rounded, color: _muted.withOpacity(0.7), size: 22),
           ],
         ),
       );
@@ -281,7 +289,8 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           border: Border.all(color: const Color(0xFFEEF1F5)),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
         ),
-        child: Row(
+        child: IntrinsicHeight(
+          child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
@@ -315,6 +324,7 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );

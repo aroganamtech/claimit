@@ -13,7 +13,7 @@ const _allCategories = [
   _Cat('Restaurants',           Icons.restaurant_rounded,       Color(0xFFEC4899)),
   _Cat('Mobile\nStores',        Icons.smartphone_rounded,       Color(0xFF0284C7)),
   _Cat('Electronics',           Icons.devices_rounded,          Color(0xFF7C3AED)),
-  _Cat('Departmental',          Icons.apartment_rounded,        Color(0xFF0EA5E9)),
+  _Cat('Department\nStores',    Icons.apartment_rounded,        Color(0xFF0EA5E9)),
   _Cat('Garment/\nFashion',     Icons.checkroom_rounded,        Color(0xFFDB2777)),
   _Cat('Jewellery',             Icons.diamond_rounded,          Color(0xFFB45309)),
   _Cat('Footwears',             Icons.directions_run_rounded,   Color(0xFF0369A1)),
@@ -82,7 +82,7 @@ class CategoriesScreen extends StatelessWidget {
           crossAxisCount: 4,
           mainAxisSpacing: 20,
           crossAxisSpacing: 8,
-          childAspectRatio: 0.75,
+          childAspectRatio: 0.62,
         ),
         itemCount: _allCategories.length,
         itemBuilder: (context, index) {
@@ -103,15 +103,15 @@ class CategoriesScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 68,
-                  height: 68,
+                  width: 78,
+                  height: 78,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       Image.asset(
                         'assets/icons/category_icon/icon${index + 1}.png',
-                        width: 68,
-                        height: 68,
+                        width: 78,
+                        height: 78,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) =>
                             Icon(cat.icon, size: 36, color: cat.color),
@@ -143,14 +143,19 @@ class CategoriesScreen extends StatelessWidget {
                 const SizedBox(height: 6),
                 SizedBox(
                   height: 32,
-                  child: Text(
-                    cat.label,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.2,
-                      color: Colors.black87,
+                  width: double.infinity,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        cat.label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          height: 1.2,
+                          color: Colors.black87,
+                        ),
+                      ),
                     ),
                   ),
                 ),

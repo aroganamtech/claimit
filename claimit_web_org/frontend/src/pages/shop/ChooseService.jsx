@@ -44,7 +44,7 @@ export default function ChooseService() {
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 48 }}>Choose The Services</h2>
 
         <div
-          onClick={() => navigate('/shop/onboard/register')}
+          onClick={() => navigate('/shop/onboard/claim')}
           style={{
             width: 320, padding: '40px 24px',
             background: '#fff', border: '1.5px solid #eee',
@@ -60,7 +60,7 @@ export default function ChooseService() {
         <button
           className="btn-primary"
           style={{ width: 320 }}
-          onClick={() => navigate('/shop/onboard/register')}
+          onClick={() => navigate('/shop/onboard/claim')}
         >
           Get Started
         </button>

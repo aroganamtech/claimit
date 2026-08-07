@@ -93,9 +93,30 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
       lfCurrentPosition(),
     ]);
     if (!mounted) return;
+    final list = results[0] as List<ClassifiedPost>;
+    final me = results[1] as Position?;
+
+    // Order: Premium first, then Standard, then Free; and within each tier the
+    // nearest business first (based on the user's current location).
+    int planRank(String p) =>
+        p == 'premium' ? 0 : (p == 'standard' ? 1 : 2);
+    double distOf(ClassifiedPost b) {
+      if (me == null || b.latitude == null || b.longitude == null) {
+        return double.infinity;
+      }
+      return Geolocator.distanceBetween(
+          me.latitude, me.longitude, b.latitude!, b.longitude!);
+    }
+
+    list.sort((a, b) {
+      final r = planRank(a.plan).compareTo(planRank(b.plan));
+      if (r != 0) return r;
+      return distOf(a).compareTo(distOf(b));
+    });
+
     setState(() {
-      _nearby = results[0] as List<ClassifiedPost>;
-      _me = results[1] as Position?;
+      _nearby = list;
+      _me = me;
       _loading = false;
     });
   }
@@ -111,7 +132,7 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kLfBlue, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Local Finds',
+        title: const Text('Local Finders',
             style: TextStyle(color: kLfBlue, fontWeight: FontWeight.w700, fontSize: 18)),
       ),
       body: RefreshIndicator(
@@ -178,7 +199,8 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
           border: Border.all(color: const Color(0xFFEEF1F5)),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
         ),
-        child: Row(
+        child: IntrinsicHeight(
+          child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
@@ -233,6 +255,7 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -315,11 +338,11 @@ class LfDiscoverBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Discover Local\nBusinesses &\nServices Near You',
+                const Text('Finds Local\nBusinesses &\nServices\nNear You',
                     style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800, color: kLfBlue, height: 1.3)),
+                        fontSize: 23, fontWeight: FontWeight.w800, color: kLfBlue, height: 1.3)),
                 const SizedBox(height: 8),
-                const Text('Find trusted businesses within 5 km of your location.',
+                const Text('Find trusted\nbusinesses within 5 km of your location.',
                     style: TextStyle(fontSize: 12.5, color: kLfMuted, height: 1.4)),
                 const SizedBox(height: 14),
                 ElevatedButton(

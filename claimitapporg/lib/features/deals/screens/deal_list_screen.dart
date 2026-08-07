@@ -628,7 +628,7 @@ class _DealCardState extends State<_DealCard> {
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.07),
@@ -643,11 +643,11 @@ class _DealCardState extends State<_DealCard> {
             // ── Left rectangular image ─────────────────────────────────
             ClipRRect(
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                bottomLeft: Radius.circular(16),
+                topLeft: Radius.circular(14),
+                bottomLeft: Radius.circular(14),
               ),
               child: SizedBox(
-                width: 110,
+                width: 120,
                 height: 110,
                 child: d.imageUrl.isNotEmpty
                     ? CachedNetworkImage(
@@ -721,22 +721,13 @@ class _DealCardState extends State<_DealCard> {
                     ),
                     const SizedBox(height: 3),
 
-                    // Location
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on_rounded,
-                            size: 28, color: Color(0xFF9CA3AF)),
-                        const SizedBox(width: 3),
-                        Expanded(
-                          child: Text(
-                            d.location,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF6B7280)),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    // Location (no icon — matches the home nearby-deals card)
+                    Text(
+                      d.location,
+                      style: const TextStyle(
+                          fontSize: 13, color: Color(0xFF6B7280)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 5),
 

@@ -461,10 +461,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 40, 20, 12),
                   child: Row(
                     children: [
                       if (_currentPage > 0)

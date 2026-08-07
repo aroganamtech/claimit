@@ -8,6 +8,7 @@ const NAV = [
   { label: 'Create Ad',   icon: '➕', path: '/admin/create-ad' },
   { label: 'Shops',       icon: '🏪', path: '/admin/shops' },
   { label: 'Bulk Upload', icon: '📥', path: '/admin/bulk-shops' },
+  { label: 'Category Images', icon: '🖼', path: '/admin/category-images' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
   { label: 'Feedback',    icon: '💬', path: '/admin/feedback' },

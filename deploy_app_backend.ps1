@@ -9,7 +9,7 @@
 
 $Key    = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\claimit.pem"
 $Server = "ubuntu@16.170.110.232"
-$Local  = "C:\Users\sk764\OneDrive\Documents\GitHub\claimit\fastapi\backend"
+$Local  = "F:\my_project_git\claimit\fastapi\backend"
 
 Write-Host "Locating the app backend folder on the server..." -ForegroundColor Cyan
 $RemoteDir = (ssh -i $Key $Server "find /home /opt /srv /var/www -maxdepth 6 -type d -name backend 2>/dev/null | grep -v claimit_web_org | head -1").Trim()

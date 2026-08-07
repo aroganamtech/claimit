@@ -119,6 +119,14 @@ const _shopQ = () => (_activeShopId() ? `?shop_id=${_activeShopId()}` : '')
 
 const shop = {
   register:           (formData) => post('/shop/register', formData),
+  // Claim-by-mobile flow (bulk-uploaded shops)
+  lookupByMobile:     (phone)         => get('/shop/lookup', { phone }),
+  // Activated shops (redeem/reward) by mobile — used by the Promo Reelz ad flow
+  lookupActiveByMobile: (phone)       => get('/shop/lookup-active', { phone }),
+  sendEmailOtp:       (email)         => post('/shop/email-otp/send', { email }),
+  verifyEmailOtp:     (email, otp)    => post('/shop/email-otp/verify', { email, otp }),
+  claimShop:          (payload)       => post('/shop/claim', payload),
+  updateShopImage:    (payload)       => http.patch('/shop/image', payload).then(r => r.data),
   // All shops owned by the current user (for the shop switcher)
   listShops:          ()         => get('/shop/list'),
   getDashboard:       ()         => get(`/shop/dashboard${_shopQ()}`),
@@ -173,10 +181,10 @@ const admin = {
   // Bulk shop upload (Excel). Template download returns an .xlsx blob.
   downloadShopTemplate: () =>
     http.get('/admin/shops/bulk-template', { responseType: 'blob' }).then(r => r.data),
-  bulkUploadShops: (formData, replace = false) =>
-    http.post('/admin/shops/bulk-upload', formData, {
+  // Sent as base64 JSON (multipart file POSTs are blocked by CloudFront).
+  bulkUploadShops: (payload, replace = false) =>
+    http.post('/admin/shops/bulk-upload', payload, {
       params: { replace },
-      headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data),
   listReviews:  ()          => get('/admin/reviews'),
   deleteReview: (id)        => del(`/admin/reviews/${id}`),
@@ -206,6 +214,10 @@ const admin = {
   // Admin ad creation (no payment) — mirrors advertiser upload + create flow
   presignUpload:     (payload)      => post('/admin/presign-upload', payload),
   createAd:          (payload)      => post('/admin/ads/create', payload),
+
+  // Category images (up to 15 per category; shops show a random one).
+  listCategoryImages: ()               => get('/admin/category-images'),
+  setCategoryImages:  (catId, keys)    => put(`/admin/category-images/${catId}`, { keys }),
 }
 
 // ─── Payments (Cashfree Payment Links — advertiser ad bookings) ────

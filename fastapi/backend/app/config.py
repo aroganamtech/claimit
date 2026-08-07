@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""          # legacy SMS number (kept for fallback)
     twilio_whatsapp_number: str = ""       # WhatsApp sender e.g. +14155238886 (Twilio sandbox or approved number)
+    # Approved WhatsApp OTP template Content SID (HXxxxxxxxx). REQUIRED for
+    # production WhatsApp (business-initiated messages must use an approved
+    # template). Leave blank only for the Twilio sandbox / testing.
+    twilio_otp_template_sid: str = ""
     # Default country code prepended to 10-digit numbers (E.164 prefix, e.g. +91 for India)
     twilio_default_country_code: str = "+91"
 

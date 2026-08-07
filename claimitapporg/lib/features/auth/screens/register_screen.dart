@@ -328,7 +328,7 @@ class _HomeLogoWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/images/home_main_logo.png',
-      height: 64,
+      height: 38,
       fit: BoxFit.contain,
       errorBuilder: (_, __, ___) => Row(
         mainAxisSize: MainAxisSize.min,

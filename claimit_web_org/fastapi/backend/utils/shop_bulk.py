@@ -25,31 +25,47 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-# ── Category id → name (mirrors the Flutter ShopCategory ids + seed.py) ────────
+# ── Category id → name ────────────────────────────────────────────────────────
+# These ids MUST stay identical to admin.py `_CATEGORY_NAMES` (the Category
+# Images pools) and shop.py `_CATEGORY_MAP` (shop register). If they drift, a
+# bulk shop's category_id points at the WRONG image pool, so its category image
+# never shows and its category label is wrong in the app.
 CATEGORY_LEGEND: Dict[int, str] = {
-    1: "New deals", 2: "Groceries", 3: "Supermarket", 4: "Pharmacy", 5: "Salon",
-    6: "Gym", 7: "Restaurant", 8: "Cafes", 9: "Clothing", 10: "Department",
-    11: "Electronics", 12: "Books", 13: "Toys", 14: "Baby", 15: "Home Decor",
-    16: "Furniture", 17: "Spa", 18: "Schools", 19: "Colleges", 20: "Tutoring",
-    21: "Clinics", 22: "Hospitals", 23: "Pets", 24: "Sports", 25: "Travel",
-    26: "Mobile & Accessories", 27: "Computer & Laptop", 28: "Gifts",
-    29: "Jewellery", 30: "Shoes",
+    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies",
+    4: "Restaurants", 5: "Cafes", 6: "Fashion", 7: "Footwear",
+    8: "Bakery & Sweets", 9: "Electronics", 10: "Mobile",
+    11: "Furniture", 12: "Home Furnishing", 13: "Home Appliances",
+    14: "Baby Stores", 15: "Books & Stationery", 16: "Salons",
+    17: "Beauty Parlours", 18: "Optical", 19: "Diagnostic Centres",
+    20: "Hospitals",
 }
 
 CATEGORY_NAMES = list(CATEGORY_LEGEND.values())
 
 # name (lowercased) → id, plus common singular/alternate spellings so the team
-# can type natural category names.
+# can type natural category names. Kept in sync with shop.py `_CATEGORY_MAP`.
 _NAME_TO_ID = {name.lower(): cid for cid, name in CATEGORY_LEGEND.items()}
 _ALIASES = {
-    "grocery": 2, "supermarkets": 3, "super market": 3, "restaurants": 7,
-    "cafe": 8, "café": 8, "cafés": 8, "clothes": 9, "apparel": 9,
-    "electronic": 11, "electronics store": 11, "book": 12, "toy": 13,
-    "mobile": 26, "mobiles": 26, "mobile & accessories": 26, "laptop": 27,
-    "computer": 27, "computer & laptop": 27, "jewelry": 29, "jewellery": 29,
-    "shoe": 30, "shoes": 30, "salons": 5, "gyms": 6, "hospital": 22,
-    "clinic": 21, "school": 18, "college": 19, "pet": 23, "sport": 24,
-    "gift": 28, "home decor": 15, "homedecor": 15,
+    "supermarket": 1,
+    "fruits and vegetables": 2, "fruits": 2, "vegetables": 2, "veggies": 2, "fruits & veg": 2,
+    "pharmacy": 3, "medical": 3, "medical store": 3, "medical stores": 3, "chemist": 3,
+    "restaurant": 4, "food": 4, "hotel": 4,
+    "cafe": 5, "café": 5, "coffee": 5, "coffee shop": 5, "coffee shops": 5,
+    "garment": 6, "garments": 6, "clothing": 6, "clothes": 6, "apparel": 6,
+    "footwears": 7, "shoes": 7, "shoe": 7,
+    "bakery and sweets": 8, "bakery": 8, "sweets": 8, "cakes": 8, "sweet shop": 8,
+    "electronic": 9, "electronics store": 9,
+    "mobiles": 10, "mobile store": 10, "mobile stores": 10, "mobile & accessories": 10,
+    "furniture store": 11, "furniture stores": 11,
+    "home furnishings": 12, "furnishing": 12, "home decor": 12, "home linen": 12, "curtains": 12,
+    "appliances": 13, "home appliance": 13, "kitchen appliances": 13,
+    "baby": 14, "baby store": 14, "baby products": 14,
+    "books and stationery": 15, "books": 15, "book": 15, "stationery": 15, "book store": 15, "bookstore": 15,
+    "salon": 16,
+    "beauty parlour": 17, "beauty": 17, "parlour": 17, "parlor": 17, "spa": 17,
+    "optical store": 18, "optical stores": 18, "optics": 18, "eyewear": 18,
+    "diagnostic centre": 19, "diagnostic center": 19, "diagnostics": 19, "diagnostic": 19, "labs": 19, "lab": 19,
+    "hospital": 20, "clinic": 20, "clinics": 20,
 }
 
 
@@ -88,8 +104,9 @@ def parse_categories(value) -> Tuple[List[int], List[str]]:
     return out, unknown
 
 # ── Column spec: (header, field, kind) ────────────────────────────────────────
-# Headers are the EXACT seed.py SHOPS_SEED keys so the Excel format matches the
-# existing seeder. kind ∈ {str, int, float, bool, ids, image}.
+# Data-only import. No Redeem/Reward flags (chosen later in shop register) and
+# no image (images are set per-category on the admin Category Images page).
+# kind ∈ {str, int, float, ids}.
 COLUMNS: List[Tuple[str, str, str]] = [
     ("name",           "name",           "str"),
     ("categories",     "category_ids",   "ids"),
@@ -104,29 +121,25 @@ COLUMNS: List[Tuple[str, str, str]] = [
     ("discount",       "discount",       "int"),
     ("rating",         "rating",         "float"),
     ("added_days_ago", "added_days_ago", "int"),
-    ("has_rewards",    "has_rewards",    "bool"),
-    ("has_redeem",     "has_redeem",     "bool"),
     ("about",          "about",          "str"),
     ("timing",         "timing",         "str"),
     ("phone",          "phone",          "str"),
     ("lat",            "lat",            "float"),
     ("lng",            "lng",            "float"),
-    ("image",          "image",          "image"),
 ]
 
 HEADERS = [c[0] for c in COLUMNS]
-IMAGE_COL_INDEX = next(i for i, c in enumerate(COLUMNS) if c[2] == "image")  # 0-based
 
 # Example row mirrors seed.py's first shop (Indian Mart), with the structured
 # address the team collects at registration.
 _EXAMPLE_ROW = [
-    "Indian Mart", "New deals, Groceries, Supermarket",
+    "Indian Mart", "Supermarkets, Fruits & Vegetables",
     "India", "Tamil Nadu", "Chennai", "Chennai", "Padi", "600050",
     "89, Industrial Estate, Padi, Chennai - 600050",
-    30, 4.2, 2, "FALSE", "TRUE",
+    30, 4.2, 2,
     "Indian Mart is your one-stop neighbourhood store in Padi, offering fresh "
     "groceries, daily essentials, and household items.",
-    "Daily: 8am – 9pm", "+91 44 2651 1234", 13.1197, 80.2183, "",
+    "Daily: 8am – 9pm", "+91 44 2651 1234", 13.1197, 80.2183,
 ]
 
 
@@ -160,7 +173,7 @@ def build_template_bytes() -> bytes:
         cell.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
 
     # widths
-    widths = [20, 28, 12, 16, 14, 14, 14, 10, 34, 10, 8, 15, 12, 12, 42, 20, 16, 11, 11, 20]
+    widths = [20, 28, 12, 16, 14, 14, 14, 10, 34, 10, 8, 15, 42, 20, 16, 11, 11]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -168,13 +181,8 @@ def build_template_bytes() -> bytes:
     for i, val in enumerate(_EXAMPLE_ROW, start=1):
         c = ws.cell(row=2, column=i, value=val)
         c.alignment = wrap
-    ws.cell(row=2, column=IMAGE_COL_INDEX + 1,
-            value="↙ paste photo into this cell").alignment = wrap
 
     ws.row_dimensions[1].height = 34
-    # tall rows so pasted images have room
-    for r in range(2, 60):
-        ws.row_dimensions[r].height = 60
     ws.freeze_panes = "A2"
 
     # ── Instructions sheet ────────────────────────────────────────────────────
@@ -190,11 +198,10 @@ def build_template_bytes() -> bytes:
         ("4. Address: fill country, state, district, city, area, pincode and the full address —", False),
         ("   the same details collected on the shop registration form. The app 'City / Area'", False),
         ("   label shown on shop cards is built automatically from area + city.", False),
-        ("5. has_rewards / has_redeem: type TRUE or FALSE.", False),
-        ("6. lat / lng: optional map coordinates (leave blank if unknown).", False),
-        ("7. image: click a cell in the image column → Insert → Picture, and place the shop", False),
-        ("   photo over that row. Leave blank to use a placeholder (add a photo later in admin).", False),
-        ("8. Save the file and upload it in Admin → Bulk Upload Shops.", False),
+        ("5. lat / lng: optional map coordinates (leave blank if unknown).", False),
+        ("6. No image column: each shop shows a random image from its category — upload those", False),
+        ("   on Admin → Category Images. Redeem/Reward is chosen later in shop registration.", False),
+        ("7. Save the file and upload it in Admin → Bulk Upload Shops.", False),
         ("", False),
         ("Valid category names (type these in the 'categories' column)", True),
     ]

@@ -136,6 +136,11 @@ class CreateClassifiedRequest(BaseModel):
     pincode: str = ""
     area: str = ""
     address: str = ""
+    # Structured address (Local Finds) — same fields as the website form.
+    country: str = ""
+    state: str = ""
+    district: str = ""
+    city: str = ""
     payment_method: str = "Credit/Debit Card"
     photos: List[str] = []   # S3 keys (uploaded via /classifieds/upload-photo)
 
@@ -184,6 +189,10 @@ async def create_classified(
         "pincode": body.pincode,
         "area": body.area,
         "address": body.address,
+        "country": body.country,
+        "state": body.state,
+        "district": body.district,
+        "city": body.city,
         "payment_method": body.payment_method,
         "photos": photos,   # list of S3 keys (capped by plan for local_find)
         "listing_type": body.listing_type,

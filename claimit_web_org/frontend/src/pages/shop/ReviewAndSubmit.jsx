@@ -8,6 +8,8 @@ export function ReviewAndSubmit() {
   const category = sessionStorage.getItem('shop_category') || '—'
   const shopType = sessionStorage.getItem('shop_type') || 'redeem'
   const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
+  const shopPlan = sessionStorage.getItem('shop_plan') || 'premium'
+  const shopAmount = sessionStorage.getItem('shop_amount') || '0'
   const coverUrl = sessionStorage.getItem('shop_cover_url')
   const photosUrlsRaw = sessionStorage.getItem('shop_photos_urls')
   const galleryPreviews = photosUrlsRaw ? JSON.parse(photosUrlsRaw) : []
@@ -115,6 +117,9 @@ export function ReviewAndSubmit() {
                 {shopType === 'redeem' ? '🏪' : '🎯'} {shopType.charAt(0).toUpperCase() + shopType.slice(1)} Shop
               </div>
               <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{shopDiscount}% discount</div>
+              <div style={{ fontSize: 12, color: '#1565C0', marginTop: 4, textTransform: 'capitalize' }}>
+                {shopPlan} plan · ₹{shopAmount}
+              </div>
             </div>
           </div>
 
@@ -137,6 +142,9 @@ export function ShopPayment() {
   const [paid, setPaid] = useState(false)
   const [photoWarning, setPhotoWarning] = useState('')
 
+  const shopPlan = sessionStorage.getItem('shop_plan') || 'premium'
+  const shopAmount = Number(sessionStorage.getItem('shop_amount') || '0')
+
   const handlePay = async () => {
     if (!selected) return
     setLoading(true)
@@ -146,6 +154,8 @@ export function ShopPayment() {
       const category = sessionStorage.getItem('shop_category') || ''
       const shopType = sessionStorage.getItem('shop_type')
       const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
+      const shopPlan = sessionStorage.getItem('shop_plan') || 'premium'
+      const shopAmount = sessionStorage.getItem('shop_amount') || '0'
 
       // BUG FIX: never silently default the shop type — a lost sessionStorage
       // value used to register the shop as 'redeem' even when the owner had
@@ -174,6 +184,8 @@ export function ShopPayment() {
       formData.append('category', category)
       formData.append('shop_type', shopType)
       formData.append('discount_percentage', shopDiscount)
+      formData.append('plan', shopPlan)
+      formData.append('amount', shopAmount)
       if (basic.lat != null) formData.append('lat', basic.lat)
       if (basic.lng != null) formData.append('lng', basic.lng)
 
@@ -228,6 +240,8 @@ export function ShopPayment() {
       sessionStorage.removeItem('shop_category')
       sessionStorage.removeItem('shop_type')
       sessionStorage.removeItem('shop_discount')
+      sessionStorage.removeItem('shop_plan')
+      sessionStorage.removeItem('shop_amount')
       sessionStorage.removeItem('shop_cover_key')
       sessionStorage.removeItem('shop_cover_url')
       sessionStorage.removeItem('shop_photos_keys')
@@ -300,8 +314,10 @@ export function ShopPayment() {
           <p style={{ color: '#888', fontSize: 13, marginBottom: 20 }}>Publish your shop instantly.</p>
 
           <div style={{ background: '#1565C0', borderRadius: 12, padding: '20px 24px', color: '#fff', marginBottom: 24 }}>
-            <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Price Summary</div>
-            <div style={{ fontSize: 32, fontWeight: 700 }}>₹999</div>
+            <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>
+              Price Summary · <span style={{ textTransform: 'capitalize' }}>{shopPlan}</span> plan
+            </div>
+            <div style={{ fontSize: 32, fontWeight: 700 }}>₹{shopAmount}</div>
             <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Annually payment</div>
           </div>
 

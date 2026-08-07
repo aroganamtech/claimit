@@ -1794,7 +1794,7 @@ const _zonesPage2 = [
   _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
   _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
   _ZoneItem(label: 'Booking\nDeals', icon: "assets/images/zone_8.png", route: ''),
-  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified'),
+  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/home'),
 ];
 
 class _FeaturedZonesSheet extends StatefulWidget {
@@ -1880,7 +1880,7 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
       ..._zonesPage1.map((z) => _ZoneTile(zone: z, onTap: () => _handleTap(z))),
       // "More" — flips to page 2 (does not close the sheet).
       _ZoneTile(
-        zone: const _ZoneItem(label: 'More', icon: Icons.grid_view_rounded, route: ''),
+        zone: const _ZoneItem(label: 'More', icon: 'assets/images/zone_more.png', route: ''),
         onTap: () => _goToPage(1),
       ),
     ]);
@@ -1983,14 +1983,14 @@ class _ZoneTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               SizedBox(
-                width: 64,
-                height: 64,
+                width: zone.label == 'More' ? 72 : 64,
+                height: zone.label == 'More' ? 72 : 64,
                 child: Center(
                   child: zone.icon is String
                       ? Image.asset(
                           zone.icon,
-                          width: 56,
-                          height: 56,
+                          width: zone.label == 'More' ? 72 : 56,
+                          height: zone.label == 'More' ? 72 : 56,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => const Icon(
                             Icons.broken_image,

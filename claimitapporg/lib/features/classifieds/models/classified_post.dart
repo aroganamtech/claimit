@@ -12,6 +12,11 @@ class ClassifiedPost {
   final String pincode;
   final String area;
   final String address;
+  // Structured address (Local Finds) — same shape as the website form.
+  final String country;
+  final String state;
+  final String district;
+  final String city;
   final String paymentMethod;
   final List<String> photos; // base64 strings
   final bool isAvailable;
@@ -45,6 +50,10 @@ class ClassifiedPost {
     required this.pincode,
     required this.area,
     required this.address,
+    this.country = '',
+    this.state = '',
+    this.district = '',
+    this.city = '',
     this.paymentMethod = '',
     this.photos = const [],
     this.isAvailable = true,
@@ -78,6 +87,10 @@ class ClassifiedPost {
         pincode: j['pincode'] as String? ?? '',
         area: j['area'] as String? ?? '',
         address: j['address'] as String? ?? '',
+        country: j['country'] as String? ?? '',
+        state: j['state'] as String? ?? '',
+        district: j['district'] as String? ?? '',
+        city: j['city'] as String? ?? '',
         paymentMethod: j['payment_method'] as String? ?? '',
         photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ?? [],
         isAvailable: j['is_available'] as bool? ?? true,
@@ -105,6 +118,10 @@ class ClassifiedPost {
         'pincode': pincode,
         'area': area,
         'address': address,
+        'country': country,
+        'state': state,
+        'district': district,
+        'city': city,
         'payment_method': paymentMethod,
         'photos': photos,
         'listing_type': listingType,

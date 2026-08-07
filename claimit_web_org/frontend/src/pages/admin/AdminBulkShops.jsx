@@ -50,10 +50,21 @@ export default function AdminBulkShops() {
       'Replace all shops? This deletes every existing shop before inserting the file. Continue?'
     )) return
     try {
-      setBusy('Uploading & inserting…')
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await api.admin.bulkUploadShops(fd, replace)
+      // Upload the .xlsx straight to S3 (same as image/video uploads), then
+      // send only its key to the API — avoids pushing the file through CloudFront.
+      setBusy('Uploading file…')
+      const ct = file.type ||
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      const presign = await api.admin.presignUpload({
+        filename: file.name, content_type: ct, folder: 'bulk-uploads',
+      })
+      const put = await fetch(presign.upload_url, {
+        method: 'PUT', headers: { 'Content-Type': ct }, body: file,
+      })
+      if (!put.ok) throw new Error(`Upload to storage failed: ${put.status}`)
+
+      setBusy('Inserting…')
+      const res = await api.admin.bulkUploadShops({ key: presign.key }, replace)
       setResult(res)
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Upload failed.')

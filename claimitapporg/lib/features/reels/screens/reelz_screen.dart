@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/reel_model.dart';
@@ -12,7 +11,6 @@ import '../services/reel_service.dart';
 import '../services/reel_video_cache_service.dart';
 import '../../shops/services/shop_service.dart';
 import '../../shops/screens/shop_list_screen.dart';
-import '../../auth/providers/auth_provider.dart';
 import '../../../core/router/app_router.dart' show appRouteObserver;
 
 class ReelzScreen extends StatefulWidget {
@@ -81,187 +79,94 @@ class _ReelzScreenState extends State<ReelzScreen> {
     }
   }
 
-  // ── App bar (same structure as dashboard / notifications) ──────────────────
-  PreferredSizeWidget _buildAppBar() {
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true
-          ? a.user!.location!
-          : 'Select Area',
-    );
-
-    final topPad = MediaQuery.of(context).padding.top;
-    // Extra 52dp when search bar is visible
-    final extraH = _showSearch ? 52.0 : 0.0;
-    return PreferredSize(
-      preferredSize: Size.fromHeight(112 + topPad + extraH),
-      child: Container(
-        color: Colors.white,
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Row 1: logo + location + bell ──────────────────────────
+  // ── Transparent top overlay (back + search) rendered on the video ──────────
+  Widget _buildTopOverlay() {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 12, 0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                // Back button — transparent circle on the video
+                GestureDetector(
+                  onTap: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/home');
+                    }
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.35),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                ),
+                const Spacer(),
+                // Search toggle — transparent circle on the video
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _showSearch = !_showSearch;
+                      if (!_showSearch) {
+                        _searchCtrl.clear();
+                        _onSearchChanged('');
+                      }
+                    });
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _showSearch
+                          ? const Color(0xFF1565C0)
+                          : Colors.black.withOpacity(0.35),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _showSearch ? Icons.close_rounded : Icons.search_rounded,
+                      size: 20,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Search bar — visible when _showSearch is true
+            if (_showSearch)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    Image.asset(
-                      'assets/images/home_main_logo.png',
-                      height: 30,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset('assets/icons/main_icon.png',
-                              width: 30, height: 30, fit: BoxFit.contain),
-                          const SizedBox(width: 6),
-                          const Text('claimit',
-                              style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1565C0))),
-                        ],
-                      ),
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: _onSearchChanged,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Search by shop name…',
+                    hintStyle: const TextStyle(
+                        fontSize: 14, color: Colors.white70),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        size: 20, color: Colors.white70),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 10),
+                    filled: true,
+                    fillColor: Colors.black.withOpacity(0.45),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
                     ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () => context.push('/location'),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 140),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                location,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                            const Icon(Icons.keyboard_arrow_down_rounded,
-                                size: 22),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: IconButton(
-                        icon: const Icon(Icons.notifications_none_rounded,
-                            size: 28, color: Color(0xFF1565C0)),
-                        onPressed: () => context.go('/notifications'),
-                        padding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-
-              // ── Row 2: back + "Reelz Zone" + search ───────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            if (context.canPop()) {
-                              context.pop();
-                            } else {
-                              context.go('/home');
-                            }
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(Icons.arrow_back_ios_new_rounded,
-                                color: Color(0xFF1565C0), size: 18),
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        const Text(
-                          'Reelz Zone',
-                          style: TextStyle(
-                            color: Color(0xFF111827),
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        // Search icon toggle
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _showSearch = !_showSearch;
-                              if (!_showSearch) {
-                                _searchCtrl.clear();
-                                _onSearchChanged('');
-                              }
-                            });
-                          },
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: _showSearch
-                                  ? const Color(0xFF1565C0)
-                                  : const Color(0xFFF3F4F6),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              _showSearch
-                                  ? Icons.close_rounded
-                                  : Icons.search_rounded,
-                              size: 20,
-                              color: _showSearch
-                                  ? Colors.white
-                                  : const Color(0xFF1565C0),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Search bar — visible when _showSearch is true
-                    if (_showSearch)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 2),
-                        child: TextField(
-                          controller: _searchCtrl,
-                          onChanged: _onSearchChanged,
-                          autofocus: true,
-                          decoration: InputDecoration(
-                            hintText: 'Search by shop name…',
-                            hintStyle: const TextStyle(
-                                fontSize: 14, color: Color(0xFF9CA3AF)),
-                            prefixIcon: const Icon(Icons.search_rounded,
-                                size: 20, color: Color(0xFF9CA3AF)),
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            filled: true,
-                            fillColor: const Color(0xFFF3F4F6),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -343,7 +248,6 @@ class _ReelzScreenState extends State<ReelzScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        appBar: _buildAppBar(),
         bottomNavigationBar: _buildBottomBar(),
         floatingActionButton: SizedBox(
           width: 68,
@@ -362,34 +266,48 @@ class _ReelzScreenState extends State<ReelzScreen> {
           ),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        body: _loading
-            ? const Center(
-                child: CircularProgressIndicator(color: Colors.white))
-            : _filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      _searchQuery.isNotEmpty
-                          ? 'No reels found for "$_searchQuery"'
-                          : 'No reels yet. Pull down to refresh.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 16),
-                    ),
-                  )
-                : PageView.builder(
-                    controller: _pageCtrl,
-                    scrollDirection: Axis.vertical,
-                    physics: const PageScrollPhysics(),
-                    itemCount: _filtered.length,
-                    onPageChanged: (i) {
-                      setState(() => _currentPage = i);
-                      _prefetchNext(i);
-                    },
-                    itemBuilder: (context, index) => _ReelPage(
-                      reel: _filtered[index],
-                      isActive: index == _currentPage,
-                    ),
-                  ),
+        // Video goes fullscreen to the top; back + search float on top of it.
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Colors.white))
+                  : _filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            _searchQuery.isNotEmpty
+                                ? 'No reels found for "$_searchQuery"'
+                                : 'No reels yet. Pull down to refresh.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 16),
+                          ),
+                        )
+                      : PageView.builder(
+                          controller: _pageCtrl,
+                          scrollDirection: Axis.vertical,
+                          physics: const PageScrollPhysics(),
+                          itemCount: _filtered.length,
+                          onPageChanged: (i) {
+                            setState(() => _currentPage = i);
+                            _prefetchNext(i);
+                          },
+                          itemBuilder: (context, index) => _ReelPage(
+                            reel: _filtered[index],
+                            isActive: index == _currentPage,
+                          ),
+                        ),
+            ),
+            // Transparent overlay on the video
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _buildTopOverlay(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -721,20 +639,28 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
                   ),
                   const SizedBox(height: 4),
                   // Tap hint
-                  GestureDetector(
-                    onTap: _openShop,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.location_on_rounded,
-                            color: Colors.white70, size: 14),
-                        const SizedBox(width: 3),
-                        Text(
-                          reel.shopLocation,
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 13),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_rounded,
+                          color: Colors.white70, size: 14),
+                      const SizedBox(width: 3),
+                      // Long addresses stay on one line but can be swiped
+                      // horizontally to read in full, and long-pressed to copy.
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SelectableText(
+                            reel.shopLocation,
+                            maxLines: 1,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 13),
+                          ),
                         ),
-                        const SizedBox(width: 6),
-                        Container(
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: _openShop,
+                        child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
@@ -752,8 +678,8 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   // Offer pill

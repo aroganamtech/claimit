@@ -19,6 +19,7 @@ from bson import ObjectId
 import io
 import os
 import json
+import random
 
 from utils.s3 import generate_presigned_url_sync as _presign
 from utils.s3 import generate_video_url_sync as _video_presign
@@ -33,6 +34,7 @@ from database import (
     app_users_collection, app_feedback_collection, app_shops_collection,
     deleted_users_collection,
     app_banners_collection, app_deals_collection, app_reels_collection,
+    category_images_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -377,33 +379,43 @@ def _num(v):
         return None
 
 
+class BulkUploadBody(BaseModel):
+    key: str = ""          # S3 key of the uploaded .xlsx (browser PUTs it first)
+
+
 @router.post("/shops/bulk-upload")
 async def shops_bulk_upload(
-    file: UploadFile = File(...),
+    body: BulkUploadBody,
     replace: bool = Query(False, description="Wipe all shops before inserting"),
     _admin=Depends(get_current_admin),
 ):
     """
-    Parse an uploaded shops workbook and insert the rows into claimit_db.shops.
-    Returns a per-row summary. `replace=true` clears the collection first.
+    Parse a shops workbook the browser already uploaded to S3 (same pattern as
+    image/video uploads — the file goes straight to S3, only its key comes to
+    the API) and insert the rows into claimit_db.shops. Returns a per-row
+    summary. `replace=true` clears the collection first.
     """
     import openpyxl
     from utils.shop_bulk import (
-        COLUMNS, extract_row_images, parse_categories, derive_location,
+        COLUMNS, parse_categories, derive_location,
     )
-    from utils.s3 import upload_bytes
+    from utils.s3 import download_bytes
 
-    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="Please upload a .xlsx file.")
+    if not body.key:
+        raise HTTPException(status_code=400, detail="Missing uploaded file key.")
 
-    raw = await file.read()
+    try:
+        raw = download_bytes(body.key)
+    except Exception as e:
+        raise HTTPException(status_code=400,
+                            detail=f"Could not read the uploaded file from storage: {e}")
+
     try:
         wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read Excel file: {e}")
 
     ws = wb["Shops"] if "Shops" in wb.sheetnames else wb.worksheets[0]
-    images = extract_row_images(raw)
 
     # Map header text → column index (0-based) using the first row.
     header_cells = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
@@ -418,6 +430,15 @@ async def shops_bulk_upload(
         if idx is None or idx >= len(row):
             return None
         return row[idx]
+
+    # Load the per-category image pools once (Admin → Category Images). Each
+    # bulk shop is given a real cover + gallery picked from its category's pool
+    # so it shows a picture in the app without a per-row image upload.
+    cat_pool: dict = {}
+    async for _cd in category_images_collection.find():
+        _keys = [k for k in (_cd.get("keys") or []) if k]
+        if _keys:
+            cat_pool[_cd.get("category_id")] = _keys
 
     errors = []
     docs = []
@@ -465,8 +486,6 @@ async def shops_bulk_upload(
                 "discount":      int(float(cell(row, "discount") or 0)),
                 "rating":        float(cell(row, "rating") or 4.0),
                 "added_days_ago": int(float(cell(row, "added_days_ago") or 0)),
-                "has_rewards":   _to_bool(cell(row, "has_rewards")),
-                "has_redeem":    _to_bool(cell(row, "has_redeem")),
                 "about":         str(cell(row, "about") or "").strip(),
                 "timing":        str(cell(row, "timing") or "").strip(),
                 "phone":         str(cell(row, "phone") or "").strip(),
@@ -480,22 +499,36 @@ async def shops_bulk_upload(
         # discount_percentage kept in sync for the admin grouped view.
         doc["discount_percentage"] = doc["discount"]
 
-        # Pasted photo → S3 (falls back to placeholder-less if none).
-        img = images.get(r)
-        image_key = ""
-        if img:
-            data, ext = img
-            ctype = "image/png" if ext.lower().endswith("png") else "image/jpeg"
-            try:
-                image_key = await upload_bytes(data, "shops", f"shop{ext}", ctype)
-            except Exception as e:  # noqa: BLE001
-                errors.append({"row": r, "name": name, "error": f"Image upload failed: {e}"})
+        # Assign a real cover + up to 3 gallery images from the shop's category
+        # image pool (Admin → Category Images). The app builds public S3 URLs
+        # from these keys, so the shop shows a picture with no per-row upload.
+        # Uses the FIRST of the shop's categories that has an image pool:
+        #   • only 1 image in the pool → that image is the cover for every shop
+        #     in the category (gallery stays empty),
+        #   • many images → a random cover + up to 3 random others as gallery.
+        cover_key = ""
+        gallery_keys: list = []
+        for _cid in cat_ids:
+            _pool = cat_pool.get(_cid)
+            if _pool:
+                cover_key = random.choice(_pool)
+                _others = [k for k in _pool if k != cover_key]
+                random.shuffle(_others)
+                gallery_keys = _others[:3]
+                break
 
+        # Bulk-uploaded shops default to a REWARD shop so they appear on the
+        # app's Reward page straight away. The owner can change the type later
+        # when they claim/register the shop. (Without a type the app treats a
+        # shop as both reward AND redeem, which kept them off the Reward page.)
         doc.update({
-            "image_s3_key":    image_key,
-            "image_s3_keys":   [image_key] if image_key else [],
-            "image_url":       "",
-            "image_urls":      [],
+            "shop_type":       "reward",
+            "has_rewards":     True,
+            "has_redeem":      False,
+            "image_s3_key":    cover_key,
+            "image_s3_keys":   gallery_keys,
+            "image_url":       _public_url(cover_key) if cover_key else "",
+            "image_urls":      [_public_url(k) for k in gallery_keys],
             "image_data":      "",
             "image_data_list": [],
             "created_at":      datetime.now(timezone.utc),
@@ -517,6 +550,58 @@ async def shops_bulk_upload(
         "skipped_empty": not seen_any,
         "errors": errors,
     }
+
+
+# ─── Category images ──────────────────────────────────────────
+# Admin uploads up to 15 images per shop category (ids 1-20). Shops with no own
+# photo show a random image from their first category's pool (see app_shops.py).
+_CATEGORY_NAMES = {
+    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies",
+    4: "Restaurants", 5: "Cafes", 6: "Fashion", 7: "Footwear",
+    8: "Bakery & Sweets", 9: "Electronics", 10: "Mobile",
+    11: "Furniture", 12: "Home Furnishing", 13: "Home Appliances",
+    14: "Baby Stores", 15: "Books & Stationery", 16: "Salons",
+    17: "Beauty Parlours", 18: "Optical", 19: "Diagnostic Centres",
+    20: "Hospitals",
+}
+_MAX_CATEGORY_IMAGES = 15
+
+
+@router.get("/category-images")
+async def list_category_images(_admin=Depends(get_current_admin)):
+    """The 20 categories, each with its stored image keys + presigned URLs."""
+    docs = {d["category_id"]: d async for d in category_images_collection.find()}
+    out = []
+    for cid, name in _CATEGORY_NAMES.items():
+        keys = (docs.get(cid) or {}).get("keys", [])
+        out.append({
+            "category_id": cid,
+            "name": name,
+            "keys": keys,
+            "urls": [_presign(k) or "" for k in keys],
+        })
+    return {"categories": out}
+
+
+class CategoryImagesPut(BaseModel):
+    keys: list = []
+
+
+@router.put("/category-images/{category_id}")
+async def set_category_images(
+    category_id: int, body: CategoryImagesPut, _admin=Depends(get_current_admin)
+):
+    """Replace a category's image pool (already-uploaded S3 keys, max 15)."""
+    if category_id not in _CATEGORY_NAMES:
+        raise HTTPException(status_code=400, detail="Unknown category id")
+    keys = [k for k in body.keys if isinstance(k, str) and k][:_MAX_CATEGORY_IMAGES]
+    await category_images_collection.update_one(
+        {"category_id": category_id},
+        {"$set": {"category_id": category_id, "keys": keys}},
+        upsert=True,
+    )
+    return {"ok": True, "category_id": category_id, "count": len(keys),
+            "urls": [_presign(k) or "" for k in keys]}
 
 
 # ─── Reviews ──────────────────────────────────────────────────
@@ -879,15 +964,21 @@ class AdminPresignRequest(BaseModel):
 async def admin_presign_upload(body: AdminPresignRequest, _admin=Depends(get_current_admin)):
     """Admin-only presigned S3 upload URL (same as advertiser presign, but
     behind the admin token). Browser PUTs the file directly to S3."""
+    _DOC_TYPES = {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
+        "application/vnd.ms-excel",                                           # .xls
+        "application/octet-stream",                                           # fallback
+    }
     is_video = body.content_type in ALLOWED_VIDEO_TYPES
     is_image = body.content_type in ALLOWED_IMAGE_TYPES
-    if not is_video and not is_image:
+    is_doc = body.content_type in _DOC_TYPES
+    if not is_video and not is_image and not is_doc:
         raise HTTPException(status_code=400, detail=f"Unsupported type: {body.content_type}")
     return generate_presigned_upload_url(
         folder=body.folder,
         filename=body.filename,
         content_type=body.content_type,
-        is_video=is_video,
+        is_video=is_video,   # docs/images go to the main image bucket
     )
 
 

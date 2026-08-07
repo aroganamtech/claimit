@@ -137,21 +137,21 @@ class _LocalFindZoneScreenState extends State<LocalFindZoneScreen> {
         title: Text(widget.zone.label,
             style: const TextStyle(color: kLfBlue, fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
-          GestureDetector(
-            onTap: _openFilterSheet,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
-              ),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.tune_rounded, size: 15, color: kLfInk),
-                SizedBox(width: 4),
-                Text('Filter', style: TextStyle(fontSize: 13, color: kLfInk)),
-              ]),
-            ),
-          ),
+          // GestureDetector(
+          //   onTap: _openFilterSheet,
+          //   child: Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          //     decoration: BoxDecoration(
+          //       borderRadius: BorderRadius.circular(20),
+          //       border: Border.all(color: const Color(0xFFCBD5E1)),
+          //     ),
+          //     child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          //       Icon(Icons.tune_rounded, size: 15, color: kLfInk),
+          //       SizedBox(width: 4),
+          //       Text('Filter', style: TextStyle(fontSize: 13, color: kLfInk)),
+          //     ]),
+          //   ),
+          // ),
           IconButton(
             icon: Icon(_searchOpen ? Icons.close_rounded : Icons.search_rounded, color: kLfBlue),
             onPressed: () => setState(() {
