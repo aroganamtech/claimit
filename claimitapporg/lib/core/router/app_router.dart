@@ -33,6 +33,7 @@ import '../../features/search/screens/search_screen.dart';
 import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
+import '../../features/classifieds/screens/classified_ads_screen.dart';
 import '../../features/classifieds/screens/local_finds_screen.dart';
 import '../../features/classifieds/screens/local_finds_categories_screen.dart';
 import '../../features/classifieds/screens/local_find_zone_screen.dart';
@@ -262,6 +263,10 @@ class AppRouter {
         GoRoute(
           path: '/classified/home',
           builder: (context, state) => const ClassifiedHomeScreen(),
+        ),
+        GoRoute(
+          path: '/classified/ads',
+          builder: (context, state) => const ClassifiedAdsScreen(),
         ),
         GoRoute(
           path: '/classified/zone',

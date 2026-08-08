@@ -714,10 +714,11 @@ class _ShopCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: IntrinsicHeight(child: Row(
+          // stretch → the image fills the full card height, no white gap below
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Left rectangular image ──────────────────────────────────
+            // ── Left image — fills the full card height (any screen size) ──
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(14),
@@ -725,8 +726,7 @@ class _ShopCard extends StatelessWidget {
               ),
               child: SizedBox(
                 width: 120,
-                height: 110,
-                child: _shopImageWidget(shop, fit: BoxFit.cover),
+                child: _shopImageFill(shop),
               ),
             ),
 
@@ -861,7 +861,7 @@ class _ShopCard extends StatelessWidget {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -916,6 +916,28 @@ Widget _shopImageWidget(ShopItem shop, {BoxFit fit = BoxFit.cover}) {
     } catch (_) {}
   }
   return _fallbackAvatar(shop);
+}
+
+/// Image that fills its parent so the card picture always stretches to the full
+/// card height (no white gap below a short image). Uses a DecorationImage,
+/// which has zero intrinsic height — so it plays nicely inside IntrinsicHeight
+/// and adapts to any screen size without hard-coded heights.
+Widget _shopImageFill(ShopItem shop) {
+  ImageProvider? provider;
+  if (shop.imageUrl.isNotEmpty) {
+    provider = NetworkImage(shop.imageUrl);
+  } else if (shop.imageData != null && shop.imageData!.isNotEmpty) {
+    try {
+      provider = MemoryImage(base64Decode(shop.imageData!));
+    } catch (_) {}
+  }
+  if (provider == null) return _fallbackAvatar(shop);
+  return Container(
+    decoration: BoxDecoration(
+      color: shop.fallbackColor, // shows through if the image fails to load
+      image: DecorationImage(image: provider, fit: BoxFit.cover),
+    ),
+  );
 }
 
 // Fallback avatar — shown when image_data is absent or fails to decode

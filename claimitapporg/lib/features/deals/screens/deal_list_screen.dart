@@ -637,10 +637,11 @@ class _DealCardState extends State<_DealCard> {
             ),
           ],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: IntrinsicHeight(child: Row(
+          // stretch → the image fills the full card height, no white gap below
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Left rectangular image ─────────────────────────────────
+            // ── Left image — fills the full card height (any screen size) ──
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(14),
@@ -648,13 +649,16 @@ class _DealCardState extends State<_DealCard> {
               ),
               child: SizedBox(
                 width: 120,
-                height: 110,
                 child: d.imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: d.imageUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _fallback(d),
-                        errorWidget: (_, __, ___) => _fallback(d),
+                    ? Container(
+                        decoration: BoxDecoration(
+                          // fallback tint shows through if the image fails
+                          color: _DealListScreenState._typeMetaFor(d.type).$1,
+                          image: DecorationImage(
+                            image: CachedNetworkImageProvider(d.imageUrl),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       )
                     : _fallback(d),
               ),
@@ -768,7 +772,7 @@ class _DealCardState extends State<_DealCard> {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

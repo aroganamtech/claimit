@@ -1175,21 +1175,29 @@ final _categories = [
   _CatData(label: 'Pharmacies',            icon: Icons.local_pharmacy_rounded,    color: Color(0xFF06B6D4)),
   _CatData(label: 'Restaurants',           icon: Icons.restaurant_rounded,        color: Color(0xFFEC4899)),
   _CatData(label: 'Cafes',                 icon: Icons.local_cafe_rounded,        color: Color(0xFF92400E)),
-  _CatData(label: 'Fashion',               icon: Icons.checkroom_rounded,         color: Color(0xFFDB2777)),
-  _CatData(label: 'Footwear',              icon: Icons.directions_walk_rounded,   color: Color(0xFF0369A1)),
   _CatData(label: 'Bakery &\nSweets',      icon: Icons.cake_rounded,              color: Color(0xFFF59E0B)),
-  _CatData(label: 'Electronics',           icon: Icons.devices_rounded,           color: Color(0xFF7C3AED)),
+  _CatData(label: 'Juices &\nShakes',      icon: Icons.local_drink_rounded,       color: Color(0xFFEF4444)),
+  _CatData(label: 'Garments &\nFashion',   icon: Icons.checkroom_rounded,         color: Color(0xFFDB2777)),
+  _CatData(label: 'Footwear',              icon: Icons.directions_walk_rounded,   color: Color(0xFF0369A1)),
   _CatData(label: 'Mobile',                icon: Icons.smartphone_rounded,        color: Color(0xFF0284C7)),
-  _CatData(label: 'Furniture',             icon: Icons.chair_rounded,             color: Color(0xFF78350F)),
-  _CatData(label: 'Home\nFurnishing',      icon: Icons.king_bed_rounded,          color: Color(0xFFF59E0B)),
-  _CatData(label: 'Home\nAppliances',      icon: Icons.kitchen_rounded,           color: Color(0xFF0EA5E9)),
-  _CatData(label: 'Baby\nStores',          icon: Icons.child_care_rounded,        color: Color(0xFFEC4899)),
-  _CatData(label: 'Books &\nStationery',   icon: Icons.menu_book_rounded,         color: Color(0xFF6366F1)),
+  _CatData(label: 'Electronics',           icon: Icons.devices_rounded,           color: Color(0xFF7C3AED)),
   _CatData(label: 'Salons',                icon: Icons.content_cut_rounded,       color: Color(0xFFF59E0B)),
   _CatData(label: 'Beauty\nParlours',      icon: Icons.spa_rounded,               color: Color(0xFFEC4899)),
+  _CatData(label: 'Dry Fruits\n& Nuts',    icon: Icons.grain_rounded,             color: Color(0xFF92400E)),
+  _CatData(label: 'Fashion\nAccessories',  icon: Icons.watch_rounded,             color: Color(0xFFA21CAF)),
   _CatData(label: 'Optical',               icon: Icons.visibility_rounded,        color: Color(0xFF0D9488)),
+  _CatData(label: 'Home\nAppliances',      icon: Icons.kitchen_rounded,           color: Color(0xFF0EA5E9)),
+  _CatData(label: 'Furniture',             icon: Icons.chair_rounded,             color: Color(0xFF78350F)),
+  _CatData(label: 'Home\nFurnishing',      icon: Icons.king_bed_rounded,          color: Color(0xFFF59E0B)),
+  _CatData(label: 'Baby\nStores',          icon: Icons.child_care_rounded,        color: Color(0xFFEC4899)),
+  _CatData(label: 'Books &\nStationery',   icon: Icons.menu_book_rounded,         color: Color(0xFF6366F1)),
+  _CatData(label: 'Gifts &\nFancy',        icon: Icons.card_giftcard_rounded,     color: Color(0xFFEF4444)),
+  _CatData(label: 'Toys &\nGames',         icon: Icons.toys_rounded,              color: Color(0xFF8B5CF6)),
+  _CatData(label: 'Sports &\nFitness',     icon: Icons.fitness_center_rounded,    color: Color(0xFF16A34A)),
+  _CatData(label: 'Photography\n& Studios',icon: Icons.camera_alt_rounded,        color: Color(0xFF334155)),
   _CatData(label: 'Diagnostic\nCentres',   icon: Icons.biotech_rounded,           color: Color(0xFF6366F1)),
   _CatData(label: 'Hospitals',             icon: Icons.local_hospital_rounded,    color: Color(0xFFDC2626)),
+  _CatData(label: 'Pet Stores',            icon: Icons.pets_rounded,              color: Color(0xFF0D9488)),
 ];
 
 final _nearbyDeals = [
@@ -2461,7 +2469,11 @@ class _CategoryRowState extends State<_CategoryRow> {
   Timer? _autoTimer;
   bool _paused = false;
 
-  int get _totalSlots => _categories.length + 1; // categories + "All"
+  // Home shows only the top categories; the "All" tile opens the full list.
+  static const int _homeMax = 10;
+  int get _homeCount =>
+      _categories.length < _homeMax ? _categories.length : _homeMax;
+  int get _totalSlots => _homeCount + 1; // top categories + "All"
 
   @override
   void initState() {
@@ -2658,7 +2670,7 @@ class _CategoryRowState extends State<_CategoryRow> {
 
             // End of each circle: the "All" icon → all-categories page
             // (Center = same vertical placement as the old page layout)
-            if (idx == _categories.length) {
+            if (idx == _homeCount) {
               return Center(child: _buildShowAll(context, slotW));
             }
 

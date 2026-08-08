@@ -69,43 +69,67 @@ _CATEGORY_MAP: dict[str, int] = {
     "restaurants": 4, "restaurant": 4, "food": 4, "hotel": 4,
     # 5 — Cafes
     "cafes": 5, "cafe": 5, "café": 5, "coffee": 5, "coffee shop": 5, "coffee shops": 5,
-    # 6 — Fashion
-    "fashion": 6, "garment": 6, "garments": 6, "clothing": 6, "clothes": 6, "apparel": 6,
-    # 7 — Footwear
-    "footwear": 7, "footwears": 7, "shoes": 7, "shoe": 7,
-    # 8 — Bakery & Sweets
-    "bakery & sweets": 8, "bakery and sweets": 8, "bakery_sweets": 8, "bakery": 8,
-    "sweets": 8, "cakes": 8, "sweet shop": 8,
-    # 9 — Electronics
-    "electronics": 9, "electronic": 9, "electronics store": 9,
+    # 6 — Bakery & Sweets
+    "bakery & sweets": 6, "bakery and sweets": 6, "bakery_sweets": 6, "bakery": 6,
+    "sweets": 6, "cakes": 6, "sweet shop": 6,
+    # 7 — Juices & Shakes
+    "juices & shakes": 7, "juices and shakes": 7, "juices_shakes": 7, "juices": 7,
+    "juice": 7, "shakes": 7, "juice shop": 7, "milkshakes": 7,
+    # 8 — Garments & Fashion
+    "garments & fashion": 8, "garments and fashion": 8, "garments_fashion": 8,
+    "fashion": 8, "garment": 8, "garments": 8, "clothing": 8, "clothes": 8, "apparel": 8,
+    # 9 — Footwear
+    "footwear": 9, "footwears": 9, "shoes": 9, "shoe": 9,
     # 10 — Mobile
     "mobile": 10, "mobiles": 10, "mobile store": 10, "mobile stores": 10,
     "mobile & accessories": 10,
-    # 11 — Furniture
-    "furniture": 11, "furniture store": 11, "furniture stores": 11,
-    # 12 — Home Furnishing
-    "home furnishing": 12, "home_furnishing": 12, "home furnishings": 12,
-    "furnishing": 12, "home decor": 12, "home linen": 12, "curtains": 12,
-    # 13 — Home Appliances
-    "home appliances": 13, "home_appliances": 13, "appliances": 13,
-    "home appliance": 13, "kitchen appliances": 13,
-    # 14 — Baby Stores
-    "baby stores": 14, "baby_stores": 14, "baby": 14, "baby store": 14, "baby products": 14,
-    # 15 — Books & Stationery
-    "books & stationery": 15, "books and stationery": 15, "books_stationery": 15,
-    "books": 15, "book": 15, "stationery": 15, "book store": 15, "bookstore": 15,
-    # 16 — Salons
-    "salons": 16, "salon": 16,
-    # 17 — Beauty Parlours
-    "beauty parlours": 17, "beauty_parlours": 17, "beauty parlour": 17,
-    "beauty": 17, "parlour": 17, "parlor": 17, "spa": 17,
-    # 18 — Optical
-    "optical": 18, "optical store": 18, "optical stores": 18, "optics": 18, "eyewear": 18,
-    # 19 — Diagnostic Centres
-    "diagnostic centres": 19, "diagnostic_centres": 19, "diagnostic centre": 19,
-    "diagnostic center": 19, "diagnostics": 19, "diagnostic": 19, "labs": 19, "lab": 19,
-    # 20 — Hospitals
-    "hospitals": 20, "hospital": 20, "clinic": 20, "clinics": 20,
+    # 11 — Electronics
+    "electronics": 11, "electronic": 11, "electronics store": 11,
+    # 12 — Salons
+    "salons": 12, "salon": 12,
+    # 13 — Beauty Parlours
+    "beauty parlours": 13, "beauty_parlours": 13, "beauty parlour": 13,
+    "beauty": 13, "parlour": 13, "parlor": 13, "spa": 13,
+    # 14 — Dry Fruits & Nuts
+    "dry fruits & nuts": 14, "dry fruits and nuts": 14, "dry_fruits_nuts": 14,
+    "dry fruits": 14, "nuts": 14, "dryfruits": 14,
+    # 15 — Fashion Accessories
+    "fashion accessories": 15, "fashion_accessories": 15, "accessories": 15,
+    "fashion accessory": 15,
+    # 16 — Optical
+    "optical": 16, "optical store": 16, "optical stores": 16, "optics": 16, "eyewear": 16,
+    # 17 — Home Appliances
+    "home appliances": 17, "home_appliances": 17, "appliances": 17,
+    "home appliance": 17, "kitchen appliances": 17,
+    # 18 — Furniture
+    "furniture": 18, "furniture store": 18, "furniture stores": 18,
+    # 19 — Home Furnishing
+    "home furnishing": 19, "home_furnishing": 19, "home furnishings": 19,
+    "furnishing": 19, "home decor": 19, "home linen": 19, "curtains": 19,
+    # 20 — Baby Stores
+    "baby stores": 20, "baby_stores": 20, "baby": 20, "baby store": 20, "baby products": 20,
+    # 21 — Books & Stationery
+    "books & stationery": 21, "books and stationery": 21, "books_stationery": 21,
+    "books": 21, "book": 21, "stationery": 21, "book store": 21, "bookstore": 21,
+    # 22 — Gifts & Fancy Stores
+    "gifts & fancy stores": 22, "gifts and fancy stores": 22, "gifts_fancy": 22,
+    "gifts": 22, "gift": 22, "fancy store": 22, "fancy stores": 22, "gift shop": 22,
+    # 23 — Toys & Games
+    "toys & games": 23, "toys and games": 23, "toys_games": 23, "toys": 23,
+    "toy": 23, "games": 23, "toy store": 23,
+    # 24 — Sports & Fitness
+    "sports & fitness": 24, "sports and fitness": 24, "sports_fitness": 24,
+    "sports": 24, "sport": 24, "fitness": 24, "gym": 24,
+    # 25 — Photography & Studios
+    "photography & studios": 25, "photography and studios": 25, "photography_studios": 25,
+    "photography": 25, "studio": 25, "studios": 25, "photo studio": 25,
+    # 26 — Diagnostic Centres
+    "diagnostic centres": 26, "diagnostic_centres": 26, "diagnostic centre": 26,
+    "diagnostic center": 26, "diagnostics": 26, "diagnostic": 26, "labs": 26, "lab": 26,
+    # 27 — Hospitals
+    "hospitals": 27, "hospital": 27, "clinic": 27, "clinics": 27,
+    # 28 — Pet Stores
+    "pet stores": 28, "pet_stores": 28, "pets": 28, "pet": 28, "pet store": 28, "pet shop": 28,
 }
 
 

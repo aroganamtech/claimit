@@ -557,12 +557,14 @@ async def shops_bulk_upload(
 # photo show a random image from their first category's pool (see app_shops.py).
 _CATEGORY_NAMES = {
     1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies",
-    4: "Restaurants", 5: "Cafes", 6: "Fashion", 7: "Footwear",
-    8: "Bakery & Sweets", 9: "Electronics", 10: "Mobile",
-    11: "Furniture", 12: "Home Furnishing", 13: "Home Appliances",
-    14: "Baby Stores", 15: "Books & Stationery", 16: "Salons",
-    17: "Beauty Parlours", 18: "Optical", 19: "Diagnostic Centres",
-    20: "Hospitals",
+    4: "Restaurants", 5: "Cafes", 6: "Bakery & Sweets", 7: "Juices & Shakes",
+    8: "Garments & Fashion", 9: "Footwear", 10: "Mobile", 11: "Electronics",
+    12: "Salons", 13: "Beauty Parlours", 14: "Dry Fruits & Nuts",
+    15: "Fashion Accessories", 16: "Optical", 17: "Home Appliances",
+    18: "Furniture", 19: "Home Furnishing", 20: "Baby Stores",
+    21: "Books & Stationery", 22: "Gifts & Fancy Stores", 23: "Toys & Games",
+    24: "Sports & Fitness", 25: "Photography & Studios", 26: "Diagnostic Centres",
+    27: "Hospitals", 28: "Pet Stores",
 }
 _MAX_CATEGORY_IMAGES = 15
 

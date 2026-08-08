@@ -1794,7 +1794,7 @@ const _zonesPage2 = [
   _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
   _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
   _ZoneItem(label: 'Booking\nDeals', icon: "assets/images/zone_8.png", route: ''),
-  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/home'),
+  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/ads'),
 ];
 
 class _FeaturedZonesSheet extends StatefulWidget {
