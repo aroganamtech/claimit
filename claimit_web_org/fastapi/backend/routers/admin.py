@@ -361,7 +361,11 @@ async def shops_bulk_template(_admin=Depends(get_current_admin)):
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="claimit_shops_template.xlsx"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="claimit_shops_template_v1.xlsx"',
+            # avoid the browser serving a stale cached copy of the template
+            "Cache-Control": "no-store, must-revalidate",
+        },
     )
 
 
@@ -558,15 +562,15 @@ async def shops_bulk_upload(
 # Admin uploads up to 15 images per shop category (ids 1-20). Shops with no own
 # photo show a random image from their first category's pool (see app_shops.py).
 _CATEGORY_NAMES = {
-    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies",
-    4: "Restaurants", 5: "Cafes", 6: "Bakery & Sweets", 7: "Juices & Shakes",
-    8: "Garments & Fashion", 9: "Footwear", 10: "Mobile", 11: "Electronics",
-    12: "Salons", 13: "Beauty Parlours", 14: "Dry Fruits & Nuts",
-    15: "Fashion Accessories", 16: "Optical", 17: "Home Appliances",
-    18: "Furniture", 19: "Home Furnishing", 20: "Baby Stores",
-    21: "Books & Stationery", 22: "Gifts & Fancy Stores", 23: "Toys & Games",
-    24: "Sports & Fitness", 25: "Photography & Studios", 26: "Diagnostic Centres",
-    27: "Hospitals", 28: "Pet Stores",
+    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies", 4: "Restaurants",
+    5: "Cafes", 6: "Bakery & Sweets", 7: "Juices & Shakes", 8: "Garments",
+    9: "Fashion", 10: "Footwear", 11: "Mobile", 12: "Electronics", 13: "Salons",
+    14: "Beauty Parlours", 15: "Dry Fruits & Nuts", 16: "Fashion Accessories",
+    17: "Optical", 18: "Home Appliances", 19: "Furniture", 20: "Home Furnishing",
+    21: "Baby Stores", 22: "Books & Stationery", 23: "Gifts & Fancy Stores",
+    24: "Toys & Games", 25: "Sports & Fitness", 26: "Diagnostic Centres",
+    27: "Hospitals", 28: "Photography & Studios", 29: "Pet Stores",
+    30: "Training Institutes", 31: "Online Stores",
 }
 _MAX_CATEGORY_IMAGES = 15
 

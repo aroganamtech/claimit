@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import re
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple
@@ -33,15 +34,15 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # bulk shop's category_id points at the WRONG image pool, so its category image
 # never shows and its category label is wrong in the app.
 CATEGORY_LEGEND: Dict[int, str] = {
-    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies",
-    4: "Restaurants", 5: "Cafes", 6: "Bakery & Sweets", 7: "Juices & Shakes",
-    8: "Garments & Fashion", 9: "Footwear", 10: "Mobile", 11: "Electronics",
-    12: "Salons", 13: "Beauty Parlours", 14: "Dry Fruits & Nuts",
-    15: "Fashion Accessories", 16: "Optical", 17: "Home Appliances",
-    18: "Furniture", 19: "Home Furnishing", 20: "Baby Stores",
-    21: "Books & Stationery", 22: "Gifts & Fancy Stores", 23: "Toys & Games",
-    24: "Sports & Fitness", 25: "Photography & Studios", 26: "Diagnostic Centres",
-    27: "Hospitals", 28: "Pet Stores",
+    1: "Supermarkets", 2: "Fruits & Vegetables", 3: "Pharmacies", 4: "Restaurants",
+    5: "Cafes", 6: "Bakery & Sweets", 7: "Juices & Shakes", 8: "Garments",
+    9: "Fashion", 10: "Footwear", 11: "Mobile", 12: "Electronics", 13: "Salons",
+    14: "Beauty Parlours", 15: "Dry Fruits & Nuts", 16: "Fashion Accessories",
+    17: "Optical", 18: "Home Appliances", 19: "Furniture", 20: "Home Furnishing",
+    21: "Baby Stores", 22: "Books & Stationery", 23: "Gifts & Fancy Stores",
+    24: "Toys & Games", 25: "Sports & Fitness", 26: "Diagnostic Centres",
+    27: "Hospitals", 28: "Photography & Studios", 29: "Pet Stores",
+    30: "Training Institutes", 31: "Online Stores",
 }
 
 CATEGORY_NAMES = list(CATEGORY_LEGEND.values())
@@ -54,36 +55,41 @@ _ALIASES = {
     "fruits and vegetables": 2, "fruits": 2, "vegetables": 2, "veggies": 2, "fruits & veg": 2,
     "pharmacy": 3, "medical": 3, "medical store": 3, "medical stores": 3, "chemist": 3,
     "restaurant": 4, "food": 4, "hotel": 4,
-    "cafe": 5, "café": 5, "coffee": 5, "coffee shop": 5, "coffee shops": 5,
+    "cafe": 5, "café": 5, "cafés": 5, "coffee": 5, "coffee shop": 5, "coffee shops": 5,
     "bakery and sweets": 6, "bakery": 6, "sweets": 6, "cakes": 6, "sweet shop": 6,
     "juices and shakes": 7, "juices": 7, "juice": 7, "shakes": 7, "juice shop": 7, "milkshakes": 7,
-    "garments and fashion": 8, "fashion": 8, "garment": 8, "garments": 8, "clothing": 8, "clothes": 8, "apparel": 8,
-    "footwears": 9, "shoes": 9, "shoe": 9,
-    "mobiles": 10, "mobile store": 10, "mobile stores": 10, "mobile & accessories": 10,
-    "electronic": 11, "electronics store": 11,
-    "salon": 12,
-    "beauty parlour": 13, "beauty": 13, "parlour": 13, "parlor": 13, "spa": 13,
-    "dry fruits and nuts": 14, "dry fruits": 14, "nuts": 14, "dryfruits": 14,
-    "accessories": 15, "fashion accessory": 15,
-    "optical store": 16, "optical stores": 16, "optics": 16, "eyewear": 16,
-    "appliances": 17, "home appliance": 17, "kitchen appliances": 17,
-    "furniture store": 18, "furniture stores": 18,
-    "home furnishings": 19, "furnishing": 19, "home decor": 19, "home linen": 19, "curtains": 19,
-    "baby": 20, "baby store": 20, "baby products": 20,
-    "books and stationery": 21, "books": 21, "book": 21, "stationery": 21, "book store": 21, "bookstore": 21,
-    "gifts and fancy stores": 22, "gifts": 22, "gift": 22, "fancy store": 22, "fancy stores": 22, "gift shop": 22,
-    "toys and games": 23, "toys": 23, "toy": 23, "games": 23, "toy store": 23,
-    "sports and fitness": 24, "sports": 24, "sport": 24, "fitness": 24, "gym": 24,
-    "photography and studios": 25, "photography": 25, "studio": 25, "studios": 25, "photo studio": 25,
+    "garment": 8, "clothing": 8, "clothes": 8, "apparel": 8, "garments & fashion": 8, "garments and fashion": 8,
+    "boutique": 9, "dress": 9, "dresses": 9, "fashion wear": 9,
+    "footwears": 10, "shoes": 10, "shoe": 10,
+    "mobiles": 11, "mobile store": 11, "mobile stores": 11, "mobile & accessories": 11,
+    "electronic": 12, "electronics store": 12,
+    "salon": 13,
+    "beauty parlour": 14, "beauty": 14, "parlour": 14, "parlor": 14, "spa": 14,
+    "dry fruits and nuts": 15, "dry fruits": 15, "nuts": 15, "dryfruits": 15,
+    "accessories": 16, "fashion accessory": 16,
+    "optical store": 17, "optical stores": 17, "optics": 17, "eyewear": 17,
+    "appliances": 18, "home appliance": 18, "kitchen appliances": 18,
+    "furniture store": 19, "furniture stores": 19,
+    "home furnishings": 20, "furnishing": 20, "home decor": 20, "home linen": 20, "curtains": 20,
+    "baby": 21, "baby store": 21, "baby products": 21,
+    "books and stationery": 22, "books": 22, "book": 22, "stationery": 22, "book store": 22, "bookstore": 22,
+    "gifts and fancy stores": 23, "gifts": 23, "gift": 23, "fancy store": 23, "fancy stores": 23, "gift shop": 23,
+    "toys and games": 24, "toys": 24, "toy": 24, "games": 24, "toy store": 24,
+    "sports and fitness": 25, "sports": 25, "sport": 25, "fitness": 25, "gym": 25,
     "diagnostic centre": 26, "diagnostic center": 26, "diagnostics": 26, "diagnostic": 26, "labs": 26, "lab": 26,
     "hospital": 27, "clinic": 27, "clinics": 27,
-    "pets": 28, "pet": 28, "pet store": 28, "pet shop": 28,
+    "photography and studios": 28, "photography": 28, "studio": 28, "studios": 28, "photo studio": 28,
+    "pets": 29, "pet": 29, "pet store": 29, "pet shop": 29,
+    "training institute": 30, "training": 30, "institute": 30, "institutes": 30, "academy": 30, "coaching": 30, "tuition": 30, "training centre": 30, "training center": 30,
+    "online store": 31, "online": 31, "ecommerce": 31, "e-commerce": 31,
 }
 
 
 def _norm(s: str) -> str:
-    """Lowercase, turn '&' into 'and', drop punctuation, collapse spaces."""
-    s = str(s or "").lower().replace("&", " and ")
+    """Fold accents, lowercase, turn '&' into 'and', drop punctuation and
+    collapse spaces — so 'Cafés', 'Café' and 'Cafe' all match 'Cafes'."""
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
+    s = s.lower().replace("&", " and ")
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
@@ -231,27 +237,39 @@ def build_template_bytes() -> bytes:
     ws.freeze_panes = "A2"
 
     # ── Category dropdown ──────────────────────────────────────────────────────
-    # Put the valid category names in a hidden helper column and attach an Excel
-    # dropdown to the 'categories' column so the team PICKS a category instead of
-    # typing it (kills typos like an extra "s"). One category per shop.
-    cat_col = HEADERS.index("categories") + 1          # 1-based column of categories
+    # The 28 valid categories live on a small visible "Categories" sheet and are
+    # exposed as a NAMED RANGE. A named range is the most reliable way to make an
+    # in-cell dropdown appear across Excel versions and Google Sheets (a hidden
+    # helper column sometimes won't render the arrow). Manual typing/paste is
+    # still allowed (showErrorMessage=False) and the backend tolerates variants.
+    cats_ws = wb.create_sheet("Categories")
+    cats_ws["A1"] = "Category options — used by the dropdown (do not edit)"
+    cats_ws["A1"].font = Font(bold=True, color="1A237E")
+    cats_ws.column_dimensions["A"].width = 32
+    for idx, cname in enumerate(CATEGORY_LEGEND.values(), start=2):
+        cats_ws.cell(row=idx, column=1, value=cname)
+    last_row = len(CATEGORY_LEGEND) + 1                 # A2 .. A29 for 28 items
+    ref = f"Categories!$A$2:$A${last_row}"
+
+    from openpyxl.workbook.defined_name import DefinedName
+    dn = DefinedName("ClaimitCategories", attr_text=ref)
+    try:                                                # openpyxl >= 3.1
+        wb.defined_names["ClaimitCategories"] = dn
+    except TypeError:                                   # openpyxl < 3.1
+        wb.defined_names.add(dn)
+
+    cat_col = HEADERS.index("categories") + 1
     cat_letter = get_column_letter(cat_col)
-    helper_col = 27                                    # column AA — past the data
-    hc = get_column_letter(helper_col)
-    for idx, cname in enumerate(CATEGORY_LEGEND.values(), start=1):
-        ws.cell(row=idx, column=helper_col, value=cname)
-    ws.column_dimensions[hc].hidden = True             # keep the helper list out of sight
     dv = DataValidation(
         type="list",
-        formula1=f"${hc}$1:${hc}${len(CATEGORY_LEGEND)}",
+        formula1="ClaimitCategories",                  # the named range
         allow_blank=True,
+        showErrorMessage=False,                         # dropdown + manual entry
     )
-    dv.errorTitle = "Invalid category"
-    dv.error = "Please pick a category from the dropdown list."
     dv.promptTitle = "Category"
-    dv.prompt = "Click the arrow and pick one category."
+    dv.prompt = "Pick one from the dropdown, or type it manually."
     ws.add_data_validation(dv)
-    dv.add(f"{cat_letter}2:{cat_letter}1000")
+    dv.add(f"{cat_letter}2:{cat_letter}2000")           # whole column, fill-down safe
 
     # ── Instructions sheet ────────────────────────────────────────────────────
     ins = wb.create_sheet("Instructions")

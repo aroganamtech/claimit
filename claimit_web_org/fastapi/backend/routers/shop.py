@@ -75,61 +75,70 @@ _CATEGORY_MAP: dict[str, int] = {
     # 7 — Juices & Shakes
     "juices & shakes": 7, "juices and shakes": 7, "juices_shakes": 7, "juices": 7,
     "juice": 7, "shakes": 7, "juice shop": 7, "milkshakes": 7,
-    # 8 — Garments & Fashion
-    "garments & fashion": 8, "garments and fashion": 8, "garments_fashion": 8,
-    "fashion": 8, "garment": 8, "garments": 8, "clothing": 8, "clothes": 8, "apparel": 8,
-    # 9 — Footwear
-    "footwear": 9, "footwears": 9, "shoes": 9, "shoe": 9,
-    # 10 — Mobile
-    "mobile": 10, "mobiles": 10, "mobile store": 10, "mobile stores": 10,
-    "mobile & accessories": 10,
-    # 11 — Electronics
-    "electronics": 11, "electronic": 11, "electronics store": 11,
-    # 12 — Salons
-    "salons": 12, "salon": 12,
-    # 13 — Beauty Parlours
-    "beauty parlours": 13, "beauty_parlours": 13, "beauty parlour": 13,
-    "beauty": 13, "parlour": 13, "parlor": 13, "spa": 13,
-    # 14 — Dry Fruits & Nuts
-    "dry fruits & nuts": 14, "dry fruits and nuts": 14, "dry_fruits_nuts": 14,
-    "dry fruits": 14, "nuts": 14, "dryfruits": 14,
-    # 15 — Fashion Accessories
-    "fashion accessories": 15, "fashion_accessories": 15, "accessories": 15,
-    "fashion accessory": 15,
-    # 16 — Optical
-    "optical": 16, "optical store": 16, "optical stores": 16, "optics": 16, "eyewear": 16,
-    # 17 — Home Appliances
-    "home appliances": 17, "home_appliances": 17, "appliances": 17,
-    "home appliance": 17, "kitchen appliances": 17,
-    # 18 — Furniture
-    "furniture": 18, "furniture store": 18, "furniture stores": 18,
-    # 19 — Home Furnishing
-    "home furnishing": 19, "home_furnishing": 19, "home furnishings": 19,
-    "furnishing": 19, "home decor": 19, "home linen": 19, "curtains": 19,
-    # 20 — Baby Stores
-    "baby stores": 20, "baby_stores": 20, "baby": 20, "baby store": 20, "baby products": 20,
-    # 21 — Books & Stationery
-    "books & stationery": 21, "books and stationery": 21, "books_stationery": 21,
-    "books": 21, "book": 21, "stationery": 21, "book store": 21, "bookstore": 21,
-    # 22 — Gifts & Fancy Stores
-    "gifts & fancy stores": 22, "gifts and fancy stores": 22, "gifts_fancy": 22,
-    "gifts": 22, "gift": 22, "fancy store": 22, "fancy stores": 22, "gift shop": 22,
-    # 23 — Toys & Games
-    "toys & games": 23, "toys and games": 23, "toys_games": 23, "toys": 23,
-    "toy": 23, "games": 23, "toy store": 23,
-    # 24 — Sports & Fitness
-    "sports & fitness": 24, "sports and fitness": 24, "sports_fitness": 24,
-    "sports": 24, "sport": 24, "fitness": 24, "gym": 24,
-    # 25 — Photography & Studios
-    "photography & studios": 25, "photography and studios": 25, "photography_studios": 25,
-    "photography": 25, "studio": 25, "studios": 25, "photo studio": 25,
+    # 8 — Garments
+    "garments": 8, "garment": 8, "clothing": 8, "clothes": 8, "apparel": 8,
+    "garments & fashion": 8, "garments and fashion": 8,
+    # 9 — Fashion
+    "fashion": 9, "boutique": 9, "dress": 9, "dresses": 9, "fashion wear": 9,
+    # 10 — Footwear
+    "footwear": 10, "footwears": 10, "shoes": 10, "shoe": 10,
+    # 11 — Mobile
+    "mobile": 11, "mobiles": 11, "mobile store": 11, "mobile stores": 11,
+    "mobile & accessories": 11,
+    # 12 — Electronics
+    "electronics": 12, "electronic": 12, "electronics store": 12,
+    # 13 — Salons
+    "salons": 13, "salon": 13,
+    # 14 — Beauty Parlours
+    "beauty parlours": 14, "beauty_parlours": 14, "beauty parlour": 14,
+    "beauty": 14, "parlour": 14, "parlor": 14, "spa": 14,
+    # 15 — Dry Fruits & Nuts
+    "dry fruits & nuts": 15, "dry fruits and nuts": 15, "dry_fruits_nuts": 15,
+    "dry fruits": 15, "nuts": 15, "dryfruits": 15,
+    # 16 — Fashion Accessories
+    "fashion accessories": 16, "fashion_accessories": 16, "accessories": 16,
+    "fashion accessory": 16,
+    # 17 — Optical
+    "optical": 17, "optical store": 17, "optical stores": 17, "optics": 17, "eyewear": 17,
+    # 18 — Home Appliances
+    "home appliances": 18, "home_appliances": 18, "appliances": 18,
+    "home appliance": 18, "kitchen appliances": 18,
+    # 19 — Furniture
+    "furniture": 19, "furniture store": 19, "furniture stores": 19,
+    # 20 — Home Furnishing
+    "home furnishing": 20, "home_furnishing": 20, "home furnishings": 20,
+    "furnishing": 20, "home decor": 20, "home linen": 20, "curtains": 20,
+    # 21 — Baby Stores
+    "baby stores": 21, "baby_stores": 21, "baby": 21, "baby store": 21, "baby products": 21,
+    # 22 — Books & Stationery
+    "books & stationery": 22, "books and stationery": 22, "books_stationery": 22,
+    "books": 22, "book": 22, "stationery": 22, "book store": 22, "bookstore": 22,
+    # 23 — Gifts & Fancy Stores
+    "gifts & fancy stores": 23, "gifts and fancy stores": 23, "gifts_fancy": 23,
+    "gifts": 23, "gift": 23, "fancy store": 23, "fancy stores": 23, "gift shop": 23,
+    # 24 — Toys & Games
+    "toys & games": 24, "toys and games": 24, "toys_games": 24, "toys": 24,
+    "toy": 24, "games": 24, "toy store": 24,
+    # 25 — Sports & Fitness
+    "sports & fitness": 25, "sports and fitness": 25, "sports_fitness": 25,
+    "sports": 25, "sport": 25, "fitness": 25, "gym": 25,
     # 26 — Diagnostic Centres
     "diagnostic centres": 26, "diagnostic_centres": 26, "diagnostic centre": 26,
     "diagnostic center": 26, "diagnostics": 26, "diagnostic": 26, "labs": 26, "lab": 26,
     # 27 — Hospitals
     "hospitals": 27, "hospital": 27, "clinic": 27, "clinics": 27,
-    # 28 — Pet Stores
-    "pet stores": 28, "pet_stores": 28, "pets": 28, "pet": 28, "pet store": 28, "pet shop": 28,
+    # 28 — Photography & Studios
+    "photography & studios": 28, "photography and studios": 28, "photography_studios": 28,
+    "photography": 28, "studio": 28, "studios": 28, "photo studio": 28,
+    # 29 — Pet Stores
+    "pet stores": 29, "pet_stores": 29, "pets": 29, "pet": 29, "pet store": 29, "pet shop": 29,
+    # 30 — Training Institutes
+    "training institutes": 30, "training_institutes": 30, "training institute": 30,
+    "training": 30, "institute": 30, "institutes": 30, "academy": 30, "coaching": 30,
+    "tuition": 30, "training centre": 30, "training center": 30,
+    # 31 — Online Stores
+    "online stores": 31, "online_stores": 31, "online store": 31, "online": 31,
+    "ecommerce": 31, "e-commerce": 31,
 }
 
 

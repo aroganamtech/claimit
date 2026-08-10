@@ -4,12 +4,12 @@ class AppConstants {
 
   // 🌐 Production (Vercel) — use this when testing on a real device / LTE
 //   static const String baseUrl = 'https://claimitorgbackend.vercel.app';
-  //  static const String baseUrl = 'http://16.170.110.232:8001'; server..................
+  // static const String baseUrl = 'http://16.170.110.232:8001'; //server..................
 
   // 💻 Local dev — only works when phone is on the SAME WiFi as your PC
 //   static const String baseUrl = 'http://10.204.99.28:8001';
   // static const String baseUrl = 'http://10.0.2.2:8001';   // Android emulator
-  static const String baseUrl = ' http://0.0.0.0:8002';   // iOS simulator
+  static const String baseUrl = 'http://localhost:8001';   // local APP backend (must match run.py's port)
 
   // ── App version (shown in Settings) ───────────────────────────────────────
   // KEEP IN SYNC with pubspec.yaml "version:" when releasing a new build.

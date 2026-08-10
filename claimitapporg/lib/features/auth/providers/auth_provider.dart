@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
@@ -157,7 +158,9 @@ class AuthProvider extends ChangeNotifier {
     try {
       // Attach this device's FCM token (if available) so the backend can
       // register it for push notifications in the same round-trip as login.
-      final fcmToken = FcmService.instance.fcmToken;
+      // Skip on web: Firebase isn't initialised there and touching FcmService
+      // would throw [core/no-app] and wrongly fail the OTP verify.
+      final fcmToken = kIsWeb ? null : FcmService.instance.fcmToken;
 
       final response = await _apiClient.post(
         AppConstants.verifyOtp,
@@ -170,7 +173,7 @@ class AuthProvider extends ChangeNotifier {
           if (name.trim().isNotEmpty) 'name': name.trim(),
           if (fcmToken != null && fcmToken.isNotEmpty) 'fcm_token': fcmToken,
           if (fcmToken != null && fcmToken.isNotEmpty)
-            'fcm_platform': Platform.isIOS ? 'ios' : 'android',
+            'fcm_platform': (!kIsWeb && Platform.isIOS) ? 'ios' : 'android',
         },
       );
 

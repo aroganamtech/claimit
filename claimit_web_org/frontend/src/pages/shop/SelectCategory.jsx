@@ -12,27 +12,30 @@ const CATEGORIES = [
   { label: 'Cafes',                value: 'cafes'               },  // 5
   { label: 'Bakery & Sweets',      value: 'bakery_sweets'       },  // 6
   { label: 'Juices & Shakes',      value: 'juices_shakes'       },  // 7
-  { label: 'Garments & Fashion',   value: 'garments_fashion'    },  // 8
-  { label: 'Footwear',             value: 'footwear'            },  // 9
-  { label: 'Mobile',               value: 'mobile'              },  // 10
-  { label: 'Electronics',          value: 'electronics'         },  // 11
-  { label: 'Salons',               value: 'salons'              },  // 12
-  { label: 'Beauty Parlours',      value: 'beauty_parlours'     },  // 13
-  { label: 'Dry Fruits & Nuts',    value: 'dry_fruits_nuts'     },  // 14
-  { label: 'Fashion Accessories',  value: 'fashion_accessories' },  // 15
-  { label: 'Optical',              value: 'optical'             },  // 16
-  { label: 'Home Appliances',      value: 'home_appliances'     },  // 17
-  { label: 'Furniture',            value: 'furniture'           },  // 18
-  { label: 'Home Furnishing',      value: 'home_furnishing'     },  // 19
-  { label: 'Baby Stores',          value: 'baby_stores'         },  // 20
-  { label: 'Books & Stationery',   value: 'books_stationery'    },  // 21
-  { label: 'Gifts & Fancy Stores', value: 'gifts_fancy'         },  // 22
-  { label: 'Toys & Games',         value: 'toys_games'          },  // 23
-  { label: 'Sports & Fitness',     value: 'sports_fitness'      },  // 24
-  { label: 'Photography & Studios',value: 'photography_studios' },  // 25
+  { label: 'Garments',             value: 'garments'            },  // 8
+  { label: 'Fashion',              value: 'fashion'             },  // 9
+  { label: 'Footwear',             value: 'footwear'            },  // 10
+  { label: 'Mobile',               value: 'mobile'              },  // 11
+  { label: 'Electronics',          value: 'electronics'         },  // 12
+  { label: 'Salons',               value: 'salons'              },  // 13
+  { label: 'Beauty Parlours',      value: 'beauty_parlours'     },  // 14
+  { label: 'Dry Fruits & Nuts',    value: 'dry_fruits_nuts'     },  // 15
+  { label: 'Fashion Accessories',  value: 'fashion_accessories' },  // 16
+  { label: 'Optical',              value: 'optical'             },  // 17
+  { label: 'Home Appliances',      value: 'home_appliances'     },  // 18
+  { label: 'Furniture',            value: 'furniture'           },  // 19
+  { label: 'Home Furnishing',      value: 'home_furnishing'     },  // 20
+  { label: 'Baby Stores',          value: 'baby_stores'         },  // 21
+  { label: 'Books & Stationery',   value: 'books_stationery'    },  // 22
+  { label: 'Gifts & Fancy Stores', value: 'gifts_fancy'         },  // 23
+  { label: 'Toys & Games',         value: 'toys_games'          },  // 24
+  { label: 'Sports & Fitness',     value: 'sports_fitness'      },  // 25
   { label: 'Diagnostic Centres',   value: 'diagnostic_centres'  },  // 26
   { label: 'Hospitals',            value: 'hospitals'           },  // 27
-  { label: 'Pet Stores',           value: 'pet_stores'          },  // 28
+  { label: 'Photography & Studios',value: 'photography_studios' },  // 28
+  { label: 'Pet Stores',           value: 'pet_stores'          },  // 29
+  { label: 'Training Institutes',  value: 'training_institutes' },  // 30
+  { label: 'Online Stores',        value: 'online_stores'       },  // 31
 ]
 
 export default function SelectCategory() {

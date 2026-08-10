@@ -58,27 +58,30 @@ class ShopService {
     5:  _CatMeta(Color(0xFFFBE9E7), Icons.local_cafe_rounded),
     6:  _CatMeta(Color(0xFFFFF3E0), Icons.cake_rounded),
     7:  _CatMeta(Color(0xFFFFEBEE), Icons.local_drink_rounded),
-    8:  _CatMeta(Color(0xFFF3E5F5), Icons.checkroom_rounded),
-    9:  _CatMeta(Color(0xFFE1F5FE), Icons.directions_walk_rounded),
-    10: _CatMeta(Color(0xFFE3F2FD), Icons.smartphone_rounded),
-    11: _CatMeta(Color(0xFFEDE7F6), Icons.devices_rounded),
-    12: _CatMeta(Color(0xFFFFF8E1), Icons.content_cut_rounded),
-    13: _CatMeta(Color(0xFFFCE4EC), Icons.spa_rounded),
-    14: _CatMeta(Color(0xFFEFEBE9), Icons.grain_rounded),
-    15: _CatMeta(Color(0xFFF3E5F5), Icons.watch_rounded),
-    16: _CatMeta(Color(0xFFE0F2F1), Icons.visibility_rounded),
-    17: _CatMeta(Color(0xFFE1F5FE), Icons.kitchen_rounded),
-    18: _CatMeta(Color(0xFFEFEBE9), Icons.chair_rounded),
-    19: _CatMeta(Color(0xFFFFF8E1), Icons.king_bed_rounded),
-    20: _CatMeta(Color(0xFFFCE4EC), Icons.child_care_rounded),
-    21: _CatMeta(Color(0xFFE8EAF6), Icons.menu_book_rounded),
-    22: _CatMeta(Color(0xFFFFEBEE), Icons.card_giftcard_rounded),
-    23: _CatMeta(Color(0xFFEDE7F6), Icons.toys_rounded),
-    24: _CatMeta(Color(0xFFE8F5E9), Icons.fitness_center_rounded),
-    25: _CatMeta(Color(0xFFECEFF1), Icons.camera_alt_rounded),
-    26: _CatMeta(Color(0xFFE8EAF6), Icons.biotech_rounded),
-    27: _CatMeta(Color(0xFFFFEBEE), Icons.local_hospital_rounded),
-    28: _CatMeta(Color(0xFFE0F2F1), Icons.pets_rounded),
+    8:  _CatMeta(Color(0xFFEDE7F6), Icons.checkroom_rounded),
+    9:  _CatMeta(Color(0xFFF3E5F5), Icons.local_mall_rounded),
+    10: _CatMeta(Color(0xFFE1F5FE), Icons.directions_walk_rounded),
+    11: _CatMeta(Color(0xFFE3F2FD), Icons.smartphone_rounded),
+    12: _CatMeta(Color(0xFFFFF8E1), Icons.devices_rounded),
+    13: _CatMeta(Color(0xFFEDE7F6), Icons.content_cut_rounded),
+    14: _CatMeta(Color(0xFFFCE4EC), Icons.spa_rounded),
+    15: _CatMeta(Color(0xFFE8F5E9), Icons.grain_rounded),
+    16: _CatMeta(Color(0xFFE3F2FD), Icons.shopping_bag_rounded),
+    17: _CatMeta(Color(0xFFE3F2FD), Icons.visibility_rounded),
+    18: _CatMeta(Color(0xFFE8F5E9), Icons.kitchen_rounded),
+    19: _CatMeta(Color(0xFFE0F7FA), Icons.chair_rounded),
+    20: _CatMeta(Color(0xFFFCE4EC), Icons.king_bed_rounded),
+    21: _CatMeta(Color(0xFFFFF3E0), Icons.child_friendly_rounded),
+    22: _CatMeta(Color(0xFFFFEBEE), Icons.menu_book_rounded),
+    23: _CatMeta(Color(0xFFEDE7F6), Icons.card_giftcard_rounded),
+    24: _CatMeta(Color(0xFFE0F2F1), Icons.toys_rounded),
+    25: _CatMeta(Color(0xFFE3F2FD), Icons.fitness_center_rounded),
+    26: _CatMeta(Color(0xFFE8F5E9), Icons.biotech_rounded),
+    27: _CatMeta(Color(0xFFE0F7FA), Icons.local_hospital_rounded),
+    28: _CatMeta(Color(0xFFFCE4EC), Icons.camera_alt_rounded),
+    29: _CatMeta(Color(0xFFEFEBE9), Icons.pets_rounded),
+    30: _CatMeta(Color(0xFFFFF8E1), Icons.school_rounded),
+    31: _CatMeta(Color(0xFFE3F2FD), Icons.shopping_cart_rounded),
   };
 
   static _CatMeta _metaFor(List<int> ids) {
@@ -89,7 +92,10 @@ class ShopService {
   // ── Fetch all shops ────────────────────────────────────────────────────────
   Future<List<ShopItem>> fetchAllShops() async {
     try {
-      final resp = await _api.get(AppConstants.shops);
+      // Fetch the full set — the backend defaults to only 200 per page, which
+      // dropped shops (and whole categories) once there were more than 200.
+      // 500 is the backend's max page size.
+      final resp = await _api.get(AppConstants.shops, queryParams: {'limit': 500});
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['shops'] as List? ?? [];
         return list.map((j) => _fromJson(j as Map<String, dynamic>)).toList();
