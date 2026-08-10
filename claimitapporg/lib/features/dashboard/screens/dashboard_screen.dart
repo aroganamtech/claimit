@@ -2716,15 +2716,10 @@ class _DealsToggle extends StatelessWidget {
       height: 42,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        // Light-gray track so the INACTIVE button reads as light gray while the
+        // active one is a blue pill (same style as the Rewards/Redeem toggle).
+        color: const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.07),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         children: [
@@ -2758,6 +2753,7 @@ class _ToggleBtn extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           height: double.infinity,
           decoration: BoxDecoration(
+            // active → blue pill; inactive → transparent over the gray track
             color: active ? const Color(0xFF2563EB) : Colors.transparent,
             borderRadius: BorderRadius.circular(26),
           ),
@@ -2767,7 +2763,7 @@ class _ToggleBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: active ? Colors.white : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: active ? Colors.white : const Color(0xFF6B7280),
             ),
           ),
         ),

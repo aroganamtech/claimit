@@ -483,9 +483,11 @@ async def shops_bulk_upload(
                 "address":       address,
                 "shop_address":  address,   # register uses this key
                 "location":      location,  # "Area, City" shown on shop cards
-                "discount":      int(float(cell(row, "discount") or 0)),
-                "rating":        float(cell(row, "rating") or 4.0),
-                "added_days_ago": int(float(cell(row, "added_days_ago") or 0)),
+                # Tolerant numeric parse — a blank or bad value falls back to a
+                # sensible default instead of skipping the whole shop row.
+                "discount":      int(_num(cell(row, "discount")) or 0),
+                "rating":        (_num(cell(row, "rating")) or 4.0),
+                "added_days_ago": int(_num(cell(row, "added_days_ago")) or 0),
                 "about":         str(cell(row, "about") or "").strip(),
                 "timing":        str(cell(row, "timing") or "").strip(),
                 "phone":         str(cell(row, "phone") or "").strip(),

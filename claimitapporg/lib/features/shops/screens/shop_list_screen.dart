@@ -98,29 +98,38 @@ class ShopItem {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Map<int, String> _kCatNames = {
-  1: 'New Deals',    2: 'Groceries',   3: 'Supermarket',  4: 'Pharmacy',
-  5: 'Salon',        6: 'Gym',         7: 'Restaurant',   8: 'Cafes',
-  9: 'Clothing',    10: 'Department', 11: 'Electronics', 12: 'Books',
- 13: 'Toys',        14: 'Baby',       15: 'Home Decor',  16: 'Furniture',
- 17: 'Spa',         18: 'Schools',    19: 'Colleges',    20: 'Tutoring',
- 21: 'Clinics',     22: 'Hospitals',  23: 'Pets',        24: 'Sports',
- 25: 'Travel',      26: 'Mobile',     27: 'Computers',   28: 'Gifts',
- 29: 'Jewellery',   30: 'Shoes',
+  1: 'Supermarkets',       2: 'Fruits & Vegetables', 3: 'Pharmacies',
+  4: 'Restaurants',        5: 'Cafes',               6: 'Bakery & Sweets',
+  7: 'Juices & Shakes',    8: 'Garments & Fashion',  9: 'Footwear',
+ 10: 'Mobile',            11: 'Electronics',        12: 'Salons',
+ 13: 'Beauty Parlours',   14: 'Dry Fruits & Nuts',  15: 'Fashion Accessories',
+ 16: 'Optical',           17: 'Home Appliances',    18: 'Furniture',
+ 19: 'Home Furnishing',   20: 'Baby Stores',        21: 'Books & Stationery',
+ 22: 'Gifts & Fancy Stores', 23: 'Toys & Games',    24: 'Sports & Fitness',
+ 25: 'Photography & Studios', 26: 'Diagnostic Centres', 27: 'Hospitals',
+ 28: 'Pet Stores',
 };
 
 String _catName(List<int> ids) =>
     ids.isEmpty ? '' : (_kCatNames[ids.first] ?? '');
 
+/// Lets a name wrap at ANY character so each line fills completely instead of
+/// breaking only at spaces — e.g. "GreenBasket Super" / "market" rather than
+/// "GreenBasket" / "Supermarket". Inserts zero-width spaces between characters;
+/// the real text is still exposed to screen readers via semanticsLabel.
+String _fillWrap(String s) => s.split('').join('\u200B');
+
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Category ID reference (matches ShopCategory.id values):
-//   1=New deals  2=Groceries  3=Supermarket  4=Pharmacy  5=Salon
-//   6=Gym  7=Restaurant  8=Cafes  9=Clothing  10=Department
-//  11=Electronics  12=Books  13=Toys  14=Baby  15=Home Decor
-//  16=Furniture  17=Spa  18=Schools  19=Colleges  20=Tutoring
-//  21=Clinics  22=Hospitals  23=Pets  24=Sports  25=Travel
-//  26=Mobile & Accessories  27=Computer & Laptop
-//  28=Gifts  29=Jewellery  30=Shoes
+// Category ID reference (matches ShopCategory.id + backend legend):
+//   1=Supermarkets  2=Fruits & Vegetables  3=Pharmacies  4=Restaurants
+//   5=Cafes  6=Bakery & Sweets  7=Juices & Shakes  8=Garments & Fashion
+//   9=Footwear  10=Mobile  11=Electronics  12=Salons  13=Beauty Parlours
+//   14=Dry Fruits & Nuts  15=Fashion Accessories  16=Optical
+//   17=Home Appliances  18=Furniture  19=Home Furnishing  20=Baby Stores
+//   21=Books & Stationery  22=Gifts & Fancy Stores  23=Toys & Games
+//   24=Sports & Fitness  25=Photography & Studios  26=Diagnostic Centres
+//   27=Hospitals  28=Pet Stores
 // ─────────────────────────────────────────────────────────────────────────────
 
 // FilterCat, filterCats — imported from shared/widgets/shop_filter_sheet.dart
@@ -743,7 +752,8 @@ class _ShopCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            shop.name,
+                            _fillWrap(shop.name),
+                            semanticsLabel: shop.name,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,

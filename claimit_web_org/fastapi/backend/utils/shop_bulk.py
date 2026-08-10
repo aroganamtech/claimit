@@ -17,6 +17,7 @@ extractor). The DB insert + S3 upload live in routers/admin.py.
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple
@@ -24,6 +25,7 @@ from typing import Dict, List, Tuple
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # ── Category id → name ────────────────────────────────────────────────────────
 # These ids MUST stay identical to admin.py `_CATEGORY_NAMES` (the Category
@@ -79,11 +81,53 @@ _ALIASES = {
 }
 
 
+def _norm(s: str) -> str:
+    """Lowercase, turn '&' into 'and', drop punctuation, collapse spaces."""
+    s = str(s or "").lower().replace("&", " and ")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+# Normalised lookup built once from the legend names + aliases.
+_LOOKUP: Dict[str, int] = {}
+for _k, _v in {**_NAME_TO_ID, **_ALIASES}.items():
+    _LOOKUP.setdefault(_norm(_k), _v)
+
+
+def _resolve_one(p: str):
+    """Best-effort map ONE category token to an id — tolerant of an extra 's',
+    extra words, '&'/'and', reordering and minor punctuation. Returns None only
+    when nothing sensible matches."""
+    n = _norm(p)
+    if not n:
+        return None
+    if n in _LOOKUP:                       # exact (after normalising)
+        return _LOOKUP[n]
+    if n.endswith("s") and n[:-1] in _LOOKUP:   # dropped a stray plural 's'
+        return _LOOKUP[n[:-1]]
+    if (n + "s") in _LOOKUP:                # missing plural 's'
+        return _LOOKUP[n + "s"]
+    try:                                    # a raw category number
+        i = int(float(p))
+        if i in CATEGORY_LEGEND:
+            return i
+    except (ValueError, TypeError):
+        pass
+    # Extra words / reordering: pick the longest known name whose words all
+    # appear in the input (e.g. "fresh fruits and vegetables mart" → id 2).
+    tokens = set(n.split())
+    best, best_len = None, 0
+    for key, cid in _LOOKUP.items():
+        if len(key) >= 4 and set(key.split()).issubset(tokens) and len(key) > best_len:
+            best, best_len = cid, len(key)
+    return best
+
+
 def parse_categories(value) -> Tuple[List[int], List[str]]:
     """
-    Turn a comma-separated list of category NAMES (e.g. "Groceries, Supermarket")
-    into a de-duplicated list of ids. Also accepts raw numbers as a fallback.
-    Returns (ids, unknown_names).
+    Turn a comma/semicolon-separated list of category NAMES into a de-duplicated
+    list of ids. Tolerant of common mistakes (extra 's', extra words, '&'/'and').
+    Also accepts raw category numbers. Returns (ids, unknown_names).
     """
     ids: List[int] = []
     unknown: List[str] = []
@@ -91,19 +135,10 @@ def parse_categories(value) -> Tuple[List[int], List[str]]:
         p = part.strip()
         if not p:
             continue
-        low = p.lower()
-        if low in _NAME_TO_ID:
-            ids.append(_NAME_TO_ID[low])
-        elif low in _ALIASES:
-            ids.append(_ALIASES[low])
+        cid = _resolve_one(p)
+        if cid:
+            ids.append(cid)
         else:
-            try:
-                n = int(float(p))
-                if n in CATEGORY_LEGEND:
-                    ids.append(n)
-                    continue
-            except (ValueError, TypeError):
-                pass
             unknown.append(p)
     seen = set()
     out = []
@@ -143,7 +178,7 @@ HEADERS = [c[0] for c in COLUMNS]
 # Example row mirrors seed.py's first shop (Indian Mart), with the structured
 # address the team collects at registration.
 _EXAMPLE_ROW = [
-    "Indian Mart", "Supermarkets, Fruits & Vegetables",
+    "Indian Mart", "Supermarkets",
     "India", "Tamil Nadu", "Chennai", "Chennai", "Padi", "600050",
     "89, Industrial Estate, Padi, Chennai - 600050",
     30, 4.2, 2,
@@ -195,6 +230,29 @@ def build_template_bytes() -> bytes:
     ws.row_dimensions[1].height = 34
     ws.freeze_panes = "A2"
 
+    # ── Category dropdown ──────────────────────────────────────────────────────
+    # Put the valid category names in a hidden helper column and attach an Excel
+    # dropdown to the 'categories' column so the team PICKS a category instead of
+    # typing it (kills typos like an extra "s"). One category per shop.
+    cat_col = HEADERS.index("categories") + 1          # 1-based column of categories
+    cat_letter = get_column_letter(cat_col)
+    helper_col = 27                                    # column AA — past the data
+    hc = get_column_letter(helper_col)
+    for idx, cname in enumerate(CATEGORY_LEGEND.values(), start=1):
+        ws.cell(row=idx, column=helper_col, value=cname)
+    ws.column_dimensions[hc].hidden = True             # keep the helper list out of sight
+    dv = DataValidation(
+        type="list",
+        formula1=f"${hc}$1:${hc}${len(CATEGORY_LEGEND)}",
+        allow_blank=True,
+    )
+    dv.errorTitle = "Invalid category"
+    dv.error = "Please pick a category from the dropdown list."
+    dv.promptTitle = "Category"
+    dv.prompt = "Click the arrow and pick one category."
+    ws.add_data_validation(dv)
+    dv.add(f"{cat_letter}2:{cat_letter}1000")
+
     # ── Instructions sheet ────────────────────────────────────────────────────
     ins = wb.create_sheet("Instructions")
     ins.column_dimensions["A"].width = 60
@@ -203,8 +261,8 @@ def build_template_bytes() -> bytes:
         ("How to use this template", True),
         ("1. Fill one shop per row starting at row 2 (the sample row is an example — overwrite or delete it).", False),
         ("2. name is required. Give at least one category.", False),
-        ("3. categories: type the category NAMES, comma-separated, e.g. Groceries, Supermarket", False),
-        ("   (use the exact names from the list below — you can enter more than one).", False),
+        ("3. categories: click the cell and PICK a category from the dropdown arrow", False),
+        ("   (no typing — this avoids spelling mistakes; one category per shop).", False),
         ("4. Address: fill country, state, district, city, area, pincode and the full address —", False),
         ("   the same details collected on the shop registration form. The app 'City / Area'", False),
         ("   label shown on shop cards is built automatically from area + city.", False),
