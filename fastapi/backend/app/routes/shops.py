@@ -120,7 +120,7 @@ async def get_shops(
     exclude_id: Optional[str] = Query(None, description="Exclude this shop ID"),
     has_rewards: Optional[bool] = Query(None),
     has_redeem: Optional[bool] = Query(None),
-    limit: int = Query(200, ge=1, le=500),
+    limit: Optional[int] = Query(None),  # no cap — return all matching shops
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -138,7 +138,9 @@ async def get_shops(
         query["has_redeem"] = has_redeem
 
     cursor = db.shops.find(query).sort("added_days_ago", 1)
-    shops: List[dict] = await cursor.to_list(length=500)
+    # Fetch all matching shops (no 500 cap) so large catalogues + category
+    # filters show every shop, not just the first 500.
+    shops: List[dict] = await cursor.to_list(length=None)
 
     # Search filter (name / location)
     if q:
@@ -161,7 +163,8 @@ async def get_shops(
     if exclude_id:
         shops = [s for s in shops if str(s.get("_id", "")) != exclude_id]
 
-    shops = shops[:limit]
+    if limit is not None:
+        shops = shops[:limit]
 
     shops_out = []
     for s in shops:
@@ -185,7 +188,7 @@ async def search_shops(
     db = get_db()
     q_lower = q.lower()
     cursor = db.shops.find({})
-    all_shops = await cursor.to_list(length=500)
+    all_shops = await cursor.to_list(length=None)
     results = [
         s for s in all_shops
         if q_lower in s.get("name", "").lower()
@@ -220,7 +223,7 @@ async def get_nearby_shops(
     location string can be matched (they get distance=None).
     """
     db = get_db()
-    all_shops: List[dict] = await db.shops.find({}).to_list(length=500)
+    all_shops: List[dict] = await db.shops.find({}).to_list(length=None)
 
     nearby = []
     for shop in all_shops:

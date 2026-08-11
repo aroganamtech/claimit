@@ -92,10 +92,8 @@ class ShopService {
   // ── Fetch all shops ────────────────────────────────────────────────────────
   Future<List<ShopItem>> fetchAllShops() async {
     try {
-      // Fetch the full set — the backend defaults to only 200 per page, which
-      // dropped shops (and whole categories) once there were more than 200.
-      // 500 is the backend's max page size.
-      final resp = await _api.get(AppConstants.shops, queryParams: {'limit': 500});
+      // No limit — fetch every shop so no category is ever missing shops.
+      final resp = await _api.get(AppConstants.shops);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['shops'] as List? ?? [];
         return list.map((j) => _fromJson(j as Map<String, dynamic>)).toList();

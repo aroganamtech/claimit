@@ -445,6 +445,10 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
     // One like per user — once liked, tapping again does nothing.
     if (_liked) return;
 
+    // Tap feedback — a short click sound + light vibration on like.
+    SystemSound.play(SystemSoundType.click);
+    HapticFeedback.lightImpact();
+
     // Optimistic update immediately
     setState(() {
       _liked = true;

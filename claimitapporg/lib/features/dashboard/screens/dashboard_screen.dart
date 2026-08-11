@@ -2472,10 +2472,12 @@ class _CategoryRowState extends State<_CategoryRow> {
   Timer? _autoTimer;
   bool _paused = false;
 
-  // Home shows the full category list (per the client's icon sheet); the "All"
-  // tile at the end opens the all-categories page.
-  int get _homeCount => _categories.length;
-  int get _totalSlots => _homeCount + 1; // all categories + "All"
+  // Home shows the first 16 categories (the client's home-icon sheet); the
+  // "All" tile at the end opens the full 31-category page.
+  static const int _homeMax = 16;
+  int get _homeCount =>
+      _categories.length < _homeMax ? _categories.length : _homeMax;
+  int get _totalSlots => _homeCount + 1; // 16 categories + "All"
 
   @override
   void initState() {
@@ -2504,8 +2506,9 @@ class _CategoryRowState extends State<_CategoryRow> {
     required VoidCallback onTap,
     required double width,
   }) {
-    // Asset icons: icon1.png … icon30.png (1-based index)
-    final assetPath = 'assets/icons/category_icon/icon${globalIndex + 1}.png';
+    // Home moving strip uses its OWN icon set (red-on-transparent, from the
+    // client's home-icon sheet). The All-categories page keeps the tile icons.
+    final assetPath = 'assets/icons/home_category/icon${globalIndex + 1}.png';
 
     // Use screen width for responsive icon size: ~13% of width, clamped 48–62
     final iconSize = (MediaQuery.of(context).size.width * 0.13).clamp(48.0, 62.0);
@@ -2756,7 +2759,7 @@ class _ToggleBtn extends StatelessWidget {
           height: double.infinity,
           decoration: BoxDecoration(
             // active → blue pill; inactive → transparent over the gray track
-            color: active ? const Color(0xFF2563EB) : Colors.transparent,
+            color: active ? const Color(0xFF2563EB) : const Color.fromARGB(96, 64, 63, 63),
             borderRadius: BorderRadius.circular(26),
           ),
           alignment: Alignment.center,
@@ -2765,7 +2768,7 @@ class _ToggleBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: active ? Colors.white : const Color(0xFF6B7280),
+              color: active ? Colors.white : const Color.fromARGB(255, 255, 255, 255),
             ),
           ),
         ),
