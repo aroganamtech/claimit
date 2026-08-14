@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom'
 const DISCOUNT_OPTIONS = [5, 10, 15, 20, 25, 30]
 
 const PLANS = [
-  { id: 'premium',  name: 'Premium',  price: 1999, note: 'Top placement + full visibility' },
-  { id: 'standard', name: 'Standard', price: 999,  note: 'Priority listing' },
-  { id: 'other',    name: 'Other',    price: 0,    note: 'Enter any amount' },
+  { id: 'premium',  name: 'Premium',  price: 720, note: 'Top placement + full visibility' },
+  { id: 'standard', name: 'Standard', price: 365, note: 'Priority listing' },
+  { id: 'other',    name: 'Other',    price: 0,   note: 'Enter any amount' },
 ]
 
 export default function ChooseShopType() {

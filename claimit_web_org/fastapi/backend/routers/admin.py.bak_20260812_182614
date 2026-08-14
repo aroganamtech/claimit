@@ -309,16 +309,9 @@ async def list_shops(
     district: str = Query("", description="Filter by district (exact, case-insensitive)"),
     city: str = Query("", description="Filter by city (exact, case-insensitive)"),
     pincode: str = Query("", description="Filter by pincode (exact)"),
-    category: str = Query("", description="Filter by category (exact, case-insensitive)"),
-    shop_name: str = Query("", description="Filter by shop name (substring, case-insensitive)"),
-    shop_type: str = Query("", description="Filter by 'redeem' or 'reward'"),
-    status: str = Query("", description="Filter by 'pending' / 'active' / 'suspended'"),
-    claimed: str = Query("", description="'yes' = has an owner, 'no' = bulk/unclaimed"),
     _admin=Depends(get_current_admin),
 ):
-    """List shops. All filters are optional and combine with AND — supports
-    the client's State → District → PIN code → Category → Shop hierarchy,
-    plus type/status/claimed so admin can quickly zero in on one shop."""
+    """List shops. All filters are optional and combine with AND."""
     query: dict = {}
     if state:
         query["state"] = {"$regex": f"^{state.strip()}$", "$options": "i"}
@@ -328,37 +321,20 @@ async def list_shops(
         query["city"] = {"$regex": f"^{city.strip()}$", "$options": "i"}
     if pincode:
         query["pincode"] = pincode.strip()
-    if category:
-        query["category"] = {"$regex": f"^{category.strip()}$", "$options": "i"}
-    if shop_name:
-        query["shop_name"] = {"$regex": shop_name.strip(), "$options": "i"}
-    if shop_type:
-        query["shop_type"] = shop_type.strip().lower()
-    if status:
-        query["status"] = status.strip().lower()
-    if claimed == "yes":
-        query["user_id"] = {"$exists": True, "$ne": "", "$nin": [None]}
-    elif claimed == "no":
-        query["$or"] = [
-            {"user_id": {"$exists": False}}, {"user_id": None}, {"user_id": ""},
-        ]
     docs = await shops_collection.find(query).sort("created_at", -1).to_list(2000)
     return [_serialize(d) for d in docs]
 
 
 @router.get("/shops/filters")
 async def shop_filter_options(_admin=Depends(get_current_admin)):
-    """Distinct state/district/city/category values, for populating the
-    filter dropdowns."""
+    """Distinct state/district/city values, for populating the filter dropdowns."""
     states = await shops_collection.distinct("state")
     districts = await shops_collection.distinct("district")
     cities = await shops_collection.distinct("city")
-    categories = await shops_collection.distinct("category")
     return {
         "states": sorted([s for s in states if s]),
         "districts": sorted([d for d in districts if d]),
         "cities": sorted([c for c in cities if c]),
-        "categories": sorted([c for c in categories if c]),
     }
 
 
@@ -544,15 +520,6 @@ async def shops_bulk_upload(
             errors.append({"row": r, "name": name,
                            "error": f"Unknown categories skipped: {', '.join(unknown_cats)}"})
 
-        # Phone is mandatory — a shop with no number can never be claimed by
-        # its owner (claim-by-mobile is the only claim flow), so a blank
-        # phone here silently produced an unclaimable shop before this check.
-        phone = str(cell(row, "phone") or "").strip()
-        if not phone:
-            errors.append({"row": r, "name": name,
-                           "error": "Missing phone number — mobile number is mandatory."})
-            continue
-
         country  = str(cell(row, "country")  or "").strip()
         state    = str(cell(row, "state")    or "").strip()
         district = str(cell(row, "district") or "").strip()
@@ -583,15 +550,10 @@ async def shops_bulk_upload(
                 "added_days_ago": int(_num(cell(row, "added_days_ago")) or 0),
                 "about":         str(cell(row, "about") or "").strip(),
                 "timing":        str(cell(row, "timing") or "").strip(),
-                "phone":         phone,
+                "phone":         str(cell(row, "phone") or "").strip(),
                 "lat":           _num(cell(row, "lat")),
                 "lng":           _num(cell(row, "lng")),
             }
-            # GeoJSON mirror of lat/lng for the app's real $geoNear "nearby
-            # shops" query (2dsphere index). None when lat/lng weren't given
-            # (they're optional in the sheet) — same as the register flow.
-            _lat, _lng = doc["lat"], doc["lng"]
-            doc["geo"] = {"type": "Point", "coordinates": [_lng, _lat]} if (_lat is not None and _lng is not None) else None
         except (ValueError, TypeError) as e:
             errors.append({"row": r, "name": name, "error": f"Invalid number: {e}"})
             continue

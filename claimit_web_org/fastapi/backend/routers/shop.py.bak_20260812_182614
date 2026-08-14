@@ -383,10 +383,6 @@ async def register_shop(
     user_id = str(current_user["_id"])
     user_email = current_user.get("email", "")
 
-    # GeoJSON point mirror of lat/lng — powers the app's real $geoNear
-    # "nearby shops" query (2dsphere index). Coordinate order is [lng, lat].
-    geo_point = {"type": "Point", "coordinates": [lng, lat]} if (lat is not None and lng is not None) else None
-
     shop_doc = {
         "user_id": user_id,
         "user_email": user_email,
@@ -395,7 +391,6 @@ async def register_shop(
         "pincode": pincode,
         "lat": lat,
         "lng": lng,
-        "geo": geo_point,
         "about": about,
         "location": location,
         "phone": phone,

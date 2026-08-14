@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Header from './components/Header'
 
@@ -112,51 +112,6 @@ function LandingPage() {
             />
           </div>
         ))}
-      </div>
-
-      {/* Services + Pricing — publicly visible (no login) so visitors and
-          payment-gateway reviewers can see what claimit offers and what it
-          costs, straight from the homepage. */}
-      <div style={{ background: '#F4F7FF', padding: '56px 32px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{ fontSize: 28, fontWeight: 700, color: '#1565C0', marginBottom: 14 }}>
-            For Local Shops
-          </h2>
-          <p style={{ fontSize: 16, color: '#444', maxWidth: 700, margin: '0 auto 40px', lineHeight: 1.7 }}>
-            List your shop on claimit and get discovered by nearby customers on the claimit app.
-            Run a Reward program (customers earn points on every bill) or a Redeem program
-            (customers get an instant discount) — your choice. Registration is a one-time
-            payment based on the plan you pick below.
-          </p>
-
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 20, maxWidth: 820, margin: '0 auto 36px',
-          }}>
-            {[
-              { name: 'Premium', price: '₹720', note: 'Top placement + full visibility' },
-              { name: 'Standard', price: '₹365', note: 'Priority listing' },
-              { name: 'Other', price: 'Your choice', note: 'Enter any amount' },
-            ].map(p => (
-              <div key={p.name} style={{
-                background: '#fff', borderRadius: 12, padding: '24px 20px',
-                border: '1px solid #e0e0e0', boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-              }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{p.name}</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#1565C0', margin: '8px 0' }}>{p.price}</div>
-                <div style={{ fontSize: 13, color: '#777' }}>{p.note}</div>
-              </div>
-            ))}
-          </div>
-
-          <Link to="/shop/auth" style={{
-            display: 'inline-block', padding: '13px 32px', background: '#1565C0',
-            color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15,
-            textDecoration: 'none',
-          }}>
-            Register your shop
-          </Link>
-        </div>
       </div>
 
     </div>

@@ -23,6 +23,8 @@ Docs: https://razorpay.com/docs/api/payments/payment-links/
 """
 
 import os
+import hmac
+import hashlib
 import httpx
 from fastapi import HTTPException
 
@@ -43,6 +45,52 @@ def _auth() -> tuple:
             ),
         )
     return (key_id, key_secret)
+
+
+def public_key_id() -> str:
+    """The publishable key id — safe to send to the browser for Checkout."""
+    return os.getenv("RAZORPAY_KEY_ID", "")
+
+
+async def create_order(amount: float, receipt: str = "") -> dict:
+    """Create a Razorpay Order for the on-page Checkout flow (used by shop
+    registration). `amount` is in rupees; Razorpay wants paise. Returns
+    {order_id, amount, currency, key_id}."""
+    amount_paise = int(round(amount * 100))
+    if amount_paise < 100:
+        raise HTTPException(status_code=400, detail="Amount must be at least ₹1")
+    payload = {
+        "amount": amount_paise,
+        "currency": "INR",
+        "receipt": (receipt or "")[:40],
+        "payment_capture": 1,
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(f"{_BASE_URL}/orders", auth=_auth(), json=payload)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502,
+                            detail=f"Razorpay error creating order: {resp.text}")
+    data = resp.json()
+    return {
+        "order_id": data.get("id", ""),
+        "amount": data.get("amount", amount_paise),
+        "currency": "INR",
+        "key_id": public_key_id(),
+    }
+
+
+def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> bool:
+    """Verify a Razorpay Checkout success signature:
+    HMAC-SHA256(order_id + '|' + payment_id, key_secret) == signature."""
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+    if not (order_id and payment_id and signature and key_secret):
+        return False
+    expected = hmac.new(
+        key_secret.encode(),
+        f"{order_id}|{payment_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 def _map_status(razorpay_status: str) -> str:

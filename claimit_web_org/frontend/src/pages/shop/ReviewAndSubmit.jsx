@@ -145,111 +145,132 @@ export function ShopPayment() {
   const shopPlan = sessionStorage.getItem('shop_plan') || 'premium'
   const shopAmount = Number(sessionStorage.getItem('shop_amount') || '0')
 
-  const handlePay = async () => {
-    if (!selected) return
-    setLoading(true)
+  // Load Razorpay Checkout script once.
+  const loadRazorpay = () => new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true)
+    const s = document.createElement('script')
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js'
+    s.onload = () => resolve(true)
+    s.onerror = () => resolve(false)
+    document.body.appendChild(s)
+  })
 
+  // Register the shop, attach photo keys, clean up, and show success. Called
+  // after payment succeeds (paid plans) or directly (free ₹0 "other" plan).
+  const finalizeRegistration = async (formData) => {
     try {
-      const basic = JSON.parse(sessionStorage.getItem('shop_basic') || '{}')
-      const category = sessionStorage.getItem('shop_category') || ''
-      const shopType = sessionStorage.getItem('shop_type')
-      const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
-      const shopPlan = sessionStorage.getItem('shop_plan') || 'premium'
-      const shopAmount = sessionStorage.getItem('shop_amount') || '0'
-
-      // BUG FIX: never silently default the shop type — a lost sessionStorage
-      // value used to register the shop as 'redeem' even when the owner had
-      // chosen 'Reward Shop'. Send the user back to choose explicitly.
-      if (shopType !== 'reward' && shopType !== 'redeem') {
-        alert('Please choose your shop type (Reward or Redeem) again before submitting.')
-        setLoading(false)
-        navigate('/shop/onboard/shop-type')
-        return
-      }
-
-      // ── Step 1: Register shop basic info ──────────────────
-      const formData = new FormData()
-      formData.append('shop_name', basic.shopName || '')
-      formData.append('shop_address', basic.shopAddress || '')
-      formData.append('pincode', basic.pincode || '')
-      formData.append('about', basic.about || '')
-      formData.append('location', basic.location || '')
-      formData.append('phone', basic.phone || '')
-      formData.append('timing', basic.timing || '')
-      // Structured address fields (dropdown-driven)
-      formData.append('country', basic.country || '')
-      formData.append('state', basic.state || '')
-      formData.append('district', basic.district || '')
-      formData.append('city', basic.city || '')
-      formData.append('category', category)
-      formData.append('shop_type', shopType)
-      formData.append('discount_percentage', shopDiscount)
-      formData.append('plan', shopPlan)
-      formData.append('amount', shopAmount)
-      if (basic.lat != null) formData.append('lat', basic.lat)
-      if (basic.lng != null) formData.append('lng', basic.lng)
-
       const regRes = await api.shop.register(formData)
-      // A user can own multiple shops — make the shop just created the ACTIVE
-      // one so the cover/gallery key calls below attach to THIS new shop (not
-      // a previously selected shop), and the dashboard opens on it.
       const newShopId = regRes?.shop?.id
       if (newShopId) localStorage.setItem('claimit_active_shop', newShopId)
 
-      // ── Step 2: Register S3 keys from the photos already uploaded to S3
-      // in the ShopPhotos step (presigned-URL flow — same as brand/nearby deals).
-      // Keys are already in S3; we just tell the backend which keys belong to
-      // this shop. No image bytes go through the backend or nginx.
       const coverKey = sessionStorage.getItem('shop_cover_key')
       const photosKeysRaw = sessionStorage.getItem('shop_photos_keys')
       let imageUploadFailed = false
-
       if (coverKey) {
-        try {
-          await api.shop.setCoverPhotoKey({ s3_key: coverKey })
-        } catch (err) {
-          console.error('Cover key registration failed', err)
-          imageUploadFailed = true
-        }
+        try { await api.shop.setCoverPhotoKey({ s3_key: coverKey }) }
+        catch (err) { console.error('Cover key registration failed', err); imageUploadFailed = true }
       }
       if (photosKeysRaw) {
         try {
           const keyArr = JSON.parse(photosKeysRaw)
           for (const key of keyArr) {
-            try {
-              await api.shop.addGalleryPhotoKey({ s3_key: key })
-            } catch (err) {
-              console.error('Gallery key registration failed', err)
-              imageUploadFailed = true
-            }
+            try { await api.shop.addGalleryPhotoKey({ s3_key: key }) }
+            catch (err) { console.error('Gallery key registration failed', err); imageUploadFailed = true }
           }
-        } catch (err) {
-          console.error('Failed to parse stored photo keys', err)
-        }
+        } catch (err) { console.error('Failed to parse stored photo keys', err) }
       }
-
       if (imageUploadFailed) {
         setPhotoWarning(
           'Your shop was submitted, but one or more photos failed to save. ' +
           'Please add them again from Store Details Management in your dashboard.'
         )
       }
-
-      // ── Cleanup ───────────────────────────────────────────
-      sessionStorage.removeItem('shop_basic')
-      sessionStorage.removeItem('shop_category')
-      sessionStorage.removeItem('shop_type')
-      sessionStorage.removeItem('shop_discount')
-      sessionStorage.removeItem('shop_plan')
-      sessionStorage.removeItem('shop_amount')
-      sessionStorage.removeItem('shop_cover_key')
-      sessionStorage.removeItem('shop_cover_url')
-      sessionStorage.removeItem('shop_photos_keys')
-      sessionStorage.removeItem('shop_photos_urls')
+      ;['shop_basic', 'shop_category', 'shop_type', 'shop_discount', 'shop_plan',
+        'shop_amount', 'shop_cover_key', 'shop_cover_url', 'shop_photos_keys',
+        'shop_photos_urls'].forEach(k => sessionStorage.removeItem(k))
       setPaid(true)
     } catch (e) {
       alert(e?.response?.data?.detail || 'Could not register shop')
     } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePay = async () => {
+    // Razorpay's own modal handles the payment-method choice, so no on-page
+    // method selection is required.
+    setLoading(true)
+
+    const basic = JSON.parse(sessionStorage.getItem('shop_basic') || '{}')
+    const category = sessionStorage.getItem('shop_category') || ''
+    const shopType = sessionStorage.getItem('shop_type')
+    const shopDiscount = sessionStorage.getItem('shop_discount') || '15'
+    const plan = sessionStorage.getItem('shop_plan') || 'premium'
+    const amt = Number(sessionStorage.getItem('shop_amount') || '0')
+
+    // Never silently default the shop type — send the user back to choose.
+    if (shopType !== 'reward' && shopType !== 'redeem') {
+      alert('Please choose your shop type (Reward or Redeem) again before submitting.')
+      setLoading(false)
+      navigate('/shop/onboard/shop-type')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('shop_name', basic.shopName || '')
+    formData.append('shop_address', basic.shopAddress || '')
+    formData.append('pincode', basic.pincode || '')
+    formData.append('about', basic.about || '')
+    formData.append('location', basic.location || '')
+    formData.append('phone', basic.phone || '')
+    formData.append('timing', basic.timing || '')
+    formData.append('country', basic.country || '')
+    formData.append('state', basic.state || '')
+    formData.append('district', basic.district || '')
+    formData.append('city', basic.city || '')
+    formData.append('category', category)
+    formData.append('shop_type', shopType)
+    formData.append('discount_percentage', shopDiscount)
+    formData.append('plan', plan)
+    formData.append('amount', String(amt))
+    if (basic.lat != null) formData.append('lat', basic.lat)
+    if (basic.lng != null) formData.append('lng', basic.lng)
+
+    // Free "other" plan (₹0) → register with no payment.
+    if (!amt || amt <= 0) {
+      await finalizeRegistration(formData)
+      return
+    }
+
+    // Paid plan → real Razorpay Checkout, then register with the payment proof.
+    try {
+      const ok = await loadRazorpay()
+      if (!ok) { alert('Could not load the payment gateway. Check your connection.'); setLoading(false); return }
+      const order = await api.shop.createPayOrder(amt)
+      const rzp = new window.Razorpay({
+        key: order.key_id,
+        order_id: order.order_id,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'Claimit',
+        description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} shop plan`,
+        prefill: { name: basic.shopName || '', contact: basic.phone || '' },
+        theme: { color: '#1565C0' },
+        handler: (resp) => {
+          formData.append('razorpay_order_id', resp.razorpay_order_id)
+          formData.append('razorpay_payment_id', resp.razorpay_payment_id)
+          formData.append('razorpay_signature', resp.razorpay_signature)
+          finalizeRegistration(formData)   // server re-verifies the signature
+        },
+        modal: { ondismiss: () => setLoading(false) },
+      })
+      rzp.on('payment.failed', (r) => {
+        alert('Payment failed: ' + (r?.error?.description || 'please try again'))
+        setLoading(false)
+      })
+      rzp.open()
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Could not start payment')
       setLoading(false)
     }
   }
@@ -344,9 +365,9 @@ export function ShopPayment() {
 
           <button
             className="btn-primary"
-            style={{ marginTop: 8, opacity: selected && !loading ? 1 : 0.6 }}
+            style={{ marginTop: 8, opacity: loading ? 0.6 : 1 }}
             onClick={handlePay}
-            disabled={!selected || loading}
+            disabled={loading}
           >
             {loading ? 'Processing...' : 'Pay now'}
           </button>

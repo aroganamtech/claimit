@@ -7,38 +7,6 @@ client: AsyncIOMotorClient = None
 db = None
 
 
-async def _backfill_shop_geo(database) -> None:
-    """
-    One-time (idempotent, re-run-safe) backfill: every shop that has lat/lng
-    but no GeoJSON `geo` point yet gets one. Needed so /shops/nearby can use
-    a real $geoNear query against a 2dsphere index instead of pulling every
-    shop into memory and computing distance in Python. Only touches docs
-    that are missing `geo` — a no-op on subsequent restarts once caught up.
-    """
-    cursor = database.shops.find(
-        {
-            "lat": {"$ne": None},
-            "lng": {"$ne": None},
-            "geo": {"$exists": False},
-        },
-        {"_id": 1, "lat": 1, "lng": 1},
-    )
-    updated = 0
-    async for doc in cursor:
-        try:
-            lat = float(doc["lat"])
-            lng = float(doc["lng"])
-        except (TypeError, ValueError):
-            continue
-        await database.shops.update_one(
-            {"_id": doc["_id"]},
-            {"$set": {"geo": {"type": "Point", "coordinates": [lng, lat]}}},
-        )
-        updated += 1
-    if updated:
-        print(f"✅ Backfilled geo point on {updated} shop(s)")
-
-
 async def _ensure_phone_index_sparse(database) -> None:
     """
     Guarantee that the phone_1 index is sparse=True.
@@ -145,10 +113,6 @@ async def connect_db():
     # Shops
     await db.shops.create_index("category_ids")
     await db.shops.create_index("name")
-    # Geospatial index for /shops/nearby ($geoNear) — backfill existing rows
-    # first so the index has something to serve immediately after deploy.
-    await _backfill_shop_geo(db)
-    await db.shops.create_index([("geo", "2dsphere")])
     # Deals
     await db.deals.create_index("deal_group")
     await db.deals.create_index("category")

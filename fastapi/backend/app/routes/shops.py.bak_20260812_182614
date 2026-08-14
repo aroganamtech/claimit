@@ -7,7 +7,6 @@ Route ORDER matters in FastAPI:
   otherwise "nearby" / "search" are matched as shop_id values.
 """
 import math
-import re
 from typing import Optional, List
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -138,38 +137,34 @@ async def get_shops(
     if has_redeem is not None:
         query["has_redeem"] = has_redeem
 
-    # Search filter (name / location) — same substring, case-insensitive
-    # match as before, just run inside the DB query instead of in Python
-    # after fetching every shop.
+    cursor = db.shops.find(query).sort("added_days_ago", 1)
+    # Fetch all matching shops (no 500 cap) so large catalogues + category
+    # filters show every shop, not just the first 500.
+    shops: List[dict] = await cursor.to_list(length=None)
+
+    # Search filter (name / location)
     if q:
-        pattern = re.escape(q)
-        query["$or"] = [
-            {"name": {"$regex": pattern, "$options": "i"}},
-            {"location": {"$regex": pattern, "$options": "i"}},
+        q_lower = q.lower()
+        shops = [
+            s for s in shops
+            if q_lower in s.get("name", "").lower()
+            or q_lower in s.get("location", "").lower()
         ]
 
     # Area filter — match location string, e.g. "Padi" matches "Padi, Chennai"
     if area:
-        query["location"] = {"$regex": re.escape(area), "$options": "i"}
+        area_lower = area.lower()
+        shops = [
+            s for s in shops
+            if area_lower in s.get("location", "").lower()
+        ]
 
     # Exclude a specific shop (used for "stores nearby" on the detail page)
     if exclude_id:
-        try:
-            query["_id"] = {"$ne": ObjectId(exclude_id)}
-        except Exception:
-            pass  # invalid id — behave like before and exclude nothing
+        shops = [s for s in shops if str(s.get("_id", "")) != exclude_id]
 
-    cursor = db.shops.find(
-        query,
-        # List view doesn't need these — legacy base64 blobs the app never
-        # reads (images are served via image_url/image_urls).
-        {"cover_photo_b64": 0, "gallery_photos": 0},
-    ).sort("added_days_ago", 1)
     if limit is not None:
-        cursor = cursor.limit(limit)
-    # No cap otherwise (Ramesh: "remove any limit") — still returns every
-    # matching shop, just filtered by MongoDB instead of in Python.
-    shops: List[dict] = await cursor.to_list(length=None)
+        shops = shops[:limit]
 
     shops_out = []
     for s in shops:
@@ -191,15 +186,14 @@ async def search_shops(
 ):
     """GET /shops/search?q=term"""
     db = get_db()
-    pattern = re.escape(q)
-    query = {
-        "$or": [
-            {"name": {"$regex": pattern, "$options": "i"}},
-            {"location": {"$regex": pattern, "$options": "i"}},
-        ]
-    }
-    cursor = db.shops.find(query, {"cover_photo_b64": 0, "gallery_photos": 0})
-    results = await cursor.to_list(length=None)
+    q_lower = q.lower()
+    cursor = db.shops.find({})
+    all_shops = await cursor.to_list(length=None)
+    results = [
+        s for s in all_shops
+        if q_lower in s.get("name", "").lower()
+        or q_lower in s.get("location", "").lower()
+    ]
     results_out = []
     for s in results:
         results_out.append(await _doc_to_response(s))
@@ -225,41 +219,30 @@ async def get_nearby_shops(
     GET /shops/nearby?lat=X&lng=Y&radius_km=4
     Returns all shops within `radius_km` of the given GPS coordinates.
     Each shop gets a `distance` field e.g. "2.3 km".
-    Shops without stored GPS coordinates are excluded (same as before).
-
-    Uses a $geoNear aggregation against the `geo` 2dsphere index instead of
-    pulling every shop into memory and computing haversine distance in
-    Python — same results, but MongoDB does the radius filtering using the
-    index, so this scales with matches, not with the whole collection.
+    Shops without stored GPS coordinates are included only if their
+    location string can be matched (they get distance=None).
     """
     db = get_db()
+    all_shops: List[dict] = await db.shops.find({}).to_list(length=None)
 
-    geo_query: dict = {}
+    nearby = []
+    for shop in all_shops:
+        shop_lat = shop.get("lat")
+        shop_lng = shop.get("lng")
+        if shop_lat is not None and shop_lng is not None:
+            dist = _haversine(lat, lng, float(shop_lat), float(shop_lng))
+            if dist <= radius_km:
+                doc = await _doc_to_response(shop, distance_km=dist)
+                nearby.append((dist, doc))
+        # Shops without GPS: skip from nearby (they have no coordinates to measure)
+
+    # Exclude specific shop (e.g. the current shop when showing "stores nearby")
     if exclude_id:
-        try:
-            geo_query["_id"] = {"$ne": ObjectId(exclude_id)}
-        except Exception:
-            pass  # invalid id — behave like before and exclude nothing
+        nearby = [(d, doc) for d, doc in nearby if doc.get("id") != exclude_id]
 
-    pipeline = [
-        {
-            "$geoNear": {
-                "near": {"type": "Point", "coordinates": [lng, lat]},
-                "distanceField": "_dist_m",
-                "maxDistance": radius_km * 1000,
-                "spherical": True,
-                "query": geo_query,
-            }
-        },
-        # List view doesn't need these — they're legacy base64 blobs the app
-        # never reads (images are served via image_url/image_urls).
-        {"$project": {"cover_photo_b64": 0, "gallery_photos": 0}},
-    ]
-
-    shops_out = []
-    async for shop in db.shops.aggregate(pipeline):
-        dist_km = shop.pop("_dist_m", 0) / 1000
-        shops_out.append(await _doc_to_response(shop, distance_km=dist_km))
+    # Sort by distance ascending
+    nearby.sort(key=lambda x: x[0])
+    shops_out = [doc for _, doc in nearby]
 
     return {
         "success": True,

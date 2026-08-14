@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Shop registration — mobile-first "claim" flow.
 //   mobile → (shops with that number?) → pick one → email OTP →
-//   Redeem/Reward → plan (Premium/Standard/Other custom) → static payment →
-//   done. If no shop is found for the number, fall back to the full manual
-//   registration form (the old flow).
+//   Redeem/Reward → plan (Premium/Standard/Other custom, 0 to any) →
+//   real Razorpay payment → done. If no shop is found for the number, fall
+//   back to the full manual registration form (the old flow).
 // ─────────────────────────────────────────────────────────────────────────
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -17,10 +17,19 @@ const label = { fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 6p
 const primaryBtn = { width: '100%', padding: 13, background: BLUE, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }
 
 const PLANS = [
-  { id: 'premium',  name: 'Premium',  price: 1999, note: 'Top placement + full visibility' },
-  { id: 'standard', name: 'Standard', price: 999,  note: 'Priority listing' },
-  { id: 'other',    name: 'Other',    price: 0,    note: 'Enter any amount' },
+  { id: 'premium',  name: 'Premium',  price: 720, note: 'Top placement + full visibility' },
+  { id: 'standard', name: 'Standard', price: 365, note: 'Priority listing' },
+  { id: 'other',    name: 'Other',    price: 0,   note: 'Enter any amount (0 or more)' },
 ]
+
+const loadRazorpay = () => new Promise((resolve) => {
+  if (window.Razorpay) return resolve(true)
+  const s = document.createElement('script')
+  s.src = 'https://checkout.razorpay.com/v1/checkout.js'
+  s.onload = () => resolve(true)
+  s.onerror = () => resolve(false)
+  document.body.appendChild(s)
+})
 const DISCOUNTS = [5, 10, 15, 20, 25, 30]
 
 export default function ShopClaim() {
@@ -44,7 +53,6 @@ export default function ShopClaim() {
   const [customAmount, setCustomAmount] = useState('')
   const [imageKey, setImageKey] = useState('')
   const [imagePreview, setImagePreview] = useState('')
-  const [payMethod, setPayMethod] = useState('upi')
 
   const amount = planId === 'other'
     ? Number(customAmount || 0)
@@ -105,12 +113,9 @@ export default function ShopClaim() {
     } catch (e) { err(e) }
   }
 
-  const pay = async () => {
-    setError('')
-    if (planId === 'other' && amount <= 0) { setError('Enter an amount'); return }
-    setBusy('Processing payment…')
+  const finalizeClaim = async (paymentProof) => {
+    setBusy('Registering…')
     try {
-      // Static payment placeholder (real gateway later).
       await api.shop.claimShop({
         shop_id: shopId,
         shop_type: shopType,
@@ -119,9 +124,53 @@ export default function ShopClaim() {
         amount,
         email: email.trim(),
         image_key: imageKey || undefined,
+        ...paymentProof,
       })
       setStep('done')
     } catch (e) { err(e) } finally { setBusy('') }
+  }
+
+  const pay = async () => {
+    setError('')
+    if (planId === 'other' && amount < 0) { setError('Enter a valid amount'); return }
+    setBusy('')
+
+    // Free "other" plan (₹0) → register with no payment.
+    if (!amount || amount <= 0) {
+      await finalizeClaim({})
+      return
+    }
+
+    // Paid plan → real Razorpay Checkout, then claim with the payment proof.
+    setBusy('Opening payment…')
+    try {
+      const ok = await loadRazorpay()
+      if (!ok) { setError('Could not load the payment gateway. Check your connection.'); setBusy(''); return }
+      const order = await api.shop.createPayOrder(amount)
+      const rzp = new window.Razorpay({
+        key: order.key_id,
+        order_id: order.order_id,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'Claimit',
+        description: `${planId.charAt(0).toUpperCase() + planId.slice(1)} shop plan`,
+        prefill: { name: shopName, email: email.trim() },
+        theme: { color: BLUE },
+        handler: (resp) => {
+          finalizeClaim({
+            razorpay_order_id: resp.razorpay_order_id,
+            razorpay_payment_id: resp.razorpay_payment_id,
+            razorpay_signature: resp.razorpay_signature,
+          })
+        },
+        modal: { ondismiss: () => setBusy('') },
+      })
+      rzp.on('payment.failed', (r) => {
+        setError('Payment failed: ' + (r?.error?.description || 'please try again'))
+        setBusy('')
+      })
+      rzp.open()
+    } catch (e) { err(e); setBusy('') }
   }
 
   // ── UI ──────────────────────────────────────────────────────────────────────
@@ -159,6 +208,7 @@ export default function ShopClaim() {
               <span>
                 <b>{s.shop_name}</b>
                 <div style={{ fontSize: 13, color: '#6b7280' }}>{s.address || s.location}</div>
+                {s.phone && <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>📱 {s.phone}</div>}
               </span>
             </label>
           ))}
@@ -256,17 +306,14 @@ export default function ShopClaim() {
               <span>Total</span><span>₹{amount}</span>
             </div>
           </div>
-          <p style={label}>Payment method</p>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            {['upi', 'cards', 'netbanking'].map(m => (
-              <button key={m} onClick={() => setPayMethod(m)}
-                      style={{ flex: 1, padding: 10, borderRadius: 8, cursor: 'pointer',
-                               border: `1.5px solid ${payMethod === m ? BLUE : '#e5e7eb'}`,
-                               background: '#fff', textTransform: 'capitalize', fontWeight: 600 }}>{m}</button>
-            ))}
-          </div>
-          <button style={primaryBtn} onClick={pay} disabled={!!busy}>{busy || `Pay ₹${amount} & Register`}</button>
-          <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 10, textAlign: 'center' }}>Demo payment — no money is charged yet.</p>
+          <button style={primaryBtn} onClick={pay} disabled={!!busy}>
+            {busy || (amount > 0 ? `Pay ₹${amount} & Register` : 'Register (Free)')}
+          </button>
+          {amount > 0 && (
+            <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 10, textAlign: 'center' }}>
+              You'll be taken to Razorpay's secure checkout to complete payment.
+            </p>
+          )}
         </div>
       )}
 

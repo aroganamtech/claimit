@@ -213,7 +213,7 @@ export function AdminShops() {
   const navigate = useNavigate()
   const [shops, setShops] = useState([]); const [loading, setLoading] = useState(true)
   const [options, setOptions] = useState({ states: [], districts: [], cities: [], categories: [] })
-  const [filters, setFilters] = useState({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '', shop_type: '', status: '', claimed: '' })
+  const [filters, setFilters] = useState({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '' })
 
   const load = (f) => {
     setLoading(true)
@@ -226,7 +226,7 @@ export function AdminShops() {
   const setStatus = async (id, status, e) => { e.stopPropagation(); await api.admin.updateShop(id, { status }); load() }
   const remove = async (id, e) => { e.stopPropagation(); if (confirm('Delete this shop?')) { await api.admin.deleteShop(id); load() } }
   const setF = (k, v) => setFilters(prev => ({ ...prev, [k]: v }))
-  const clearFilters = () => setFilters({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '', shop_type: '', status: '', claimed: '' })
+  const clearFilters = () => setFilters({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '' })
   const anyFilterApplied = Object.values(filters).some(Boolean)
 
   return (
@@ -250,22 +250,6 @@ export function AdminShops() {
           {options.categories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <input placeholder="Shop name" value={filters.shop_name} onChange={e => setF('shop_name', e.target.value)} style={filterInput} />
-        <select value={filters.shop_type} onChange={e => setF('shop_type', e.target.value)} style={filterInput}>
-          <option value="">Redeem + Reward</option>
-          <option value="redeem">Redeem only</option>
-          <option value="reward">Reward only</option>
-        </select>
-        <select value={filters.status} onChange={e => setF('status', e.target.value)} style={filterInput}>
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
-        <select value={filters.claimed} onChange={e => setF('claimed', e.target.value)} style={filterInput}>
-          <option value="">Claimed + Unclaimed</option>
-          <option value="yes">Claimed only</option>
-          <option value="no">Unclaimed (bulk) only</option>
-        </select>
         {anyFilterApplied && <button onClick={clearFilters} style={ghostBtn}>Clear filters</button>}
         <span style={{ fontSize: 12, color: '#888', marginLeft: 'auto' }}>{shops.length} shop{shops.length === 1 ? '' : 's'}</span>
       </div>
@@ -275,7 +259,7 @@ export function AdminShops() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={th}>Shop</th><th style={th}>Address</th><th style={th}>State / District / City</th>
-            <th style={th}>Pincode</th><th style={th}>Category</th><th style={th}>Type</th>
+            <th style={th}>Pincode</th><th style={th}>Category</th>
             <th style={th}>Discount</th><th style={th}>Favorites</th><th style={th}>Status</th><th style={th}></th>
           </tr></thead>
           <tbody>
@@ -286,11 +270,6 @@ export function AdminShops() {
                 <td style={td}>{[s.state, s.district, s.city].filter(Boolean).join(' / ') || '—'}</td>
                 <td style={td}>{s.pincode || '—'}</td>
                 <td style={td}>{s.category}</td>
-                <td style={td}>
-                  {s.shop_type
-                    ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20, textTransform: 'capitalize', background: s.shop_type === 'reward' ? '#e8f5e9' : '#e3f2fd', color: s.shop_type === 'reward' ? '#2e7d32' : '#1565c0' }}>{s.shop_type}</span>
-                    : <span style={{ fontSize: 11, color: '#999' }}>unclaimed</span>}
-                </td>
                 <td style={td}>{s.discount_percentage ?? 0}%</td>
                 <td style={td}>{s.favorites_count ?? 0}</td>
                 <td style={td} onClick={e => e.stopPropagation()}>

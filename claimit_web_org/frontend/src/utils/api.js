@@ -119,6 +119,8 @@ const _shopQ = () => (_activeShopId() ? `?shop_id=${_activeShopId()}` : '')
 
 const shop = {
   register:           (formData) => post('/shop/register', formData),
+  // Razorpay order for the shop-registration payment
+  createPayOrder:     (amount)   => post('/shop/pay/order', { amount }),
   // Claim-by-mobile flow (bulk-uploaded shops)
   lookupByMobile:     (phone)         => get('/shop/lookup', { phone }),
   // Activated shops (redeem/reward) by mobile — used by the Promo Reelz ad flow
@@ -175,9 +177,12 @@ const admin = {
   listAds:      ()          => get('/admin/ads'),
   updateAd:     (id, p)     => put(`/admin/ads/${id}`, p),
   deleteAd:     (id)        => del(`/admin/ads/${id}`),
-  listShops:    ()          => get('/admin/shops'),
+  listShops:    (filters)   => get('/admin/shops', filters),
+  shopFilterOptions: ()     => get('/admin/shops/filters'),
+  getShop:      (id)        => get(`/admin/shops/${id}`),
   updateShop:   (id, p)     => put(`/admin/shops/${id}`, p),
   deleteShop:   (id)        => del(`/admin/shops/${id}`),
+  listTransactions: ()      => get('/admin/transactions'),
   // Bulk shop upload (Excel). Template download returns an .xlsx blob.
   downloadShopTemplate: () =>
     http.get('/admin/shops/bulk-template', { responseType: 'blob' }).then(r => r.data),
