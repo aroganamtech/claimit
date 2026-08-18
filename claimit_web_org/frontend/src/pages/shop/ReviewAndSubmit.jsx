@@ -246,7 +246,7 @@ export function ShopPayment() {
     try {
       const ok = await loadRazorpay()
       if (!ok) { alert('Could not load the payment gateway. Check your connection.'); setLoading(false); return }
-      const order = await api.shop.createPayOrder(amt)
+      const order = await api.shop.createPayOrder(amt, plan)
       const rzp = new window.Razorpay({
         key: order.key_id,
         order_id: order.order_id,

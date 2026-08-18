@@ -1,0 +1,312 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../models/select_chat.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — one chat thread.
+//
+// Messages refresh on a short poll while the screen is open (the app has no
+// websocket layer, so this matches the polling convention already used for
+// payment confirmation). The timer is always cancelled in dispose().
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectChatScreen extends StatefulWidget {
+  const SelectChatScreen({super.key, required this.conversation});
+
+  final SelectConversation conversation;
+
+  @override
+  State<SelectChatScreen> createState() => _SelectChatScreenState();
+}
+
+class _SelectChatScreenState extends State<SelectChatScreen> {
+  final _inputCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+
+  bool _loading = true;
+  bool _sending = false;
+  List<SelectMessage> _messages = const [];
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(initial: true);
+    // Light poll so an incoming reply appears without the user pulling to
+    // refresh. Cancelled in dispose(), and skipped while a send is in flight.
+    _poll = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_sending) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _inputCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool initial = false}) async {
+    final msgs =
+        await SelectService.instance.fetchMessages(widget.conversation.id);
+    if (!mounted) return;
+    final grew = msgs.length != _messages.length;
+    setState(() {
+      _messages = msgs;
+      _loading = false;
+    });
+    if (initial || grew) _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    // Wait for the frame that renders the new items before scrolling.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  Future<void> _send() async {
+    final text = _inputCtrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+
+    final sent =
+        await SelectService.instance.sendMessage(widget.conversation.id, text);
+    if (!mounted) return;
+
+    if (sent == null) {
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't send. Check your connection.")),
+      );
+      return;
+    }
+
+    _inputCtrl.clear();
+    setState(() {
+      _messages = [..._messages, sent];
+      _sending = false;
+    });
+    _scrollToBottom();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kSelBg,
+      body: Column(
+        children: [
+          _header(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: kSelAccent))
+                : _messages.isEmpty
+                    ? const SelEmptyState(
+                        icon: Icons.waving_hand_rounded,
+                        title: 'Say hello',
+                        message:
+                            'Send the first message to start the conversation.',
+                      )
+                    : ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                        itemCount: _messages.length,
+                        itemBuilder: (_, i) => _Bubble(message: _messages[i]),
+                      ),
+          ),
+          _composer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _header() {
+    final c = widget.conversation;
+    return Container(
+      width: double.infinity,
+      color: kSelYellow,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 14, 10),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: kSelOnYellow),
+                onPressed: () => context.canPop()
+                    ? context.pop()
+                    : context.go('/select/messages'),
+              ),
+              SelPhoto(
+                url: c.otherPhotoUrl,
+                width: 38,
+                height: 38,
+                radius: 19,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      c.otherName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        color: kSelOnYellow,
+                      ),
+                    ),
+                    if (c.otherRole.trim().isNotEmpty)
+                      Text(
+                        c.otherRole,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11.5, color: Color(0xFF6B5A1E)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _composer() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: kSelLine)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: kSelBg,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: kSelLine),
+                ),
+                child: TextField(
+                  controller: _inputCtrl,
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  decoration: const InputDecoration(
+                    hintText: 'Type a message',
+                    hintStyle: TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8)),
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                  ),
+                  style: const TextStyle(fontSize: 14, color: kSelInk),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _sending ? null : _send,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _sending ? const Color(0xFF90A4AE) : kSelAccent,
+                  shape: BoxShape.circle,
+                ),
+                child: _sending
+                    ? const Padding(
+                        padding: EdgeInsets.all(13),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Bubble extends StatelessWidget {
+  const _Bubble({required this.message});
+
+  final SelectMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final mine = message.isMine;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        // Caps a bubble at 78% of the screen so a long message wraps instead
+        // of stretching edge to edge.
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 7),
+          decoration: BoxDecoration(
+            color: mine ? kSelYellow : Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: Radius.circular(mine ? 14 : 4),
+              bottomRight: Radius.circular(mine ? 4 : 14),
+            ),
+            border: mine ? null : Border.all(color: kSelLine),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message.text,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.35,
+                  color: mine ? Colors.white : kSelInk,
+                ),
+              ),
+              if (message.timeLabel.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  message.timeLabel,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: mine ? Colors.white70 : kSelMuted,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

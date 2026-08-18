@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import AdvertiserSidebar from './AdvertiserSidebar'
 import api from '../../utils/api'
@@ -10,12 +10,12 @@ const AD_LABELS = {
   nearby_deals: 'Nearby Deals Ad',
 }
 
-// Pricing per "Claimit Advertising Packages (Weekly)" — kept in sync with
-// ChooseAdType.jsx, AdDetails.jsx and the backend's AD_PRICES in
-// routers/advertiser.py. Needed here because payment now happens BEFORE
-// the ad is created, so we have to know the amount client-side to open the
-// Cashfree checkout.
-const AD_PRICES = {
+// Fallback pricing shown only until GET /advertiser/pricing resolves. The
+// amount displayed here is cosmetic — PaymentPage.jsx sends { ad_type, tier }
+// to POST /payments/create-link, and the server recomputes the authoritative
+// admin-configured price itself (ignoring any client amount), so this value
+// can never actually under-charge a booking even if stale.
+const DEFAULT_AD_PRICES = {
   home_banner:  { standard: 700 },
   nearby_deals: { premium: 1050, standard: 700 },
   brand_deals:  { premium: 700,  standard: 700 },
@@ -30,6 +30,11 @@ export default function PublishAd() {
   const [publishOption, setPublishOption] = useState('today')
   const [scheduleDate, setScheduleDate] = useState('')
   const [loading, setLoading] = useState(false)
+  const [adPrices, setAdPrices] = useState(DEFAULT_AD_PRICES)
+
+  useEffect(() => {
+    api.advertiser.getPricing().then(setAdPrices).catch(() => {})
+  }, [])
 
   // Files were passed via router state from AdDetails
   const creative = location.state?.creative || null
@@ -102,11 +107,13 @@ export default function PublishAd() {
       })
 
       const tier = draft.tier || 'standard'
-      const amount = (AD_PRICES[adType] || {})[tier] ?? Object.values(AD_PRICES[adType] || { standard: 700 })[0]
+      const amount = (adPrices[adType] || {})[tier] ?? Object.values(adPrices[adType] || { standard: 700 })[0]
 
       sessionStorage.setItem('pending_ad_payload', JSON.stringify({
         payload,
         amount,
+        adType,
+        tier,
         adTypeLabel: AD_LABELS[adType],
       }))
       sessionStorage.removeItem('ad_draft')

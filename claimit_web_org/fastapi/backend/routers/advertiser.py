@@ -38,7 +38,19 @@ DEFAULT_MAX_PREMIUM_NEARBY = 3
 DEFAULT_MAX_PREMIUM_BRAND  = 3
 
 
-def _ad_price(ad_type: str, tier: str) -> int:
+async def _ad_price(ad_type: str, tier: str) -> int:
+    """Authoritative price for an ad booking — always the current admin-configured
+    value (utils.pricing.get_pricing), never the hardcoded AD_PRICES table above,
+    so a price change in the admin panel takes effect on the very next booking."""
+    from utils.pricing import get_pricing
+    pricing = await get_pricing()
+    if ad_type == "home_banner":
+        return pricing["ad_home_banner"]
+    key = f"ad_{ad_type}_{tier}"
+    if key in pricing:
+        return pricing[key]
+    # Fallback for any ad_type/tier combo without a pricing.py entry (shouldn't
+    # happen with the 4 known ad types, but keeps this from ever raising).
     tiers = AD_PRICES.get(ad_type, {})
     return tiers.get(tier) or tiers.get("standard") or next(iter(tiers.values()), 700)
 
@@ -178,7 +190,7 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     tier    = (body.tier or "standard").strip().lower()
     if tier not in ("premium", "standard"):
         tier = "standard"
-    amount  = _ad_price(ad_type, tier)
+    amount  = await _ad_price(ad_type, tier)
 
     # Every ad booking now requires a completed Cashfree payment before the
     # ad is created — mirrors the same Payment Links flow already used on
@@ -423,6 +435,23 @@ async def get_premium_slots(
         "ad_type":       ad_type,
         "location_scoped": ad_type == "nearby_deals",
         **usage,
+    }
+
+
+# ── Public pricing (ad type picker reads live prices here) ────────────────────
+
+@router.get("/pricing")
+async def get_advertiser_pricing():
+    """Current ad prices for all 4 ad types — no auth required, shown on the ad
+    type/tier picker before checkout. Same admin-configured source _ad_price()
+    uses, so what's displayed always matches what's actually charged."""
+    from utils.pricing import get_pricing
+    pricing = await get_pricing()
+    return {
+        "home_banner":  {"standard": pricing["ad_home_banner"]},
+        "nearby_deals": {"premium": pricing["ad_nearby_deals_premium"], "standard": pricing["ad_nearby_deals_standard"]},
+        "brand_deals":  {"premium": pricing["ad_brand_deals_premium"], "standard": pricing["ad_brand_deals_standard"]},
+        "promo_reelz":  {"premium": pricing["ad_promo_reelz_premium"], "standard": pricing["ad_promo_reelz_standard"]},
     }
 
 

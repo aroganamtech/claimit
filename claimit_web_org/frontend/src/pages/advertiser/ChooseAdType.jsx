@@ -6,7 +6,12 @@ import api from '../../utils/api'
 // Pricing per "Claimit Advertising Packages (Weekly)". Types with a
 // `tiers` object let the advertiser pick Premium or Standard; home_banner
 // is a single package (no tier split).
-const AD_TYPES = [
+//
+// Prices below are only the fallback shown until GET /advertiser/pricing
+// resolves — that endpoint reads the same admin-configurable store the
+// backend actually charges from (utils/pricing.py), so a price changed in
+// the admin panel shows up here automatically.
+const DEFAULT_AD_TYPES = [
   {
     key: 'home_banner',
     title: 'Home Page Hero Ad',
@@ -117,6 +122,7 @@ export default function ChooseAdType() {
   // Deals is per-pincode, so until the advertiser enters a pincode (next
   // step) we only know the admin-configured cap, not the live remaining count.
   const [slotInfo, setSlotInfo] = useState({})
+  const [adTypes, setAdTypes] = useState(DEFAULT_AD_TYPES)
 
   useEffect(() => {
     ['nearby_deals', 'brand_deals'].forEach(adType => {
@@ -126,11 +132,20 @@ export default function ChooseAdType() {
     })
   }, [])
 
+  useEffect(() => {
+    api.advertiser.getPricing()
+      .then(pricing => setAdTypes(prev => prev.map(ad => ({
+        ...ad,
+        tiers: pricing[ad.key] || ad.tiers,
+      }))))
+      .catch(() => {}) // keep DEFAULT_AD_TYPES on failure
+  }, [])
+
   const currentTier = (ad) => tierByType[ad.key] || Object.keys(ad.tiers)[0]
 
   const handleNext = () => {
     if (!selected) return
-    const ad = AD_TYPES.find(a => a.key === selected)
+    const ad = adTypes.find(a => a.key === selected)
     const tier = currentTier(ad)
     // Guard against the slot filling up (or the count loading) after the
     // advertiser already clicked Premium — the backend re-checks this too,
@@ -150,7 +165,7 @@ export default function ChooseAdType() {
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 32 }}>Choose Ad Type</h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 900 }}>
-          {AD_TYPES.map(ad => {
+          {adTypes.map(ad => {
             const tier = currentTier(ad)
             const price = ad.tiers[tier]
             return (

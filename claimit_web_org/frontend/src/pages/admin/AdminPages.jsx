@@ -1246,6 +1246,184 @@ export function AdminAdSettings() {
   )
 }
 
+// ─── Central Pricing Settings ──────────────────────────────────
+// Every amount charged anywhere in Claimit — shop registration/claim,
+// advertiser ad bookings, Local Finds business plans — lives in one
+// app_config document (key="pricing") edited here via GET/PUT /admin/pricing.
+// Every payment flow (both backends) reads the current value from that same
+// document, so a change here takes effect on the very next payment.
+const PRICING_FIELDS = [
+  {
+    section: 'Shop Registration & Claim',
+    note: 'Charged when a shop owner registers or claims their business (Choose Shop Type / Shop Claim). The "Other" custom-amount plan is intentionally not set here.',
+    fields: [
+      { key: 'shop_premium',        label: 'Premium plan (per year)' },
+      { key: 'shop_standard',       label: 'Standard plan (per year)' },
+      { key: 'shop_annual_renewal', label: 'Annual renewal (per year)' },
+    ],
+  },
+  {
+    section: 'Advertiser — Ad Bookings (weekly, GST-incl.)',
+    note: 'Charged when an advertiser books a 7-day ad campaign (Choose Ad Type).',
+    fields: [
+      { key: 'ad_home_banner',           label: 'Home Page Hero Ad' },
+      { key: 'ad_nearby_deals_premium',  label: 'Nearby Deals — Premium' },
+      { key: 'ad_nearby_deals_standard', label: 'Nearby Deals — Standard' },
+      { key: 'ad_brand_deals_premium',   label: 'Brand Deals — Premium' },
+      { key: 'ad_brand_deals_standard',  label: 'Brand Deals — Standard' },
+      { key: 'ad_promo_reelz_premium',   label: 'Promo Reelz — Premium' },
+      { key: 'ad_promo_reelz_standard',  label: 'Promo Reelz — Standard' },
+    ],
+  },
+  {
+    section: 'Local Finds — Business Listing Plans (per year)',
+    note: "Shown on the app's Local Finds business listing plan picker. The Free plan is always ₹0 and isn't editable.",
+    fields: [
+      { key: 'local_finds_standard', label: 'Standard plan' },
+      { key: 'local_finds_premium',  label: 'Premium plan' },
+    ],
+  },
+  {
+    section: 'Claimit Select — Professional Listing Plans',
+    note: 'Charged when a professional registers themselves in Claimit Select (doctors, lawyers, interior designers…). Premium listings rank above Standard. The third "Custom" plan lets the professional enter any amount (₹0 = free), so it has no fixed price here.',
+    fields: [
+      { key: 'select_premium',  label: 'Premium listing' },
+      { key: 'select_standard', label: 'Standard listing' },
+    ],
+  },
+]
+
+export function AdminPricing() {
+  const [values, setValues]   = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getPricing()
+      .then(cfg => {
+        const v = {}
+        PRICING_FIELDS.forEach(sec => sec.fields.forEach(f => { v[f.key] = String(cfg[f.key] ?? '0') }))
+        setValues(v)
+      })
+      .catch(() => setError('Could not load current prices.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const setField = (key, val) => {
+    setValues(prev => ({ ...prev, [key]: val }))
+    setSaved(false)
+  }
+
+  const handleSave = async () => {
+    setError('')
+    const payload = {}
+    for (const sec of PRICING_FIELDS) {
+      for (const f of sec.fields) {
+        const n = parseInt(values[f.key], 10)
+        if (isNaN(n) || n < 0) {
+          setError(`"${f.label}" must be a number ≥ 0`)
+          return
+        }
+        payload[f.key] = n
+      }
+    }
+    setSaving(true)
+    try {
+      await api.admin.updatePricing(payload)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px 10px 26px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Pricing Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Every amount charged across Claimit — shop registration/claim, advertiser ad bookings,
+        and Local Finds business plans — comes from here. Changes apply immediately to the
+        very next payment; anything already paid for is unaffected.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current prices…</div>
+      ) : (
+        <div style={{ maxWidth: 640 }}>
+          {PRICING_FIELDS.map(sec => (
+            <div key={sec.section} style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 24, marginBottom: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{sec.section}</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 18 }}>{sec.note}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                {sec.fields.map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 6 }}>
+                      {f.label}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 12, top: 11, color: '#888', fontSize: 15 }}>₹</span>
+                      <input
+                        type="number" min="0" step="1"
+                        value={values[f.key] ?? ''}
+                        onChange={e => setField(f.key, e.target.value.replace(/[^0-9]/g, ''))}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {error && (
+            <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+
+          {saved && (
+            <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+              ✓ Prices saved successfully!
+            </div>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+              color: '#fff', border: 'none', borderRadius: 10,
+              fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+              fontFamily: 'Poppins', transition: 'background 0.15s',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save All Prices'}
+          </button>
+
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              These are the exact prices the server charges — shop registration/claim, ad
+              bookings, and Local Finds plans all read live from this page (never a hardcoded
+              value), so a change here takes effect on the next payment across the app and
+              website. The "Other" plan on shop registration still lets the shop owner enter a
+              custom amount — that one is intentionally not set here.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Deleted Users ────────────────────────────────────────────
 export function AdminDeletedUsers() {
   const [items, setItems] = useState([])

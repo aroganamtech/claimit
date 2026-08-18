@@ -34,7 +34,7 @@ from database import (
     app_users_collection, app_feedback_collection, app_shops_collection,
     deleted_users_collection,
     app_banners_collection, app_deals_collection, app_reels_collection,
-    category_images_collection,
+    category_images_collection, app_learn_collection,
 )
 from models.schemas import (
     AdminLoginRequest, AdminAdPatch, AdminShopPatch, AdminTicketPatch,
@@ -142,6 +142,11 @@ async def delete_user(user_id: str, _admin=Depends(get_current_admin)):
             if ad.get(key_field):
                 await _s3_delete(ad[key_field])
     await ads_collection.delete_many({"user_id": user_id})
+    # Same S3 clean-up as the direct /admin/shops/{id} delete — otherwise a
+    # user's shop photos are orphaned in S3 when their account is removed.
+    user_shops = await shops_collection.find({"user_id": user_id}).to_list(500)
+    for shop in user_shops:
+        await _delete_shop_media(shop)
     await shops_collection.delete_many({"user_id": user_id})
     await tickets_collection.delete_many({"user_id": user_id})
     await transactions_collection.delete_many({"user_id": user_id})
@@ -182,11 +187,22 @@ async def delete_app_user(user_id: str, _admin=Depends(get_current_admin)):
         raise HTTPException(status_code=404, detail="App user not found")
     # Cascade clean-up across claimit_db collections keyed by user_id (string).
     uid = user_id
+    # Claims store uploaded evidence documents in S3 (documents: [s3_key, ...]).
+    user_claims = await app_db["claims"].find({"user_id": uid}).to_list(500)
+    for claim in user_claims:
+        for key in (claim.get("documents") or []):
+            if key:
+                await _s3_delete(key)
     await app_db["claims"].delete_many({"user_id": uid})
     await app_db["notifications"].delete_many({"user_id": uid})
     await app_db["redeem"].delete_many({"user_id": uid})
     await app_db["user_wallets"].delete_many({"user_id": uid})
     await app_db["fcm_tokens"].delete_many({"user_id": uid})
+    # Bill reviews store the scanned bill photo in S3 (image_s3_key).
+    user_bill_reviews = await app_bill_reviews_collection.find({"user_id": uid}).to_list(500)
+    for review in user_bill_reviews:
+        if review.get("image_s3_key"):
+            await _s3_delete(review["image_s3_key"])
     await app_bill_reviews_collection.delete_many({"user_id": uid})
     await app_feedback_collection.delete_many({"user_id": uid})
     return {"ok": True}
@@ -373,11 +389,24 @@ async def update_shop(shop_id: str, patch: AdminShopPatch, _admin=Depends(get_cu
     return {"ok": True, "patch": update}
 
 
+async def _delete_shop_media(shop: dict) -> None:
+    """Best-effort delete of a shop's cover + gallery images from S3.
+    Never raises — a failed S3 delete must not block deleting the DB record."""
+    keys = []
+    if shop.get("image_s3_key"):
+        keys.append(shop["image_s3_key"])
+    keys.extend(k for k in (shop.get("image_s3_keys") or []) if k)
+    for key in keys:
+        await _s3_delete(key)
+
+
 @router.delete("/shops/{shop_id}")
 async def delete_shop(shop_id: str, _admin=Depends(get_current_admin)):
-    res = await shops_collection.delete_one({"_id": _id(shop_id)})
-    if not res.deleted_count:
+    shop = await shops_collection.find_one({"_id": _id(shop_id)})
+    if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
+    await _delete_shop_media(shop)
+    await shops_collection.delete_one({"_id": shop["_id"]})
     return {"ok": True}
 
 
@@ -697,6 +726,13 @@ async def set_category_images(
     if category_id not in _CATEGORY_NAMES:
         raise HTTPException(status_code=400, detail="Unknown category id")
     keys = [k for k in body.keys if isinstance(k, str) and k][:_MAX_CATEGORY_IMAGES]
+    # Delete from S3 any image that was in the old pool but isn't in the new
+    # one (this is how the admin UI removes a single image — it PUTs the
+    # pool back minus that key).
+    existing = await category_images_collection.find_one({"category_id": category_id})
+    old_keys = set((existing or {}).get("keys") or [])
+    for removed_key in old_keys - set(keys):
+        await _s3_delete(removed_key)
     await category_images_collection.update_one(
         {"category_id": category_id},
         {"$set": {"category_id": category_id, "keys": keys}},
@@ -749,6 +785,61 @@ async def list_pdfs(_admin=Depends(get_current_admin)):
     }
 
 
+# ─── Learn Claimit (question + how-to video lessons) ──────────
+# Admin adds a question + uploads a video (S3, via /admin/presign-upload,
+# folder="learn-claimit"); the Flutter app's "Learn Claimit" zone shows the
+# question list, then plays the matching video with sound + a like button.
+# Stored in claimit_db.learn_content — the SAME database the app backend
+# (fastapi/backend) reads from directly, so no extra sync step is needed.
+
+class LearnCreateRequest(BaseModel):
+    question: str
+    video_key: str
+
+
+def _serialize_learn(doc: dict) -> dict:
+    out = _serialize(doc)
+    video_key = out.pop("video_s3_key", None) or ""
+    out["video_url"] = (_video_presign(video_key) or "") if video_key else ""
+    out.pop("liked_by", None)
+    out["like_count"] = len(doc.get("liked_by", []))
+    return out
+
+
+@router.get("/learn")
+async def list_learn_items(_admin=Depends(get_current_admin)):
+    docs = await app_learn_collection.find().sort("created_at", -1).to_list(500)
+    return [_serialize_learn(d) for d in docs]
+
+
+@router.post("/learn")
+async def create_learn_item(body: LearnCreateRequest, _admin=Depends(get_current_admin)):
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+    if not body.video_key.strip():
+        raise HTTPException(status_code=400, detail="Video is required")
+    doc = {
+        "question": question,
+        "video_s3_key": body.video_key.strip(),
+        "liked_by": [],
+        "created_at": datetime.utcnow(),
+    }
+    res = await app_learn_collection.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return _serialize_learn(doc)
+
+
+@router.delete("/learn/{item_id}")
+async def delete_learn_item(item_id: str, _admin=Depends(get_current_admin)):
+    doc = await app_learn_collection.find_one({"_id": _id(item_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Learn item not found")
+    video_key = doc.get("video_s3_key") or ""
+    if video_key:
+        await _s3_delete(video_key)  # best-effort — never blocks the DB delete
+    await app_learn_collection.delete_one({"_id": doc["_id"]})
+    return {"ok": True}
 
 
 # --- Bill Reviews ---
@@ -1009,6 +1100,56 @@ async def update_ad_settings(body: _AdSettingsBody, _admin=Depends(get_current_a
     return {"ok": True, "max_nearby": body.max_nearby, "max_brand": body.max_brand}
 
 
+# ── App config: every price charged across the app (shop, ads, Local Finds) ──
+# Single source of truth — see utils/pricing.py. Editing a value here takes
+# effect immediately on the next order/registration; already-paid records
+# are unaffected (their amount is stored on the record itself).
+
+from utils.pricing import DEFAULT_PRICING as _DEFAULT_PRICING, get_pricing as _get_pricing
+
+
+class _PricingBody(_BM2):
+    shop_premium: Optional[int] = None
+    shop_standard: Optional[int] = None
+    shop_annual_renewal: Optional[int] = None
+    ad_home_banner: Optional[int] = None
+    ad_nearby_deals_premium: Optional[int] = None
+    ad_nearby_deals_standard: Optional[int] = None
+    ad_brand_deals_premium: Optional[int] = None
+    ad_brand_deals_standard: Optional[int] = None
+    ad_promo_reelz_premium: Optional[int] = None
+    ad_promo_reelz_standard: Optional[int] = None
+    local_finds_standard: Optional[int] = None
+    local_finds_premium: Optional[int] = None
+    select_premium: Optional[int] = None
+    select_standard: Optional[int] = None
+
+
+@router.get("/pricing")
+async def get_pricing_settings(_admin=Depends(get_current_admin)):
+    """Current value of every price in the app."""
+    return await _get_pricing()
+
+
+@router.put("/pricing")
+async def update_pricing_settings(body: _PricingBody, _admin=Depends(get_current_admin)):
+    """Upsert only the fields that were provided. Every value must be >= 0."""
+    update = {k: v for k, v in body.dict().items() if v is not None}
+    if not update:
+        return await _get_pricing()
+    for k, v in update.items():
+        if v < 0:
+            raise HTTPException(status_code=400, detail=f"{k} must be >= 0")
+    update["key"] = "pricing"
+    update["updated_at"] = datetime.utcnow()
+    await app_db["app_config"].update_one(
+        {"key": "pricing"},
+        {"$set": update},
+        upsert=True,
+    )
+    return await _get_pricing()
+
+
 # ─── Deleted Users ─────────────────────────────────────────────
 @router.get("/deleted-users")
 async def list_deleted_users(_admin=Depends(get_current_admin)):
@@ -1047,7 +1188,18 @@ _ADMIN_AD_PRICES = {
 _ADMIN_VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm")
 
 
-def _admin_ad_price(ad_type: str, tier: str) -> int:
+async def _admin_ad_price(ad_type: str, tier: str) -> int:
+    """Same admin-configured pricing source as routers/advertiser.py's
+    _ad_price — even though no money is charged for admin-created ads, the
+    stored `amount` is used for revenue record-keeping, so it must always
+    match the real (current) price rather than a stale hardcoded one."""
+    from utils.pricing import get_pricing
+    pricing = await get_pricing()
+    if ad_type == "home_banner":
+        return pricing["ad_home_banner"]
+    key = f"ad_{ad_type}_{tier}"
+    if key in pricing:
+        return pricing[key]
     tiers = _ADMIN_AD_PRICES.get(ad_type, {})
     return tiers.get(tier) or tiers.get("standard") or next(iter(tiers.values()), 700)
 
@@ -1125,7 +1277,7 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
     tier    = (body.tier or "standard").strip().lower()
     if tier not in ("premium", "standard"):
         tier = "standard"
-    amount = _admin_ad_price(ad_type, tier)
+    amount = await _admin_ad_price(ad_type, tier)
 
     if body.publish_today:
         pub_date = datetime.utcnow()

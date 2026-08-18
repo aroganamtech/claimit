@@ -1644,6 +1644,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       backgroundColor: Colors.transparent,
       isDismissible: true,
       enableDrag: true,
+      isScrollControlled: true,
       builder: (_) => const _FeaturedZonesSheet(),
     );
   }
@@ -1770,7 +1771,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
 class _ZoneItem {
   final String label;
-  final dynamic icon; 
+  final dynamic icon;
   final String route;
   const _ZoneItem({
     required this.label,
@@ -1778,6 +1779,21 @@ class _ZoneItem {
     required this.route,
   });
 }
+
+// Icon box size for a Featured Zones tile, given the tile's actual grid
+// cell width (itemW). Scales up on wider phones so icons look bigger on
+// every device, but is clamped so it never shrinks below the original
+// design size (smallest phones) or grows large enough to crowd the grid
+// (tablets / very wide phones). _FeaturedZonesSheetState uses this exact
+// same formula to reserve enough cell height for the icon + label, so the
+// two always agree and the bigger icon can never overflow its cell.
+double _zoneBoxSize(double itemW) => (itemW * 0.80).clamp(70.0, 88.0);
+
+// Reward Zone / Redeem Zone / Local Finder are shown ~2.5% bigger than the
+// other zone tiles (client request). Kept as one shared constant so the
+// tile size and the sheet's reserved cell height can never drift apart.
+const double _kBoostedZoneScale = 1.025;
+const Set<String> _kBoostedZoneLabels = {'Reward Zone', 'Redeem Zone', 'Local Finder'};
 
 // Page 1 of the Featured Zones popup — 5 zones; a "More" tile is appended in
 // the sheet to flip to page 2. Uses the client's illustrated icons.
@@ -1792,9 +1808,12 @@ const _zonesPage1 = [
 // Page 2 — shown when the user taps "More". The remaining 4 zones.
 const _zonesPage2 = [
   _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
+    _ZoneItem(label: 'Claimit\nSelect', icon: "assets/images/zone_10.png", route: '/select'),
   _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
-  _ZoneItem(label: 'Booking\nDeals', icon: "assets/images/zone_8.png", route: ''),
-  _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/ads'),
+  _ZoneItem(label: 'Classifieds', icon: "assets/images/zone_8.png", route: '/classified/ads'),
+  // _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/ads'),
+    _ZoneItem(label: 'Learn\nClaimit', icon: "assets/images/zone_learn.png", route: '/learn'),
+
 ];
 
 class _FeaturedZonesSheet extends StatefulWidget {
@@ -1858,13 +1877,13 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
     }
   }
 
-  Widget _grid(List<Widget> tiles) => GridView.count(
+  Widget _grid(List<Widget> tiles, double aspectRatio) => GridView.count(
         crossAxisCount: 3,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
-        childAspectRatio: 0.95,
+        childAspectRatio: aspectRatio,
         children: tiles,
       );
 
@@ -1874,19 +1893,32 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
 
     // Sized so two rows of tiles fit without overflow on any width.
     final itemW = (MediaQuery.of(context).size.width - 40 - 16) / 3;
-    final gridH = (itemW / 0.95) * 2 + 8 + 6;
+    // Reserve enough cell height for the largest tile (the "More" tile's
+    // icon box is 8dp bigger than the others) plus icon/label spacing plus
+    // a generous 2-line label budget (covers larger system font-size
+    // settings too) — this is what keeps the bigger icons from overflowing
+    // their grid cell on any screen.
+    // Reward Zone / Redeem Zone / Local Finder are boosted ~2.5% bigger
+    // than the rest (see _ZoneTile) — reserve for the boosted size so
+    // nothing overflows its cell.
+    final maxBoxSize = _zoneBoxSize(itemW) * _kBoostedZoneScale;
+    final cellH = maxBoxSize + 4 + 40;
+    final aspectRatio = itemW / cellH;
+    final gridH = cellH * 2 + 8 + 6;
 
     final page1 = _grid([
-      ..._zonesPage1.map((z) => _ZoneTile(zone: z, onTap: () => _handleTap(z))),
+      ..._zonesPage1.map((z) => _ZoneTile(zone: z, itemW: itemW, onTap: () => _handleTap(z))),
       // "More" — flips to page 2 (does not close the sheet).
       _ZoneTile(
         zone: const _ZoneItem(label: 'More', icon: 'assets/images/zone_more.png', route: ''),
+        itemW: itemW,
         onTap: () => _goToPage(1),
       ),
-    ]);
+    ], aspectRatio);
 
     final page2 = _grid(
-      _zonesPage2.map((z) => _ZoneTile(zone: z, onTap: () => _handleTap(z))).toList(),
+      _zonesPage2.map((z) => _ZoneTile(zone: z, itemW: itemW, onTap: () => _handleTap(z))).toList(),
+      aspectRatio,
     );
 
     return Container(
@@ -1895,7 +1927,11 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      child: Column(
+      // Scrollable safety net: on any device/font-size where the content is
+      // ever taller than the space the sheet is given, it scrolls instead of
+      // overflowing — so this can't visually break on any screen again.
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -1953,7 +1989,7 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: _page == i ? 18 : 8,
-              height: 8,
+              height: 10,
               decoration: BoxDecoration(
                 color: _page == i ? primary : const Color(0xFFD1D5DB),
                 borderRadius: BorderRadius.circular(4),
@@ -1961,6 +1997,7 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
             )),
           ),
         ],
+        ),
       ),
     );
   }
@@ -1968,11 +2005,19 @@ class _FeaturedZonesSheetState extends State<_FeaturedZonesSheet> {
 
 class _ZoneTile extends StatelessWidget {
   final _ZoneItem zone;
+  final double itemW;
   final VoidCallback onTap;
-  const _ZoneTile({required this.zone, required this.onTap});
+  const _ZoneTile({required this.zone, required this.itemW, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    // Same formula _FeaturedZonesSheetState used to reserve cell height —
+    // keeping them identical is what guarantees no overflow. Reward Zone /
+    // Redeem Zone / Local Finder get a small ~2.5% size boost; every other
+    // tile (including "More") shares the same base size.
+    final isBoosted = _kBoostedZoneLabels.contains(zone.label.replaceAll('\n', ' '));
+    final boxSize = _zoneBoxSize(itemW) * (isBoosted ? _kBoostedZoneScale : 1.0);
+    final imgSize = boxSize - 8;
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -1983,14 +2028,14 @@ class _ZoneTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               SizedBox(
-                width: zone.label == 'More' ? 72 : 64,
-                height: zone.label == 'More' ? 72 : 64,
+                width: boxSize,
+                height: boxSize,
                 child: Center(
                   child: zone.icon is String
                       ? Image.asset(
                           zone.icon,
-                          width: zone.label == 'More' ? 72 : 56,
-                          height: zone.label == 'More' ? 72 : 56,
+                          width: imgSize,
+                          height: imgSize,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => const Icon(
                             Icons.broken_image,
@@ -2001,8 +2046,8 @@ class _ZoneTile extends StatelessWidget {
                       : Container(
                           // Yellow circle so Material-icon zones (page 2 / More)
                           // match the page-1 PNG zone icons' look.
-                          width: 56,
-                          height: 56,
+                          width: imgSize,
+                          height: imgSize,
                           alignment: Alignment.center,
                           decoration: const BoxDecoration(
                             color: Color(0xFFFFD54F),
@@ -2010,7 +2055,7 @@ class _ZoneTile extends StatelessWidget {
                           ),
                           child: Icon(
                             zone.icon as IconData,
-                            size: 30,
+                            size: imgSize * 0.54,
                             color: const Color(0xFF1565C0),
                           ),
                         ),

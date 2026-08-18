@@ -41,6 +41,16 @@ class ShopReview {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ShopPageResult — one page of paginated /shops/nearby results, plus
+// whether more shops remain beyond this page (drives infinite scroll).
+// ─────────────────────────────────────────────────────────────────────────────
+class ShopPageResult {
+  final List<ShopItem> shops;
+  final bool hasMore;
+  const ShopPageResult({required this.shops, required this.hasMore});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ShopService (singleton)
 // ─────────────────────────────────────────────────────────────────────────────
 class ShopService {
@@ -149,6 +159,53 @@ class ShopService {
       debugPrint('ShopService.fetchNearbyShops error: $e');
     }
     return [];
+  }
+
+  // ── Fetch nearby shops, paginated (infinite scroll) ────────────────────────
+  /// [lat], [lng]   — user's coordinates (GPS or geocoded from their
+  ///                   selected location)
+  /// [radiusKm]     — search radius in km
+  /// [skip], [limit]— pagination window (e.g. skip:0,limit:10 then
+  ///                   skip:10,limit:10 for the next page)
+  /// [premiumFirst] — Premium-plan shops float to the top of each page's
+  ///                   distance-sorted order
+  /// Backend: GET /shops/nearby?...&skip=&limit=&premium_first=
+  /// New, additive method — does not change fetchNearbyShops above, which
+  /// existing callers (dashboard, shop detail "stores nearby") keep using
+  /// unchanged.
+  Future<ShopPageResult> fetchNearbyShopsPaged({
+    required double lat,
+    required double lng,
+    double radiusKm = 25.0,
+    int skip = 0,
+    int limit = 10,
+    bool premiumFirst = true,
+    String? excludeId,
+  }) async {
+    try {
+      final resp = await _api.get(
+        AppConstants.shopsNearby,
+        queryParams: {
+          'lat': lat,
+          'lng': lng,
+          'radius_km': radiusKm,
+          'skip': skip,
+          'limit': limit,
+          'premium_first': premiumFirst,
+          if (excludeId != null) 'exclude_id': excludeId,
+        },
+      );
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final list = resp.data['shops'] as List? ?? [];
+        final shops =
+            list.map((j) => _fromJson(j as Map<String, dynamic>)).toList();
+        final hasMore = resp.data['has_more'] == true;
+        return ShopPageResult(shops: shops, hasMore: hasMore);
+      }
+    } catch (e) {
+      debugPrint('ShopService.fetchNearbyShopsPaged error: $e');
+    }
+    return const ShopPageResult(shops: [], hasMore: false);
   }
 
   // ── Fetch shops near a given location string (area-based) ─────────────────
@@ -349,6 +406,7 @@ class ShopService {
       distance:      distance,
       lat:           (j['lat']  as num?)?.toDouble(),
       lng:           (j['lng']  as num?)?.toDouble(),
+      isClaimed:     j['is_claimed'] as bool? ?? true,
     );
   }
 }

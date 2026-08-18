@@ -155,6 +155,24 @@ async def connect_db():
     # Banners
     await db.banners.create_index("status")
     await db.banners.create_index("created_at")
+    # Learn Claimit — admin-added how-to lessons (question + video)
+    await db.learn_content.create_index("created_at")
+    # Claimit Select — self-registered professionals + their bookings.
+    # One listing per user, geo index powers the "Nearby" sort.
+    await db.select_professionals.create_index("user_id", unique=True)
+    await db.select_professionals.create_index("category")
+    await db.select_professionals.create_index("created_at")
+    await db.select_professionals.create_index([("geo", "2dsphere")])
+    await db.select_bookings.create_index("user_id")
+    await db.select_bookings.create_index("professional_id")
+    await db.select_bookings.create_index("created_at")
+    # Claimit Select chat — one thread per (customer, professional) pair.
+    await db.select_conversations.create_index(
+        [("customer_id", 1), ("professional_id", 1)], unique=True)
+    await db.select_conversations.create_index("professional_user_id")
+    await db.select_conversations.create_index("last_message_at")
+    await db.select_messages.create_index(
+        [("conversation_id", 1), ("created_at", 1)])
     # Rewards
     await db.rewards.create_index("shop_id")
     await db.rewards.create_index("is_active")

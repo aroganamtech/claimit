@@ -111,4 +111,21 @@ class ClassifiedService {
     }
     return null;
   }
+
+  /// GET /classifieds/plans — live Local Finds plan prices (admin-configurable,
+  /// set from the web admin panel's Pricing page). Returns a map of
+  /// planId -> {"price": int, "photo_limit": int}, or null on failure — the
+  /// caller should keep using its own hardcoded fallback prices in that case.
+  Future<Map<String, dynamic>?> fetchPlans() async {
+    try {
+      final resp = await _api.get('${AppConstants.classifieds}/plans');
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final plans = resp.data['plans'];
+        if (plans is Map) return Map<String, dynamic>.from(plans);
+      }
+    } catch (e) {
+      debugPrint('ClassifiedService.fetchPlans error: $e');
+    }
+    return null;
+  }
 }

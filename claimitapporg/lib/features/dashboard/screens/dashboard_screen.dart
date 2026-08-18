@@ -2599,20 +2599,32 @@ class _CategoryRowState extends State<_CategoryRow> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
+            // Matches the client's new icon set — image already has its own
+            // circle/color baked in (same pattern as the other 16 icons in
+            // _buildIcon). Falls back to the original bordered Material
+            // icon if the asset is ever missing, so this can never break.
+            SizedBox(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF1E3A6E)
-                    : const Color(0xFFEFF6FF),
-                border: Border.all(color: const Color(0xFF2563EB)),
-              ),
-              child: const Icon(
-                Icons.apps_rounded,
-                size: 22,
-                color: Color(0xFF2563EB),
+              child: Image.asset(
+                'assets/icons/home_category/icon_all.png',
+                width: 48,
+                height: 48,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF1E3A6E)
+                        : const Color(0xFFEFF6FF),
+                    border: Border.all(color: const Color(0xFF2563EB)),
+                  ),
+                  child: const Icon(
+                    Icons.apps_rounded,
+                    size: 22,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 6),
@@ -2759,7 +2771,7 @@ class _ToggleBtn extends StatelessWidget {
           height: double.infinity,
           decoration: BoxDecoration(
             // active → blue pill; inactive → transparent over the gray track
-            color: active ? const Color(0xFF2563EB) : const Color.fromARGB(96, 64, 63, 63),
+            color: active ? const Color(0xFF2563EB) : const Color.fromARGB(95, 193, 182, 182),
             borderRadius: BorderRadius.circular(26),
           ),
           alignment: Alignment.center,
@@ -2768,7 +2780,7 @@ class _ToggleBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: active ? Colors.white : const Color.fromARGB(255, 255, 255, 255),
+              color: active ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
             ),
           ),
         ),

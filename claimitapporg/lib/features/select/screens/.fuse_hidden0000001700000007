@@ -1,0 +1,644 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — Book Consultation.
+//
+// Service → date → time slot → mode → optional message → confirm.
+//
+// NOTE ON PAYMENT: booking is a FREE request for now (product decision). The
+// price block shows the professional's advertised fee for transparency, but
+// nothing is charged in-app and no payment gateway is opened here. The
+// professional's own listing fee is what goes through Razorpay, in the
+// registration flow (select_register_flow.dart).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const List<String> _kTimeSlots = [
+  '10:00 AM', '11:30 AM', '01:00 PM',
+  '03:00 PM', '04:30 PM', '06:00 PM',
+];
+
+class SelectBookingScreen extends StatefulWidget {
+  const SelectBookingScreen({super.key, required this.professional});
+
+  final SelectProfessional professional;
+
+  @override
+  State<SelectBookingScreen> createState() => _SelectBookingScreenState();
+}
+
+class _SelectBookingScreenState extends State<SelectBookingScreen> {
+  late String _service;
+  DateTime _date = DateTime.now();
+  String _slot = _kTimeSlots.first;
+  String _mode = 'in_person';
+  final _messageCtrl = TextEditingController();
+  bool _submitting = false;
+
+  /// The next 7 days, starting today — matches the date strip in the design.
+  late final List<DateTime> _days = List.generate(
+    7,
+    (i) => DateTime.now().add(Duration(days: i)),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    final services = widget.professional.services;
+    _service = services.isNotEmpty
+        ? services.first
+        : '${widget.professional.role} Consultation';
+    _date = _days.first;
+  }
+
+  @override
+  void dispose() {
+    _messageCtrl.dispose();
+    super.dispose();
+  }
+
+  List<String> get _serviceOptions {
+    final s = List<String>.from(widget.professional.services);
+    if (s.isEmpty) s.add('${widget.professional.role} Consultation');
+    return s;
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    final booking = await SelectService.instance.createBooking(
+      professionalId: widget.professional.id,
+      service: _service,
+      date: DateFormat('yyyy-MM-dd').format(_date),
+      timeSlot: _slot,
+      mode: _mode,
+      message: _messageCtrl.text.trim(),
+    );
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (booking == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't send your request. Please try again.")),
+      );
+      return;
+    }
+    await _showSuccess();
+    if (!mounted) return;
+    context.go('/select/bookings');
+  }
+
+  Future<void> _showSuccess() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE7F7EC),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_rounded,
+                  color: Color(0xFF1B7A3D), size: 34),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Request Sent!',
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w700, color: kSelInk),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${widget.professional.name} will confirm your consultation shortly. '
+              'You can track it under Bookings.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: kSelMuted, height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kSelYellow,
+                foregroundColor: kSelOnYellow,
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Done'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pro = widget.professional;
+    return Scaffold(
+      backgroundColor: kSelBg,
+      body: Column(
+        children: [
+          _blueHeader(),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _proSummary(pro),
+                  const SizedBox(height: 18),
+                  _label('Select Service'),
+                  const SizedBox(height: 8),
+                  _serviceDropdown(),
+                  const SizedBox(height: 18),
+                  _label('Select Date'),
+                  const SizedBox(height: 8),
+                  _dateStrip(),
+                  const SizedBox(height: 18),
+                  _label('Available Time Slots'),
+                  const SizedBox(height: 8),
+                  _slotGrid(),
+                  const SizedBox(height: 18),
+                  _label('Consultation Mode'),
+                  const SizedBox(height: 8),
+                  _modeRow(),
+                  const SizedBox(height: 18),
+                  // Flexible on both halves: at a very large system font size
+                  // these two labels shrink/ellipsise instead of overflowing.
+                  Row(
+                    children: [
+                      Flexible(child: _label('Add a Message')),
+                      const SizedBox(width: 5),
+                      const Flexible(
+                        child: Text(
+                          '(Optional)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, color: kSelMuted),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _messageBox(),
+                  const SizedBox(height: 18),
+                  _priceDetails(pro),
+                ],
+              ),
+            ),
+          ),
+          _confirmBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _blueHeader() {
+    return Container(
+      width: double.infinity,
+      color: kSelYellow,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 16, 12),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: kSelOnYellow),
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/select'),
+              ),
+              const Expanded(
+                child: Text(
+                  'Book Consultation',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: kSelOnYellow,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _proSummary(SelectProfessional pro) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Row(
+        children: [
+          SelPhoto(url: pro.photoUrl, width: 54, height: 54, radius: 10),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        pro.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: kSelInk,
+                        ),
+                      ),
+                    ),
+                    if (pro.isVerified) ...[
+                      const SizedBox(width: 4),
+                      const SelVerifiedBadge(size: 14),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  pro.role,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: kSelMuted),
+                ),
+                const SizedBox(height: 3),
+                SelRatingRow(
+                    rating: pro.rating,
+                    reviewCount: pro.reviewCount,
+                    fontSize: 11.5),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '₹${pro.consultationFee.toStringAsFixed(0)}',
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: kSelInk,
+                ),
+              ),
+              const Text(
+                'Consultation',
+                maxLines: 1,
+                style: TextStyle(fontSize: 11, color: kSelMuted),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _label(String t) => Text(
+        t,
+        style: const TextStyle(
+            fontSize: 14, fontWeight: FontWeight.w700, color: kSelInk),
+      );
+
+  Widget _serviceDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kSelLine),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: _service,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          items: _serviceOptions
+              .map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(
+                      s,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, color: kSelInk),
+                    ),
+                  ))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) setState(() => _service = v);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _dateStrip() {
+    return SizedBox(
+      height: 66,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _days.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final d = _days[i];
+          final selected = d.year == _date.year &&
+              d.month == _date.month &&
+              d.day == _date.day;
+          return GestureDetector(
+            onTap: () => setState(() => _date = d),
+            child: Container(
+              width: 52,
+              decoration: BoxDecoration(
+                color: selected ? kSelAccent : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: selected ? kSelAccent : kSelLine),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat('E').format(d),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white70 : kSelMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${d.day}',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? Colors.white : kSelInk,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _slotGrid() {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _kTimeSlots.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 2.7,
+      ),
+      itemBuilder: (_, i) {
+        final slot = _kTimeSlots[i];
+        final selected = slot == _slot;
+        return GestureDetector(
+          onTap: () => setState(() => _slot = slot),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? kSelAccent : Colors.white,
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: selected ? kSelAccent : kSelLine),
+            ),
+            // scaleDown so the slot label always fits its tile.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  slot,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : kSelInk,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _modeRow() {
+    // Plain (non-const) list — keeps this free of any const-record edge cases.
+    final modes = <(String, String, IconData)>[
+      ('in_person', 'In Person', Icons.person_pin_circle_rounded),
+      ('video', 'Video Call', Icons.videocam_rounded),
+      ('phone', 'Phone Call', Icons.call_rounded),
+    ];
+    return Row(
+      children: [
+        for (int i = 0; i < modes.length; i++) ...[
+          if (i > 0) const SizedBox(width: 9),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _mode = modes[i].$1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 6),
+                decoration: BoxDecoration(
+                  color: _mode == modes[i].$1
+                      ? const Color(0xFFEFF3FF)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _mode == modes[i].$1 ? kSelAccent : kSelLine,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(modes[i].$3,
+                        size: 16,
+                        color: _mode == modes[i].$1 ? kSelAccent : kSelMuted),
+                    const SizedBox(width: 5),
+                    // Flexible + scaleDown: "In Person" / "Video Call" always
+                    // fit their third of the row on any screen width.
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          modes[i].$2,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: _mode == modes[i].$1 ? kSelAccent : kSelInk,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _messageBox() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kSelLine),
+      ),
+      child: TextField(
+        controller: _messageCtrl,
+        maxLines: 3,
+        maxLength: 200,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(
+          hintText: 'Tell them briefly what you need help with',
+          hintStyle: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          counterStyle: TextStyle(fontSize: 11, color: kSelMuted),
+        ),
+        style: const TextStyle(fontSize: 13.5, color: kSelInk),
+      ),
+    );
+  }
+
+  Widget _priceDetails(SelectProfessional pro) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Column(
+        children: [
+          _priceRow('Consultation Fee',
+              '₹${pro.consultationFee.toStringAsFixed(0)}'),
+          const SizedBox(height: 8),
+          _priceRow('Service Fee', '₹0'),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1, color: kSelLine),
+          ),
+          _priceRow(
+            'Total Amount',
+            '₹${pro.consultationFee.toStringAsFixed(0)}',
+            bold: true,
+          ),
+          const SizedBox(height: 8),
+          // Sets the right expectation: nothing is charged through the app.
+          const Text(
+            'Pay the professional directly at your consultation — '
+            'no payment is taken in the app.',
+            style: TextStyle(fontSize: 11.5, color: kSelMuted, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _priceRow(String label, String value, {bool bold = false}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: bold ? 14.5 : 13.5,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              color: bold ? kSelInk : kSelMuted,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          value,
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: bold ? 15.5 : 13.5,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+            color: kSelInk,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _confirmBar() {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _submitting ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kSelYellow,
+              foregroundColor: const Color(0xFF3A2E00),
+              disabledBackgroundColor: const Color(0xFFE2E8F0),
+              elevation: 0,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: _submitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Color(0xFF3A2E00)),
+                  )
+                : const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Confirm Booking',
+                      maxLines: 1,
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}

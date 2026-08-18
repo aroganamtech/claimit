@@ -1,0 +1,1495 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+
+import '../models/select_category.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+// Proven, already-shipped helpers — reused rather than reimplemented.
+import '../../classifieds/services/payment_service.dart';
+import '../../classifieds/screens/local_finds_screen.dart' show lfCurrentPosition;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — "List yourself" (professional self-registration).
+//
+//   Step 1  About you        — name, category, role, experience, about, fee
+//   Step 2  Contact & area   — phone, email, pincode-driven address
+//   Step 3  Services & photos— services, profile photo, portfolio
+//   Step 4  Listing plan     — Premium / Standard / Custom, then payment
+//
+// PAYMENT: the listing fee is charged with Razorpay through the app's existing
+// payment-link flow (PaymentService → POST /payments/create-link → hosted
+// Razorpay checkout → poll until PAID). The Custom plan may be any amount
+// including ₹0, which is free and skips payment entirely. Premium/Standard
+// prices come live from GET /select/plans, which the web admin Pricing page
+// controls — the server also recomputes them, so a tampered client can't
+// under-pay.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectRegisterFlow extends StatefulWidget {
+  const SelectRegisterFlow({super.key});
+
+  @override
+  State<SelectRegisterFlow> createState() => _SelectRegisterFlowState();
+}
+
+class _SelectRegisterFlowState extends State<SelectRegisterFlow> {
+  int _step = 0; // 0..3
+
+  // ── Step 1 ─────────────────────────────────────────────────────────────────
+  final _nameCtrl = TextEditingController();
+  final _roleCtrl = TextEditingController();
+  final _aboutCtrl = TextEditingController();
+  final _expCtrl = TextEditingController();
+  final _feeCtrl = TextEditingController();
+  String? _categoryId;
+
+  // ── Step 2 ─────────────────────────────────────────────────────────────────
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _pincodeCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _districtCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  List<String> _areas = [];
+  String? _selectedArea;
+  bool _pinLoading = false;
+
+  // ── Step 3 ─────────────────────────────────────────────────────────────────
+  final _serviceCtrl = TextEditingController();
+  final List<String> _services = [];
+  String? _photoB64;                    // profile photo
+  final List<String> _portfolioB64 = []; // portfolio images
+
+  // ── Step 4 ─────────────────────────────────────────────────────────────────
+  String _planId = 'standard';
+  final _customAmountCtrl = TextEditingController();
+  // Fallback prices, replaced by live admin-set values once /select/plans
+  // resolves. Kept in sync with the backend's DEFAULT_SELECT_PLANS.
+  int _premiumPrice = 1200;
+  int _standardPrice = 700;
+
+  bool _submitting = false;
+  String _payNote = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlanPrices();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _roleCtrl.dispose();
+    _aboutCtrl.dispose();
+    _expCtrl.dispose();
+    _feeCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _addressCtrl.dispose();
+    _pincodeCtrl.dispose();
+    _stateCtrl.dispose();
+    _districtCtrl.dispose();
+    _cityCtrl.dispose();
+    _serviceCtrl.dispose();
+    _customAmountCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPlanPrices() async {
+    final prices = await SelectService.instance.fetchPlanPrices();
+    if (!mounted || prices == null) return;
+    setState(() {
+      _premiumPrice = prices.premium;
+      _standardPrice = prices.standard;
+    });
+  }
+
+  /// Amount payable for the selected plan.
+  double get _amount {
+    switch (_planId) {
+      case 'premium':
+        return _premiumPrice.toDouble();
+      case 'standard':
+        return _standardPrice.toDouble();
+      default:
+        return double.tryParse(_customAmountCtrl.text.trim()) ?? 0;
+    }
+  }
+
+  void _snack(String m) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(m)));
+
+  // ── Pincode → state / district / areas (India Post, same as Local Finds) ────
+  Future<void> _lookupPincode(String pin) async {
+    if (pin.length != 6) return;
+    setState(() => _pinLoading = true);
+    try {
+      final resp = await http
+          .get(Uri.parse('https://api.postalpincode.in/pincode/$pin'))
+          .timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        if (data is List && data.isNotEmpty && data[0]['Status'] == 'Success') {
+          final offices = (data[0]['PostOffice'] as List?) ?? [];
+          if (offices.isNotEmpty) {
+            final first = offices.first as Map;
+            _stateCtrl.text = (first['State'] ?? '').toString();
+            _districtCtrl.text = (first['District'] ?? '').toString();
+            if (_cityCtrl.text.trim().isEmpty) {
+              _cityCtrl.text = (first['District'] ?? '').toString();
+            }
+            _areas = offices
+                .map<String>((o) => ((o as Map)['Name'] ?? '').toString())
+                .where((s) => s.isNotEmpty)
+                .toSet()
+                .toList();
+            _selectedArea = _areas.isNotEmpty ? _areas.first : null;
+          }
+        } else {
+          _stateCtrl.text = '';
+          _districtCtrl.text = '';
+          _areas = [];
+          _selectedArea = null;
+          _snack('No records found for this pincode');
+        }
+      }
+    } catch (_) {
+      _snack('Could not look up pincode. Check your connection.');
+    } finally {
+      if (mounted) setState(() => _pinLoading = false);
+    }
+  }
+
+  // ── Photos ──────────────────────────────────────────────────────────────────
+  Future<void> _pickProfilePhoto() async {
+    try {
+      final f = await ImagePicker().pickImage(
+          source: ImageSource.gallery, imageQuality: 60);
+      if (f == null) return;
+      final bytes = await f.readAsBytes();
+      if (!mounted) return;
+      setState(() => _photoB64 = base64Encode(bytes));
+    } catch (_) {
+      _snack('Could not add that photo');
+    }
+  }
+
+  Future<void> _pickPortfolio() async {
+    if (_portfolioB64.length >= 12) {
+      _snack('You can add up to 12 portfolio photos');
+      return;
+    }
+    try {
+      final files = await ImagePicker().pickMultiImage(imageQuality: 60);
+      for (final f in files) {
+        if (_portfolioB64.length >= 12) break;
+        final bytes = await f.readAsBytes();
+        _portfolioB64.add(base64Encode(bytes));
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      _snack('Could not add those photos');
+    }
+  }
+
+  void _addService() {
+    final s = _serviceCtrl.text.trim();
+    if (s.isEmpty) return;
+    if (_services.length >= 12) {
+      _snack('Up to 12 services');
+      return;
+    }
+    setState(() {
+      _services.add(s);
+      _serviceCtrl.clear();
+    });
+  }
+
+  // ── Step validation ─────────────────────────────────────────────────────────
+  bool _validateStep() {
+    if (_step == 0) {
+      if (_nameCtrl.text.trim().isEmpty) { _snack('Enter your name'); return false; }
+      if (_categoryId == null) { _snack('Select your category'); return false; }
+      final fee = double.tryParse(_feeCtrl.text.trim()) ?? -1;
+      if (fee < 0) { _snack('Enter a valid consultation fee (0 or more)'); return false; }
+    } else if (_step == 1) {
+      final phone = _phoneCtrl.text.trim();
+      if (phone.length < 10) { _snack('Enter a valid mobile number'); return false; }
+      if (_pincodeCtrl.text.trim().length != 6) {
+        _snack('Enter a valid 6-digit pincode'); return false;
+      }
+      if (_cityCtrl.text.trim().isEmpty) { _snack('Enter your city'); return false; }
+    } else if (_step == 3) {
+      if (_planId == 'custom') {
+        final a = double.tryParse(_customAmountCtrl.text.trim());
+        if (a == null || a < 0) { _snack('Enter an amount (0 or more)'); return false; }
+      }
+    }
+    return true;
+  }
+
+  void _next() {
+    if (!_validateStep()) return;
+    if (_step < 4) {
+      setState(() => _step++);
+    } else {
+      // Only the final Review step triggers payment + registration.
+      _payAndRegister();
+    }
+  }
+
+  /// Jump straight back to a step from the Review screen's "Edit" links.
+  void _goToStep(int s) => setState(() => _step = s);
+
+  void _back() {
+    if (_step > 0) {
+      setState(() => _step--);
+    } else {
+      context.canPop() ? context.pop() : context.go('/select');
+    }
+  }
+
+  // ── Payment + registration ──────────────────────────────────────────────────
+  Future<void> _payAndRegister() async {
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _payNote = '';
+    });
+
+    final amount = _amount;
+
+    // Free listing (Custom plan at ₹0) — nothing to pay, register straight away.
+    if (amount <= 0) {
+      await _register(paymentLinkId: '');
+      return;
+    }
+
+    setState(() => _payNote = 'Opening secure Razorpay checkout…');
+    final link = await PaymentService.instance.createLink(
+      amount: amount,
+      purpose: 'Claimit Select ${_planId[0].toUpperCase()}${_planId.substring(1)} listing',
+    );
+    if (!mounted) return;
+    if (link == null) {
+      setState(() {
+        _submitting = false;
+        _payNote = '';
+      });
+      _snack("Couldn't start payment. Please try again shortly.");
+      return;
+    }
+
+    final opened = await PaymentService.instance.openCheckout(link.url);
+    if (!mounted) return;
+    if (!opened) {
+      setState(() {
+        _submitting = false;
+        _payNote = '';
+      });
+      _snack('Could not open the payment page.');
+      return;
+    }
+
+    setState(() => _payNote =
+        'Waiting for payment confirmation… complete the payment in the '
+        'browser, then come back to this screen.');
+
+    // Poll until Razorpay reports the link PAID (same cadence and ceiling the
+    // Local Finds / Classifieds payment step already uses).
+    var attempts = 0;
+    while (mounted && attempts < 40) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      attempts++;
+      final status = await PaymentService.instance.checkStatus(link.linkId);
+      if (!mounted) return;
+      if (status == 'PAID') {
+        await _register(paymentLinkId: link.linkId);
+        return;
+      }
+      if (status == 'EXPIRED' || status == 'CANCELLED') {
+        setState(() {
+          _submitting = false;
+          _payNote = '';
+        });
+        _snack('Payment was not completed. Please try again.');
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _payNote = '';
+    });
+    _snack("We couldn't confirm the payment yet. If you've paid, try again in a moment.");
+  }
+
+  Future<void> _register({required String paymentLinkId}) async {
+    if (mounted) setState(() => _payNote = 'Creating your listing…');
+
+    // Best-effort GPS so the listing can show a real distance in "Nearby".
+    final pos = await lfCurrentPosition();
+
+    final saved = await SelectService.instance.registerProfessional({
+      'name': _nameCtrl.text.trim(),
+      'category': _categoryId,
+      'role': _roleCtrl.text.trim(),
+      'about': _aboutCtrl.text.trim(),
+      'experience_years': int.tryParse(_expCtrl.text.trim()) ?? 0,
+      'consultation_fee': double.tryParse(_feeCtrl.text.trim()) ?? 0,
+      'services': _services,
+      'phone': _phoneCtrl.text.trim(),
+      'email': _emailCtrl.text.trim(),
+      'address': _addressCtrl.text.trim(),
+      'area': _selectedArea ?? '',
+      'city': _cityCtrl.text.trim(),
+      'district': _districtCtrl.text.trim(),
+      'state': _stateCtrl.text.trim(),
+      'pincode': _pincodeCtrl.text.trim(),
+      'latitude': pos?.latitude,
+      'longitude': pos?.longitude,
+      'plan': _planId,
+      'amount': _amount,
+      'payment_link_id': paymentLinkId,
+      if (_photoB64 != null) 'photo_base64': _photoB64,
+      if (_portfolioB64.isNotEmpty) 'portfolio_base64': _portfolioB64,
+    });
+
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _payNote = '';
+    });
+
+    if (saved == null) {
+      _snack("Couldn't save your listing. Please try again.");
+      return;
+    }
+    await _showSuccess();
+    if (!mounted) return;
+    context.go('/select');
+  }
+
+  Future<void> _showSuccess() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE7F7EC),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_rounded,
+                  color: Color(0xFF1B7A3D), size: 34),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              "You're listed!",
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w700, color: kSelInk),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Your profile is now live on Claimit Select. Customers nearby '
+              'can find you and book consultations.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: kSelMuted, height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kSelBlue,
+                foregroundColor: Colors.white,
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Done'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── UI ──────────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    const titles = [
+      'About You',
+      'Contact & Location',
+      'Services & Portfolio',
+      'Choose Your Listing Plan',
+      'Review & Confirm',
+    ];
+    const subs = [
+      'Your photo and who you are',
+      'How customers reach and find you',
+      'What you offer, and your work',
+      'Premium listings rank at the top',
+      'Check everything before you pay',
+    ];
+
+    return Scaffold(
+      backgroundColor: kSelBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: kSelBlue, size: 20),
+          onPressed: _submitting ? null : _back,
+        ),
+        title: const Text(
+          'List Yourself',
+          style: TextStyle(
+              color: kSelBlue, fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+      ),
+      body: Column(
+        children: [
+          // Header + progress
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.05), blurRadius: 12),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titles[_step],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 19, fontWeight: FontWeight.w700, color: kSelInk),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subs[_step],
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: kSelMuted),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Step ${_step + 1}/5',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: kSelBlue),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: (_step + 1) / 5,
+                    minHeight: 8,
+                    backgroundColor: const Color(0xFFDCE7F5),
+                    valueColor: const AlwaysStoppedAnimation(kSelBlue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _stepBody(),
+            ),
+          ),
+          _bottomBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepBody() {
+    switch (_step) {
+      case 0:
+        return _stepAbout();
+      case 1:
+        return _stepContact();
+      case 2:
+        return _stepServices();
+      case 3:
+        return _stepPlan();
+      default:
+        return _stepReview();
+    }
+  }
+
+  // ── Step 1 ─────────────────────────────────────────────────────────────────
+  Widget _stepAbout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Photo comes first — it's the first thing customers see on the card
+        // and profile, so it's collected up front rather than buried later.
+        _label('Your Photo'),
+        Row(
+          children: [
+            GestureDetector(
+              onTap: _pickProfilePhoto,
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF5FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: kSelBlue),
+                ),
+                child: _photoB64 == null
+                    ? const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_a_photo_rounded, color: kSelBlue),
+                          SizedBox(height: 4),
+                          Text('Add photo',
+                              style: TextStyle(fontSize: 10.5, color: kSelBlue)),
+                        ],
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
+                        child: Image.memory(
+                          base64Decode(_photoB64!),
+                          fit: BoxFit.cover,
+                          width: 96,
+                          height: 96,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.broken_image_rounded, color: kSelMuted),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _photoB64 == null
+                    ? 'A clear photo of you. This is what customers see on '
+                        'your card and profile.'
+                    : 'Looking good. Tap the photo to change it.',
+                style: const TextStyle(
+                    fontSize: 12, color: kSelMuted, height: 1.45),
+              ),
+            ),
+          ],
+        ),
+        _label('Your Name'),
+        _field(_nameCtrl, 'e.g. Ananya Menon'),
+        _label('Category'),
+        Container(
+          decoration: _boxDeco(),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _categoryId,
+              hint: const Text('Select your category'),
+              items: kSelectCategories
+                  .map((c) => DropdownMenuItem(
+                        value: c.id,
+                        child: Text(
+                          c.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() {
+                _categoryId = v;
+                if (_roleCtrl.text.trim().isEmpty && v != null) {
+                  // Sensible default title, still editable.
+                  _roleCtrl.text = selectCategoryById(v).label;
+                }
+              }),
+            ),
+          ),
+        ),
+        _label('Your Title'),
+        _field(_roleCtrl, 'e.g. Interior Designer'),
+        _label('Years of Experience'),
+        _field(_expCtrl, 'e.g. 8', keyboard: TextInputType.number, digitsOnly: true),
+        _label('Consultation Fee (₹)'),
+        _field(_feeCtrl, 'e.g. 499', keyboard: TextInputType.number, digitsOnly: true),
+        const SizedBox(height: 4),
+        const Text(
+          'This is what you charge per consultation. Customers pay you '
+          'directly — Claimit does not collect it.',
+          style: TextStyle(fontSize: 11.5, color: kSelMuted, height: 1.4),
+        ),
+        _label('About You'),
+        _field(_aboutCtrl, 'A short introduction customers will read', maxLines: 4),
+      ],
+    );
+  }
+
+  // ── Step 2 ─────────────────────────────────────────────────────────────────
+  Widget _stepContact() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Mobile Number'),
+        _field(_phoneCtrl, '10-digit mobile number',
+            keyboard: TextInputType.phone, digitsOnly: true, maxLength: 12),
+        _label('Email (Optional)'),
+        _field(_emailCtrl, 'you@example.com',
+            keyboard: TextInputType.emailAddress),
+        _label('Pincode'),
+        _pincodeField(),
+        _label('State'),
+        _readonlyField(_stateCtrl.text.isEmpty
+            ? 'Auto-filled from pincode'
+            : _stateCtrl.text),
+        _label('District'),
+        _readonlyField(_districtCtrl.text.isEmpty
+            ? 'Auto-filled from pincode'
+            : _districtCtrl.text),
+        _label('City'),
+        _field(_cityCtrl, 'City / town'),
+        _label('Area'),
+        _areaDropdown(),
+        _label('Address'),
+        _field(_addressCtrl, 'Door no, street', maxLines: 2),
+      ],
+    );
+  }
+
+  // ── Step 3 ─────────────────────────────────────────────────────────────────
+  Widget _stepServices() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Services You Offer'),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: _boxDeco(),
+                child: TextField(
+                  controller: _serviceCtrl,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _addService(),
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. Home Interiors',
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _addService,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kSelBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Add'),
+              ),
+            ),
+          ],
+        ),
+        if (_services.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _services
+                .map((s) => Chip(
+                      label: Text(s, style: const TextStyle(fontSize: 12.5)),
+                      backgroundColor: const Color(0xFFEFF3FF),
+                      side: const BorderSide(color: Color(0xFFC7D6F5)),
+                      onDeleted: () => setState(() => _services.remove(s)),
+                    ))
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 18),
+        _label('Portfolio (up to 12)'),
+        const Text(
+          'Photos of your work, shown on your profile.',
+          style: TextStyle(fontSize: 12, color: kSelMuted),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ..._portfolioB64.asMap().entries.map((e) => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        base64Decode(e.value),
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 72,
+                          height: 72,
+                          color: const Color(0xFFE8EDF5),
+                          child: const Icon(Icons.broken_image_rounded,
+                              color: kSelMuted),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -6,
+                      right: -6,
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _portfolioB64.removeAt(e.key)),
+                        child: const CircleAvatar(
+                          radius: 11,
+                          backgroundColor: Colors.white,
+                          child: Icon(Icons.cancel,
+                              color: Colors.redAccent, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                )),
+            if (_portfolioB64.length < 12)
+              GestureDetector(
+                onTap: _pickPortfolio,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF5FF),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: kSelBlue),
+                  ),
+                  child: const Icon(Icons.add_a_photo_rounded, color: kSelBlue),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── Step 4 ─────────────────────────────────────────────────────────────────
+  Widget _stepPlan() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _planCard(
+          id: 'premium',
+          title: 'Premium Listing',
+          price: '₹$_premiumPrice',
+          badge: 'Top Placement',
+          points: const [
+            'Always ranked above Standard listings',
+            'Highlighted profile with full visibility',
+            'Portfolio and offers shown prominently',
+          ],
+        ),
+        _planCard(
+          id: 'standard',
+          title: 'Standard Listing',
+          price: '₹$_standardPrice',
+          badge: null,
+          points: const [
+            'Listed in your category',
+            'Profile, services and contact details',
+            'Customers can call and book you',
+          ],
+        ),
+        _planCard(
+          id: 'custom',
+          title: 'Custom',
+          price: 'Any amount',
+          badge: null,
+          points: const [
+            'Enter any amount you have agreed with Claimit',
+            'Enter 0 to list for free',
+          ],
+        ),
+        if (_planId == 'custom') ...[
+          const SizedBox(height: 4),
+          _field(_customAmountCtrl, 'Enter amount (₹) — 0 for free',
+              keyboard: TextInputType.number, digitsOnly: true),
+          const SizedBox(height: 4),
+          const Text(
+            'Entering 0 lists you for free — no payment step.',
+            style: TextStyle(fontSize: 11.5, color: kSelMuted),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kSelLine),
+          ),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Amount payable',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700, color: kSelInk),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                _amount <= 0 ? 'Free' : '₹${_amount.toStringAsFixed(0)}',
+                maxLines: 1,
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w800, color: kSelBlue),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'You can review everything on the next screen before paying.',
+          style: TextStyle(fontSize: 11.5, color: kSelMuted, height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  // ── Step 5 · Review ─────────────────────────────────────────────────────────
+  // Everything the professional entered, grouped by the step it came from,
+  // each with an Edit link back to that step. This is the last thing shown
+  // before any money is taken.
+  Widget _stepReview() {
+    final cat = _categoryId == null ? '—' : selectCategoryById(_categoryId!).label;
+    final fee = double.tryParse(_feeCtrl.text.trim()) ?? 0;
+    final locationParts = [
+      _selectedArea ?? '',
+      _cityCtrl.text.trim(),
+      _districtCtrl.text.trim(),
+      _stateCtrl.text.trim(),
+      _pincodeCtrl.text.trim(),
+    ].where((s) => s.trim().isNotEmpty).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Identity card — photo + headline details, mirrors how the listing
+        // will actually look to customers.
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: kSelLine),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: _photoB64 == null
+                    ? Container(
+                        width: 76,
+                        height: 88,
+                        color: const Color(0xFFE8EDF5),
+                        child: const Icon(Icons.person_rounded,
+                            size: 34, color: kSelMuted),
+                      )
+                    : Image.memory(
+                        base64Decode(_photoB64!),
+                        width: 76,
+                        height: 88,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 76,
+                          height: 88,
+                          color: const Color(0xFFE8EDF5),
+                          child: const Icon(Icons.broken_image_rounded,
+                              color: kSelMuted),
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _nameCtrl.text.trim().isEmpty
+                          ? '—'
+                          : _nameCtrl.text.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: kSelInk),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _roleCtrl.text.trim().isEmpty
+                          ? cat
+                          : _roleCtrl.text.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, color: kSelMuted),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '₹${fee.toStringAsFixed(0)} consultation',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: kSelInk),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        _reviewSection(
+          title: 'About You',
+          step: 0,
+          rows: [
+            ('Name', _nameCtrl.text.trim()),
+            ('Category', cat),
+            ('Title', _roleCtrl.text.trim()),
+            ('Experience', '${int.tryParse(_expCtrl.text.trim()) ?? 0} years'),
+            ('Consultation Fee', '₹${fee.toStringAsFixed(0)}'),
+            ('About', _aboutCtrl.text.trim()),
+          ],
+        ),
+        _reviewSection(
+          title: 'Contact & Location',
+          step: 1,
+          rows: [
+            ('Mobile', _phoneCtrl.text.trim()),
+            ('Email', _emailCtrl.text.trim()),
+            ('Address', _addressCtrl.text.trim()),
+            ('Location', locationParts.join(', ')),
+          ],
+        ),
+        _reviewSection(
+          title: 'Services & Portfolio',
+          step: 2,
+          rows: [
+            ('Services',
+                _services.isEmpty ? '' : _services.join(', ')),
+            ('Portfolio',
+                _portfolioB64.isEmpty
+                    ? ''
+                    : '${_portfolioB64.length} photo'
+                        '${_portfolioB64.length == 1 ? '' : 's'}'),
+          ],
+        ),
+
+        // Plan + the amount about to be charged.
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kSelLine),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Listing Plan',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: kSelInk),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _goToStep(3),
+                    child: const Text(
+                      'Edit',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: kSelBlue),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _reviewRow(
+                'Plan',
+                '${_planId[0].toUpperCase()}${_planId.substring(1)}',
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(height: 1, color: kSelLine),
+              ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Amount payable',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: kSelInk),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    _amount <= 0 ? 'Free' : '₹${_amount.toStringAsFixed(0)}',
+                    maxLines: 1,
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: kSelBlue),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        if (_payNote.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: kSelBlue),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _payNote,
+                    style: const TextStyle(
+                        fontSize: 12.5, color: Color(0xFF1E3A8A), height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        Text(
+          _amount <= 0
+              ? 'Your listing is free — tap below and you go live right away.'
+              : "You'll be taken to Razorpay's secure checkout in your browser. "
+                  'Come back to this screen once the payment is done.',
+          style: const TextStyle(fontSize: 11.5, color: kSelMuted, height: 1.45),
+        ),
+      ],
+    );
+  }
+
+  /// One grouped block on the Review step, with an Edit link back to [step].
+  /// Empty values render as "—" so a skipped optional field is still obvious.
+  Widget _reviewSection({
+    required String title,
+    required int step,
+    required List<(String, String)> rows,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700, color: kSelInk),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _goToStep(step),
+                child: const Text(
+                  'Edit',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: kSelBlue),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...rows.map((r) => Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: _reviewRow(r.$1, r.$2),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 108,
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12.5, color: kSelMuted),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Expanded + wrapping: a long "About" or services list flows onto more
+        // lines instead of overflowing the row.
+        Expanded(
+          child: Text(
+            value.trim().isEmpty ? '—' : value.trim(),
+            style: const TextStyle(
+                fontSize: 12.5, fontWeight: FontWeight.w600, color: kSelInk),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _planCard({
+    required String id,
+    required String title,
+    required String price,
+    required String? badge,
+    required List<String> points,
+  }) {
+    final selected = _planId == id;
+    return GestureDetector(
+      onTap: () => setState(() => _planId = id),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEFF5FF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? kSelBlue : kSelLine,
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: kSelBlue),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    price,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: kSelInk),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  color: selected ? kSelBlue : const Color(0xFFB0BEC5),
+                ),
+              ],
+            ),
+            if (badge != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: kSelYellow,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badge,
+                  maxLines: 1,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF3A2E00)),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            ...points.map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_rounded, size: 15, color: kSelBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          p,
+                          style: const TextStyle(
+                              fontSize: 12.5, color: kSelInk, height: 1.35),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Bottom action bar ───────────────────────────────────────────────────────
+  Widget _bottomBar() {
+    // Payment only happens on the final Review step.
+    final isLast = _step == 4;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _submitting ? null : _next,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kSelBlue,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFF90A4AE),
+              elevation: 0,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: _submitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      isLast
+                          ? (_amount <= 0 ? 'List Me Free' : 'Pay & List Me')
+                          : 'Continue',
+                      maxLines: 1,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Small shared field helpers ──────────────────────────────────────────────
+  Widget _label(String t) => Padding(
+        padding: const EdgeInsets.only(top: 14, bottom: 6),
+        child: Text(
+          t,
+          style: const TextStyle(
+              fontWeight: FontWeight.w600, fontSize: 14, color: kSelInk),
+        ),
+      );
+
+  BoxDecoration _boxDeco() => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      );
+
+  Widget _field(
+    TextEditingController c,
+    String hint, {
+    int maxLines = 1,
+    TextInputType? keyboard,
+    bool digitsOnly = false,
+    int? maxLength,
+  }) {
+    return Container(
+      decoration: _boxDeco(),
+      child: TextField(
+        controller: c,
+        maxLines: maxLines,
+        keyboardType: keyboard,
+        inputFormatters: [
+          if (digitsOnly) FilteringTextInputFormatter.digitsOnly,
+          if (maxLength != null) LengthLimitingTextInputFormatter(maxLength),
+        ],
+        onChanged: (_) {
+          // Keeps the "Amount payable" total live while typing a custom amount.
+          if (c == _customAmountCtrl) setState(() {});
+        },
+        decoration: InputDecoration(
+          hintText: hint,
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _pincodeField() {
+    return Container(
+      decoration: _boxDeco(),
+      child: TextField(
+        controller: _pincodeCtrl,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(6),
+        ],
+        onChanged: (v) {
+          if (v.length == 6) {
+            _lookupPincode(v);
+          } else {
+            setState(() {
+              _stateCtrl.text = '';
+              _districtCtrl.text = '';
+              _areas = [];
+              _selectedArea = null;
+            });
+          }
+        },
+        decoration: InputDecoration(
+          hintText: 'Enter 6-digit pincode',
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          suffixIcon: _pinLoading
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: kSelBlue),
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _readonlyField(String text) {
+    final empty = text.startsWith('Auto-filled');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontSize: 14, color: empty ? const Color(0xFF94A3B8) : kSelInk),
+      ),
+    );
+  }
+
+  Widget _areaDropdown() {
+    if (_areas.isEmpty) {
+      return _readonlyField('Enter pincode to load areas');
+    }
+    return Container(
+      decoration: _boxDeco(),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: _selectedArea,
+          hint: const Text('Select area'),
+          items: _areas
+              .map((a) => DropdownMenuItem(
+                    value: a,
+                    child: Text(a, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ))
+              .toList(),
+          onChanged: (v) => setState(() => _selectedArea = v),
+        ),
+      ),
+    );
+  }
+}

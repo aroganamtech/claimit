@@ -53,7 +53,8 @@ import AdminBulkShops from './pages/admin/AdminBulkShops'
 import AdminTransactions from './pages/admin/AdminTransactions'
 import AdminShopDetail from './pages/admin/AdminShopDetail'
 import AdminCategoryImages from './pages/admin/AdminCategoryImages'
-import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminDeletedUsers } from './pages/admin/AdminPages'
+import AdminLearnClaimit from './pages/admin/AdminLearnClaimit'
+import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminPricing, AdminDeletedUsers } from './pages/admin/AdminPages'
 
 // Protected route
 function ProtectedRoute({ children, requiredRole }) {
@@ -296,6 +297,7 @@ export default function App() {
             <Route path="/admin/transactions" element={<AdminTransactions />} />
             <Route path="/admin/bulk-shops" element={<AdminBulkShops />} />
             <Route path="/admin/category-images" element={<AdminCategoryImages />} />
+            <Route path="/admin/learn-claimit" element={<AdminLearnClaimit />} />
             <Route path="/admin/reviews"   element={<AdminReviews />} />
             <Route path="/admin/tickets"    element={<AdminTickets />} />
             <Route path="/admin/feedback"   element={<AdminFeedback />} />
@@ -304,6 +306,7 @@ export default function App() {
             <Route path="/admin/bill-reviews"   element={<AdminBillReviews />} />
             <Route path="/admin/bonus-settings" element={<AdminBonusSettings />} />
             <Route path="/admin/ad-settings"    element={<AdminAdSettings />} />
+            <Route path="/admin/pricing"        element={<AdminPricing />} />
             <Route path="/admin/deleted-users"  element={<AdminDeletedUsers />} />
           </Route>
 

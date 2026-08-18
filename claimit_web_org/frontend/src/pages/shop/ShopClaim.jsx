@@ -5,7 +5,7 @@
 //   real Razorpay payment → done. If no shop is found for the number, fall
 //   back to the full manual registration form (the old flow).
 // ─────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 
@@ -16,7 +16,9 @@ const input = { width: '100%', padding: '12px 14px', border: '1px solid #d1d5db'
 const label = { fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 6px' }
 const primaryBtn = { width: '100%', padding: 13, background: BLUE, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }
 
-const PLANS = [
+// Fallback shown until the live prices load from GET /shop/pricing (admin-
+// configurable). Kept in sync with utils/pricing.py's DEFAULT_PRICING.
+const DEFAULT_PLANS = [
   { id: 'premium',  name: 'Premium',  price: 720, note: 'Top placement + full visibility' },
   { id: 'standard', name: 'Standard', price: 365, note: 'Priority listing' },
   { id: 'other',    name: 'Other',    price: 0,   note: 'Enter any amount (0 or more)' },
@@ -53,10 +55,21 @@ export default function ShopClaim() {
   const [customAmount, setCustomAmount] = useState('')
   const [imageKey, setImageKey] = useState('')
   const [imagePreview, setImagePreview] = useState('')
+  const [plans, setPlans] = useState(DEFAULT_PLANS)
+
+  useEffect(() => {
+    api.shop.getPricing()
+      .then(p => setPlans([
+        { id: 'premium',  name: 'Premium',  price: p.premium,  note: 'Top placement + full visibility' },
+        { id: 'standard', name: 'Standard', price: p.standard, note: 'Priority listing' },
+        { id: 'other',    name: 'Other',    price: 0,          note: 'Enter any amount (0 or more)' },
+      ]))
+      .catch(() => {}) // keep DEFAULT_PLANS on failure
+  }, [])
 
   const amount = planId === 'other'
     ? Number(customAmount || 0)
-    : (PLANS.find(p => p.id === planId)?.price || 0)
+    : (plans.find(p => p.id === planId)?.price || 0)
 
   const err = (e) => setError(e?.response?.data?.detail || e?.message || 'Something went wrong')
 
@@ -146,7 +159,7 @@ export default function ShopClaim() {
     try {
       const ok = await loadRazorpay()
       if (!ok) { setError('Could not load the payment gateway. Check your connection.'); setBusy(''); return }
-      const order = await api.shop.createPayOrder(amount)
+      const order = await api.shop.createPayOrder(amount, planId)
       const rzp = new window.Razorpay({
         key: order.key_id,
         order_id: order.order_id,
@@ -234,6 +247,11 @@ export default function ShopClaim() {
         <div style={card}>
           <Header title="Enter OTP" sub={`Code sent to ${email}.`} />
           {devOtp && <div style={{ fontSize: 13, color: '#b26a00', marginBottom: 8 }}>Testing code: <b>{devOtp}</b></div>}
+          {!devOtp && (
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
+              Don't see it? Check your spam/junk folder — it can take a minute to arrive.
+            </div>
+          )}
           <input style={input} inputMode="numeric" placeholder="6-digit code" value={otp}
                  onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} />
           <div style={{ height: 16 }} />
@@ -277,7 +295,7 @@ export default function ShopClaim() {
       {step === 'plan' && (
         <div style={card}>
           <Header title="Choose a Plan" />
-          {PLANS.map(p => (
+          {plans.map(p => (
             <label key={p.id} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 14, marginBottom: 10,
               border: `1.5px solid ${planId === p.id ? BLUE : '#e5e7eb'}`, borderRadius: 10, cursor: 'pointer',

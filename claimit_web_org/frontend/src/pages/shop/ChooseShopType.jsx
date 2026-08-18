@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import api from '../../utils/api'
 
 const DISCOUNT_OPTIONS = [5, 10, 15, 20, 25, 30]
 
-const PLANS = [
+// Fallback shown until the live prices load from GET /shop/pricing (admin-
+// configurable). Kept in sync with utils/pricing.py's DEFAULT_PRICING so the
+// picker never flashes a wrong price before the fetch resolves.
+const DEFAULT_PLANS = [
   { id: 'premium',  name: 'Premium',  price: 720, note: 'Top placement + full visibility' },
   { id: 'standard', name: 'Standard', price: 365, note: 'Priority listing' },
   { id: 'other',    name: 'Other',    price: 0,   note: 'Enter any amount' },
@@ -15,10 +19,21 @@ export default function ChooseShopType() {
   const [discount, setDiscount] = useState(15)   // default 15 %
   const [planId, setPlanId] = useState('premium')
   const [customAmount, setCustomAmount] = useState('')
+  const [plans, setPlans] = useState(DEFAULT_PLANS)
+
+  useEffect(() => {
+    api.shop.getPricing()
+      .then(p => setPlans([
+        { id: 'premium',  name: 'Premium',  price: p.premium,  note: 'Top placement + full visibility' },
+        { id: 'standard', name: 'Standard', price: p.standard, note: 'Priority listing' },
+        { id: 'other',    name: 'Other',    price: 0,          note: 'Enter any amount' },
+      ]))
+      .catch(() => {}) // keep DEFAULT_PLANS on failure
+  }, [])
 
   const planAmount = planId === 'other'
     ? Number(customAmount || 0)
-    : (PLANS.find(p => p.id === planId)?.price || 0)
+    : (plans.find(p => p.id === planId)?.price || 0)
 
   const handleContinue = () => {
     if (!selected) return
@@ -142,7 +157,7 @@ export default function ChooseShopType() {
 
           {/* Plan picker — Premium / Standard / Other custom amount */}
           <div style={{ fontWeight: 700, fontSize: 15, margin: '4px 0 12px' }}>Choose your plan</div>
-          {PLANS.map(p => (
+          {plans.map(p => (
             <div
               key={p.id}
               onClick={() => setPlanId(p.id)}

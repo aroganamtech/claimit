@@ -1,0 +1,473 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../models/select_category.dart';
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — professionals list for one category (or a search term).
+//
+// Blue app bar + Nearby / Top Rated / Offers filters over a list of
+// professional cards. Premium listings are returned first by the backend.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectListScreen extends StatefulWidget {
+  const SelectListScreen({super.key, this.category, this.searchTerm});
+
+  final SelectCategory? category;
+  final String? searchTerm;
+
+  @override
+  State<SelectListScreen> createState() => _SelectListScreenState();
+}
+
+enum _SelSort { nearby, topRated, offers }
+
+class _SelectListScreenState extends State<SelectListScreen> {
+  _SelSort _sort = _SelSort.nearby;
+  bool _loading = true;
+  List<SelectProfessional> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  String get _sortKey {
+    switch (_sort) {
+      case _SelSort.topRated:
+        return 'top_rated';
+      case _SelSort.offers:
+        return 'offers';
+      case _SelSort.nearby:
+        return 'nearby';
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final items = await SelectService.instance.fetchProfessionals(
+      category: widget.category?.id,
+      search: widget.searchTerm,
+      sort: _sortKey,
+    );
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _loading = false;
+    });
+  }
+
+  void _setSort(_SelSort s) {
+    if (_sort == s) return;
+    setState(() => _sort = s);
+    _load();
+  }
+
+  Future<void> _call(String phone) async {
+    final p = phone.trim();
+    if (p.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No phone number listed')),
+      );
+      return;
+    }
+    final uri = Uri.parse('tel:$p');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  String get _title =>
+      widget.category?.label ?? (widget.searchTerm ?? 'Professionals');
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kSelBg,
+      bottomNavigationBar: const SelectBottomNav(current: 0),
+      body: Column(
+        children: [
+          _header(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: kSelAccent))
+                : _items.isEmpty
+                    ? SelEmptyState(
+                        icon: Icons.person_search_rounded,
+                        title: 'No professionals yet',
+                        message: _sort == _SelSort.offers
+                            ? 'Nobody in this category is running an offer right now.'
+                            : 'No one has registered under $_title yet. '
+                                'Check back soon — or list yourself here.',
+                        action: ElevatedButton(
+                          onPressed: () => context.push('/select/register'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kSelYellow,
+                            foregroundColor: kSelOnYellow,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(50)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 22, vertical: 12),
+                          ),
+                          child: const Text('List yourself'),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: kSelAccent,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+                          itemCount: _items.length,
+                          itemBuilder: (_, i) => _ProCard(
+                            pro: _items[i],
+                            onView: () => context.push(
+                              '/select/professional',
+                              extra: _items[i].id,
+                            ),
+                            onCall: () => _call(_items[i].phone),
+                          ),
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Blue header with title + filter chips ───────────────────────────────────
+  Widget _header() {
+    return Container(
+      width: double.infinity,
+      color:  kSelYellow,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 14, 12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, color: Color.fromARGB(255, 194, 226, 12)),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/select');
+                      }
+                    },
+                  ),
+                  // Expanded + ellipsis so a long category name or search term
+                  // can never overflow the title row.
+                  Expanded(
+                    child: Text(
+                      _title,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color.fromARGB(255, 255, 255, 255),
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.favorite_border_rounded, color: Colors.white),
+                  const SizedBox(width: 4),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterChip('Nearby', _SelSort.nearby),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _filterChip('Top Rated', _SelSort.topRated),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _filterChip('Offers', _SelSort.offers),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, _SelSort value) {
+    final selected = _sort == value;
+    return GestureDetector(
+      onTap: () => _setSort(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color.fromARGB(255, 250, 217, 88) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // scaleDown keeps "Top Rated" on one line at any font scale.
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? const Color(0xFF3A2E00) : kSelInk,
+                  ),
+                ),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 17),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Professional card ─────────────────────────────────────────────────────────
+
+class _ProCard extends StatelessWidget {
+  const _ProCard({required this.pro, required this.onView, required this.onCall});
+
+  final SelectProfessional pro;
+  final VoidCallback onView;
+  final VoidCallback onCall;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // IntrinsicHeight + stretch makes the photo grow to exactly the
+          // height of the text column beside it, so there's no white gap under
+          // it. IntrinsicHeight is required here — a stretch Row inside a
+          // ListView would otherwise hit "BoxConstraints forces an infinite
+          // height".
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 104,
+                  // The photo sits in a Stack as the ONLY positioned child, so
+                  // it reports zero intrinsic height. That matters: a network
+                  // image otherwise reports its own scaled height to
+                  // IntrinsicHeight, and card heights would then jump around
+                  // with each photo's aspect ratio. This way the text column
+                  // alone decides the height and the photo simply fills it.
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: SelPhoto(
+                          url: pro.photoUrl,
+                          width: 104,
+                          radius: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Expanded so every text line is width-bounded and can
+                // ellipsise rather than overflow.
+                Expanded(child: _details(context)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onView,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kSelAccent,
+                    side: const BorderSide(color: kSelAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                  ),
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('View Profile',
+                        maxLines: 1,
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onCall,
+                  icon: const Icon(Icons.call_rounded, size: 17),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Call',
+                        maxLines: 1,
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kSelYellow,
+                    foregroundColor: kSelOnYellow,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _details(BuildContext context) {
+    final tagLine = pro.tags.join(' • ');
+    final locLine = [
+      if (pro.distance.isNotEmpty) pro.distance,
+      if (pro.locationLabel.isNotEmpty) pro.locationLabel,
+    ].join(' • ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                pro.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                  color: kSelInk,
+                ),
+              ),
+            ),
+            if (pro.isVerified) ...[
+              const SizedBox(width: 4),
+              const SelVerifiedBadge(),
+            ],
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          pro.role,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12.5, color: kSelMuted),
+        ),
+        const SizedBox(height: 4),
+        SelRatingRow(rating: pro.rating, reviewCount: pro.reviewCount),
+        if (tagLine.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            tagLine,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: kSelMuted),
+          ),
+        ],
+        if (locLine.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            locLine,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: kSelMuted),
+          ),
+        ],
+        const SizedBox(height: 6),
+        // Fee + offer pill. Both sides are flexible so a long offer label
+        // shrinks instead of overflowing the row.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '₹${pro.consultationFee.toStringAsFixed(0)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: kSelInk,
+                    ),
+                  ),
+                  const Text(
+                    'Consultation',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: kSelMuted),
+                  ),
+                ],
+              ),
+            ),
+            if (pro.hasOffer)
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE7F7EC),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    pro.offerPercent > 0
+                        ? '${pro.offerPercent}% OFF'
+                        : pro.offerText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1B7A3D),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}

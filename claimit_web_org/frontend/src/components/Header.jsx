@@ -126,7 +126,7 @@ export default function Header() {
             </>
           ) : (
             <>
-              {/* <button
+              <button
                 onClick={() => setShowLoginMenu(!showLoginMenu)}
                 style={{
                   background: '#fff',
@@ -141,8 +141,8 @@ export default function Header() {
                 }}
               >
                 Login ▾
-              </button> */}
-              {/* {showLoginMenu && (
+              </button>
+              {showLoginMenu && (
                 <div style={{
                   position: 'absolute', right: 0, top: '110%',
                   background: '#fff', borderRadius: 10,
@@ -157,9 +157,9 @@ export default function Header() {
                     >
                       {p.label}
                     </button>
-                  ))} */}
-                {/* </div>
-              )} */}
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

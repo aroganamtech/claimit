@@ -255,6 +255,22 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
     }
   }
 
+  // Shown only on unclaimed (bulk-uploaded) shops — opens the website's
+  // shop registration/claim flow, where the real owner searches for and
+  // takes ownership of their shop after paying.
+  Future<void> _claimBusiness() async {
+    final uri = Uri.parse('https://claimit-web-aro.web.app/shop/auth');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the registration page')),
+        );
+      }
+    }
+  }
+
   void _redeemNow() {
     context.push('/redeem-loading', extra: widget.shop);
   }
@@ -326,6 +342,76 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Claim Your Business banner ───────────────────────────────
+                // Only for bulk-uploaded shops nobody has claimed yet — shown
+                // first, right below the photo, so a real owner spots it
+                // immediately. Disappears on its own once is_claimed flips
+                // to true (owner claims + pays via the website).
+                if (!s.isClaimed)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: GestureDetector(
+                      onTap: _claimBusiness,
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD97706).withOpacity(0.35),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.25),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.storefront_rounded,
+                                  color: Colors.white, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Is this your shop?',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      )),
+                                  SizedBox(height: 2),
+                                  Text(
+                                      'Claim your business to manage it & get verified',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        height: 1.3,
+                                      )),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_forward_ios_rounded,
+                                color: Colors.white, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // ── Category label ─────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),

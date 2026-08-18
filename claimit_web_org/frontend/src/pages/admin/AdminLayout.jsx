@@ -10,6 +10,7 @@ const NAV = [
   { label: 'Transactions', icon: '💳', path: '/admin/transactions' },
   { label: 'Bulk Upload', icon: '📥', path: '/admin/bulk-shops' },
   { label: 'Category Images', icon: '🖼', path: '/admin/category-images' },
+  { label: 'Learn Claimit', icon: '🎓', path: '/admin/learn-claimit' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },
   { label: 'Feedback',    icon: '💬', path: '/admin/feedback' },
@@ -17,6 +18,7 @@ const NAV = [
   { label: 'Bill Reviews',   icon: '🧾', path: '/admin/bill-reviews' },
   { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },
   { label: 'Ad Slot Settings', icon: '⭐', path: '/admin/ad-settings' },
+  { label: 'Pricing',        icon: '💰', path: '/admin/pricing' },
   { label: 'Project PDFs',   icon: '📄', path: '/admin/pdfs' },
   { label: 'Deleted Users',  icon: '🗑', path: '/admin/deleted-users' },
 ]
@@ -43,7 +45,10 @@ export default function AdminLayout() {
           <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: 1 }}>claimit</div>
           <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: 2 }}>ADMIN PANEL</div>
         </div>
-        <nav style={{ padding: '8px 0', flex: 1 }}>
+        <nav style={{
+          padding: '8px 0', flex: 1, minHeight: 0,
+          overflowY: 'auto', overflowX: 'hidden',
+        }}>
           {NAV.map(it => (
             <button
               key={it.path}

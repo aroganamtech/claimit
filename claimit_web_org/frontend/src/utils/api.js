@@ -91,6 +91,8 @@ const advertiser = {
   getProfile:      ()             => get('/advertiser/profile'),
   // Premium slot availability — { max, used, remaining, location_scoped }
   getPremiumSlots: (adType, pincode='000000') => get('/advertiser/premium-slots', { ad_type: adType, pincode }),
+  // Live ad prices (admin-configurable) — no auth required
+  getPricing:      ()             => get('/advertiser/pricing'),
 }
 
 // ─── Sales ───────────────────────────────────────────────────
@@ -119,8 +121,12 @@ const _shopQ = () => (_activeShopId() ? `?shop_id=${_activeShopId()}` : '')
 
 const shop = {
   register:           (formData) => post('/shop/register', formData),
-  // Razorpay order for the shop-registration payment
-  createPayOrder:     (amount)   => post('/shop/pay/order', { amount }),
+  // Razorpay order for the shop-registration payment. For plan="premium"/
+  // "standard" the backend ignores `amount` and uses the admin-configured
+  // price instead — `amount` is only actually used for plan="other".
+  createPayOrder:     (amount, plan = '') => post('/shop/pay/order', { amount, plan }),
+  // Live Premium/Standard/annual-renewal prices (admin-configurable) — no auth required
+  getPricing:         ()         => get('/shop/pricing'),
   // Claim-by-mobile flow (bulk-uploaded shops)
   lookupByMobile:     (phone)         => get('/shop/lookup', { phone }),
   // Activated shops (redeem/reward) by mobile — used by the Promo Reelz ad flow
@@ -208,6 +214,9 @@ const admin = {
   // Premium ad slot caps (Nearby Deals + Brand Deals)
   getAdSettings:     ()       => get('/admin/ad-settings'),
   updateAdSettings:  (payload) => put('/admin/ad-settings', payload),
+  // Central pricing — every amount charged across shop/ads/local finds
+  getPricing:        ()       => get('/admin/pricing'),
+  updatePricing:     (payload) => put('/admin/pricing', payload),
   // App Users — real Flutter-app end-customers (claimit_db.users)
   listAppUsers:      ()       => get('/admin/app-users'),
   deleteAppUser:     (id)     => del(`/admin/app-users/${id}`),
@@ -223,10 +232,18 @@ const admin = {
   // Category images (up to 15 per category; shops show a random one).
   listCategoryImages: ()               => get('/admin/category-images'),
   setCategoryImages:  (catId, keys)    => put(`/admin/category-images/${catId}`, { keys }),
+
+  // Learn Claimit — question + how-to video lessons shown in the app.
+  listLearnItems:  ()               => get('/admin/learn'),
+  createLearnItem: (payload)        => post('/admin/learn', payload),
+  deleteLearnItem: (id)             => del(`/admin/learn/${id}`),
 }
 
 // ─── Payments (Cashfree Payment Links — advertiser ad bookings) ────
 const payments = {
+  // For ad bookings, always pass { ad_type, tier } — the server then ignores
+  // `amount` and charges its own admin-configured price. `amount` alone
+  // (no ad_type) is only for non-ad test/demo links (TestPayment.jsx).
   createLink:  (payload) => post('/payments/create-link', payload),
   checkStatus: (linkId)  => get(`/payments/status/${linkId}`),
 }

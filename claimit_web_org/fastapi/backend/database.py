@@ -45,6 +45,10 @@ category_images_collection  = app_db["category_images"]
 app_banners_collection      = app_db["banners"]
 app_bill_reviews_collection = app_db["bill_manual_reviews"]
 app_notifications_collection = app_db["notifications"]
+# "Learn Claimit" — admin-curated question + how-to video lessons shown in
+# the app's Featured Zones ("Learn Claimit" tile). Same claimit_db the app
+# backend reads from directly.
+app_learn_collection        = app_db["learn_content"]
 
 # Real Flutter-app end-customers (claimit_db.users) — for admin visibility/delete.
 app_users_collection        = app_db["users"]

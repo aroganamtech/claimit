@@ -1,0 +1,426 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../../auth/providers/auth_provider.dart';
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — Profile tab.
+//
+// The user's own place in Select: their listing if they have one (with plan,
+// stats and an Edit button), or a prompt to list themselves if they don't,
+// plus shortcuts into Bookings and Messages.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectProfileTabScreen extends StatefulWidget {
+  const SelectProfileTabScreen({super.key});
+
+  @override
+  State<SelectProfileTabScreen> createState() => _SelectProfileTabScreenState();
+}
+
+class _SelectProfileTabScreenState extends State<SelectProfileTabScreen> {
+  bool _loading = true;
+  SelectProfessional? _mine;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final mine = await SelectService.instance.fetchMyProfile();
+    if (!mounted) return;
+    setState(() {
+      _mine = mine;
+      _loading = false;
+    });
+  }
+
+  Future<void> _openRegister() async {
+    // Passing the existing listing puts the flow into edit mode with every
+    // field prefilled; passing nothing starts a fresh registration.
+    await context.push('/select/register', extra: _mine);
+    if (mounted) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Concrete-typed selects (project convention) — rebuilds only when the
+    // specific value changes, and avoids depending on UserModel's type here.
+    final displayName =
+        context.select<AuthProvider, String>((p) => p.user?.fullName ?? '').trim();
+    final phone =
+        context.select<AuthProvider, String>((p) => p.user?.phone ?? '').trim();
+
+    return Scaffold(
+      backgroundColor: kSelBg,
+      bottomNavigationBar: const SelectBottomNav(current: 3),
+      body: Column(
+        children: [
+          _blueHeader(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: kSelAccent))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    color: kSelAccent,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      children: [
+                        _accountCard(displayName, phone),
+                        const SizedBox(height: 14),
+                        if (_mine != null) ...[
+                          _listingCard(_mine!),
+                          const SizedBox(height: 14),
+                        ] else ...[
+                          _notListedCard(),
+                          const SizedBox(height: 14),
+                        ],
+                        _shortcuts(),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _blueHeader() {
+    return Container(
+      width: double.infinity,
+      color: kSelYellow,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 16, 12),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                onPressed: () => context.go('/select'),
+              ),
+              const Expanded(
+                child: Text(
+                  'My Claimit Select',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _accountCard(String name, String phone) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEFF3FB),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.person_rounded, color: kSelAccent, size: 26),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name.isEmpty ? 'Claimit user' : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: kSelInk),
+                ),
+                if (phone.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    phone,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5, color: kSelMuted),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── The user's own listing ──────────────────────────────────────────────────
+  Widget _listingCard(SelectProfessional p) {
+    final planLabel = p.plan.isEmpty
+        ? 'Custom'
+        : '${p.plan[0].toUpperCase()}${p.plan.substring(1)}';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'My Listing',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: kSelInk),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: p.isPremium ? kSelYellow : const Color(0xFFEFF3FB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$planLabel plan',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: p.isPremium ? const Color(0xFF3A2E00) : kSelAccent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelPhoto(url: p.photoUrl, width: 66, height: 76, radius: 11),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: kSelInk),
+                          ),
+                        ),
+                        if (p.isVerified) ...[
+                          const SizedBox(width: 4),
+                          const SelVerifiedBadge(size: 14),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      p.role,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, color: kSelMuted),
+                    ),
+                    const SizedBox(height: 5),
+                    SelRatingRow(
+                        rating: p.rating,
+                        reviewCount: p.reviewCount,
+                        fontSize: 12),
+                    const SizedBox(height: 4),
+                    Text(
+                      '₹${p.consultationFee.toStringAsFixed(0)} consultation',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: kSelInk),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      context.push('/select/professional', extra: p.id),
+                  icon: const Icon(Icons.visibility_outlined, size: 17),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('View as customer', maxLines: 1),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kSelAccent,
+                    side: const BorderSide(color: kSelAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openRegister,
+                  icon: const Icon(Icons.edit_rounded, size: 16),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Edit listing', maxLines: 1),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kSelAccent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notListedCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Are you a professional?',
+            style: TextStyle(
+                fontSize: 15.5, fontWeight: FontWeight.w700, color: kSelInk),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'List yourself on Claimit Select and let customers nearby find, '
+            'message and book you.',
+            style: TextStyle(fontSize: 12.5, color: kSelMuted, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _openRegister,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kSelYellow,
+                foregroundColor: const Color(0xFF3A2E00),
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'List yourself',
+                  maxLines: 1,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _shortcuts() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: kSelLine),
+      ),
+      child: Column(
+        children: [
+          _row(Icons.calendar_month_rounded, 'My Bookings',
+              () => context.go('/select/bookings')),
+          const Divider(height: 1, indent: 52, color: kSelLine),
+          _row(Icons.chat_bubble_outline_rounded, 'Messages',
+              () => context.go('/select/messages')),
+          const Divider(height: 1, indent: 52, color: kSelLine),
+          _row(Icons.grid_view_rounded, 'Browse professionals',
+              () => context.go('/select')),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: kSelAccent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600, color: kSelInk),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: kSelMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}

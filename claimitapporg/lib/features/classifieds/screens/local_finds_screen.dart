@@ -328,7 +328,22 @@ class LfDiscoverBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 10, 18),
       decoration: BoxDecoration(
-          color: kLfBanner, borderRadius: BorderRadius.circular(18)),
+        color: kLfBanner,
+        borderRadius: BorderRadius.circular(18),
+        // Client-supplied artwork — already has the pin + floating category
+        // icons baked in, so it replaces the old programmatic _BannerArt().
+        // BoxFit.cover previously cropped the right-edge icons off on some
+        // screen widths (the source PNG was tightly auto-cropped with no
+        // margin, so any cover-crop immediately ate into edge content).
+        // BoxFit.contain guarantees the whole illustration is always fully
+        // visible — any leftover space lands on the left (behind the text
+        // column) thanks to centerRight alignment, so nothing is ever cut.
+        image: const DecorationImage(
+          image: AssetImage('assets/images/local_finds_banner_bg.png'),
+          fit: BoxFit.contain,
+          alignment: Alignment.centerRight,
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -338,7 +353,7 @@ class LfDiscoverBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Finds Local\nBusinesses &\nServices\nNear You',
+                const Text('Find Local\nBusinesses &\nServices\nNear You',
                     style: TextStyle(
                         fontSize: 23, fontWeight: FontWeight.w800, color: kLfBlue, height: 1.3)),
                 const SizedBox(height: 8),
@@ -361,7 +376,11 @@ class LfDiscoverBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          const Expanded(flex: 4, child: _BannerArt()),
+          // The right side is now the background image itself (pin + icons
+          // are baked into local_finds_banner_bg.png) — this just reserves
+          // the same space the old _BannerArt() icon cluster used, so the
+          // text column on the left keeps its exact same width.
+          const Expanded(flex: 4, child: SizedBox.shrink()),
         ],
       ),
     );

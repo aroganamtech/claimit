@@ -121,6 +121,19 @@ class AppConstants {
   // ── Reels ─────────────────────────────────────────────────────────────────
   static const String reels = '/reels';
 
+  // ── Learn Claimit (how-to lessons: question + video) ───────────────────────
+  static const String learn = '/learn';
+
+  // ── Claimit Select (directory of local professionals) ─────────────────────
+  static const String select              = '/select';
+  static const String selectCategories    = '/select/categories';
+  static const String selectPlans         = '/select/plans';
+  static const String selectProfessionals = '/select/professionals';
+  static const String selectMyProfile     = '/select/my-profile';
+  static const String selectBookings      = '/select/bookings';
+  static const String selectBookingsIn    = '/select/bookings/received';
+  static const String selectConversations = '/select/conversations';
+
   // ── Classifieds ───────────────────────────────────────────────────────────
   static const String classifieds    = '/classifieds';
   static const String classifiedDetail = '/classifieds/{id}';

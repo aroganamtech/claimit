@@ -12,10 +12,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import base64
 import os
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign, generate_presigned_upload_url, public_url as _public_url
+from utils.email import send_email as _send_email
+from utils.s3 import upload_bytes as _s3_upload, generate_presigned_url_sync as _presign, generate_presigned_upload_url, public_url as _public_url, delete_object as _s3_delete
 from utils.fcm import send_push_to_tokens
 from database import app_db as _app_db
 import asyncio
@@ -370,9 +368,22 @@ async def register_shop(
             detail=f"discount_percentage must be one of {sorted(_ALLOWED_DISCOUNTS)}",
         )
 
+    # Authoritative price for Premium/Standard — the admin-configured price is
+    # always used for these, never the client-submitted `amount` (which is
+    # only trustworthy for the "other"/custom plan, where a client-entered
+    # amount is the whole point). This guarantees what actually gets stored
+    # and shown to admin matches what plan pricing says, regardless of what
+    # the client sends.
+    plan_norm = (plan or "").strip().lower()
+    if plan_norm in ("premium", "standard"):
+        from utils.pricing import get_pricing
+        pricing = await get_pricing()
+        amt = float(pricing[f"shop_{plan_norm}"])
+    else:
+        amt = float(amount or 0)
+
     # Verify the Razorpay payment for a paid plan. An "other" plan with a ₹0
     # amount is free and needs no payment.
-    amt = float(amount or 0)
     if amt > 0:
         from utils.cashfree import verify_payment_signature
         if not verify_payment_signature(razorpay_order_id, razorpay_payment_id,
@@ -409,7 +420,7 @@ async def register_shop(
         "shop_type": shop_type,
         "discount_percentage": discount_percentage,
         "plan": (plan or "").strip().lower(),
-        "amount_paid": amount,
+        "amount_paid": amt,
         "cover_photo_b64": None,
         "gallery_photos": [],
         "status": "pending",
@@ -470,6 +481,8 @@ async def register_shop(
 # ─── Razorpay order for shop-registration payment ────────────────────────────
 class PayOrderBody(BaseModel):
     amount: float
+    plan: str = ""   # "premium" | "standard" | "other" — when premium/standard,
+                      # the admin-configured price is used instead of `amount`.
 
 
 @router.post("/pay/order")
@@ -477,10 +490,35 @@ async def create_shop_pay_order(body: PayOrderBody,
                                 current_user=Depends(get_current_user)):
     """Create a Razorpay order for the shop-registration payment. The browser
     opens Razorpay Checkout with the returned order_id + key_id, then sends the
-    payment proof to /shop/register."""
+    payment proof to /shop/register.
+
+    For Premium/Standard the order is created for the admin-configured price,
+    not whatever `amount` the client sent — this is what makes the price
+    actually enforced end-to-end rather than just a display value."""
     from utils.cashfree import create_order
+    plan_norm = (body.plan or "").strip().lower()
+    if plan_norm in ("premium", "standard"):
+        from utils.pricing import get_pricing
+        pricing = await get_pricing()
+        pay_amount = float(pricing[f"shop_{plan_norm}"])
+    else:
+        pay_amount = body.amount
     receipt = f"shop_{str(current_user['_id'])[-12:]}"
-    return await create_order(body.amount, receipt)
+    return await create_order(pay_amount, receipt)
+
+
+# ─── Public pricing (register + claim plan pickers read live prices here) ────
+@router.get("/pricing")
+async def get_shop_pricing():
+    """Current Premium/Standard prices for shop registration & claim, plus the
+    annual renewal price — no auth required, shown before signup/login."""
+    from utils.pricing import get_pricing
+    pricing = await get_pricing()
+    return {
+        "premium":  pricing["shop_premium"],
+        "standard": pricing["shop_standard"],
+        "annual_renewal": pricing["shop_annual_renewal"],
+    }
 
 
 # ─── Claim a bulk-uploaded shop by mobile number ─────────────────────────────
@@ -539,25 +577,6 @@ async def lookup_active_shops_by_mobile(phone: str, current_user=Depends(get_cur
                 "phone":     s.get("phone", ""),
             })
     return {"shops": out}
-
-
-def _send_email(to_email: str, subject: str, html: str) -> bool:
-    user = os.getenv("SMTP_USERNAME", "")
-    pw = os.getenv("SMTP_PASSWORD", "")
-    if not user or not pw:
-        return False
-    msg = MIMEText(html, "html")
-    msg["Subject"] = subject
-    msg["From"] = f"Claimit <{user}>"
-    msg["To"] = to_email
-    ctx = ssl.create_default_context()
-    with smtplib.SMTP(os.getenv("SMTP_HOST", "smtp.gmail.com"),
-                      int(os.getenv("SMTP_PORT", "587")), timeout=8) as srv:
-        srv.ehlo()
-        srv.starttls(context=ctx)
-        srv.login(user, pw)
-        srv.sendmail(user, to_email, msg.as_string())
-    return True
 
 
 class EmailOtpSend(BaseModel):
@@ -625,9 +644,18 @@ async def claim_shop(body: ClaimShopBody, current_user=Depends(get_current_user)
     if shop.get("user_id"):
         raise HTTPException(status_code=400, detail="This shop is already registered")
 
+    # Authoritative price for Premium/Standard — same rule as /shop/register:
+    # never trust the client's amount for these, only for "other"/custom.
+    claim_plan_norm = (body.plan or "").strip().lower()
+    if claim_plan_norm in ("premium", "standard"):
+        from utils.pricing import get_pricing
+        pricing = await get_pricing()
+        amt = float(pricing[f"shop_{claim_plan_norm}"])
+    else:
+        amt = float(body.amount or 0)
+
     # Verify the Razorpay payment for a paid plan. An "other" plan with a ₹0
     # amount is free and needs no payment (same rule as /shop/register).
-    amt = float(body.amount or 0)
     if amt > 0:
         from utils.cashfree import verify_payment_signature
         if not verify_payment_signature(body.razorpay_order_id, body.razorpay_payment_id,
@@ -1027,12 +1055,13 @@ async def delete_gallery_photo(index: int, shop_id: Optional[str] = None, curren
         if index < 0 or index >= len(urls):
             raise HTTPException(status_code=400, detail="Invalid photo index")
         urls.pop(index)
-        if index < len(keys):
-            keys.pop(index)
+        removed_key = keys.pop(index) if index < len(keys) else None
         await shops_collection.update_one(
             {"_id": shop["_id"]},
             {"$set": {"image_s3_keys": keys, "image_urls": urls}}
         )
+        if removed_key:
+            await _s3_delete(removed_key)  # best-effort — never blocks the update
     else:
         gallery = shop.get("gallery_photos", [])
         if index < 0 or index >= len(gallery):
@@ -1105,9 +1134,11 @@ async def get_settings(shop_id: Optional[str] = None, current_user=Depends(get_c
     if shop and shop.get("created_at"):
         renewal = shop["created_at"] + timedelta(days=365)
         next_renewal = renewal.strftime("%d/%m/%Y")
+    from utils.pricing import get_pricing
+    pricing = await get_pricing()
     return {
         "email": current_user.get("email", ""),
         "phone": current_user.get("phone", ""),
-        "annual_price": 999,
+        "annual_price": pricing["shop_annual_renewal"],
         "next_renewal": next_renewal,
     }

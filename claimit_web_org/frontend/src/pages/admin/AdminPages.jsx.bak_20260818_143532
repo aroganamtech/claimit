@@ -1,0 +1,1489 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import api from '../../utils/api'
+
+// ─── Reusable shell ──────────────────────────────────────────
+function PageShell({ title, subtitle, children }) {
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>{title}</h1>
+      {subtitle && <p style={{ color: '#666', fontSize: 13, marginBottom: 22 }}>{subtitle}</p>}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+const th = { padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#666', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, background: '#f8f9fa' }
+const td = { padding: '14px 16px', fontSize: 13, borderBottom: '1px solid #f5f5f5' }
+
+const dangerBtn = {
+  background: '#fff', border: '1px solid #e57373', color: '#c62828',
+  padding: '6px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+  fontFamily: 'Poppins',
+}
+const ghostBtn = {
+  background: '#fff', border: '1px solid #ccc', color: '#333',
+  padding: '6px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+  fontFamily: 'Poppins',
+}
+
+const empty = (icon, msg) => (
+  <div style={{ padding: 60, textAlign: 'center', color: '#999' }}>
+    <div style={{ fontSize: 40, marginBottom: 8 }}>{icon}</div>
+    <div style={{ fontSize: 14 }}>{msg}</div>
+  </div>
+)
+
+// ─── Users ───────────────────────────────────────────────────
+export function AdminUsers() {
+  const [filter, setFilter] = useState('all')
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const load = (role) => {
+    setLoading(true)
+    api.admin.listUsers(role).then(setUsers).finally(() => setLoading(false))
+  }
+  useEffect(() => { load(filter) }, [filter])
+
+  const remove = async (id) => {
+    if (!confirm('Delete user and ALL their data? This cannot be undone.')) return
+    await api.admin.deleteUser(id)
+    load(filter)
+  }
+
+  return (
+    <PageShell title="Users" subtitle="Everyone registered across the 3 portals.">
+      <div style={{ display: 'flex', gap: 8, padding: 16, borderBottom: '1px solid #f0f0f0' }}>
+        {['all', 'advertiser', 'sales', 'shop'].map(f => (
+          <button key={f}
+            onClick={() => setFilter(f)}
+            style={{
+              padding: '6px 14px', border: '1px solid #ddd', borderRadius: 6,
+              background: filter === f ? '#1a237e' : '#fff',
+              color: filter === f ? '#fff' : '#333',
+              fontSize: 12, cursor: 'pointer', fontFamily: 'Poppins', textTransform: 'capitalize',
+            }}>{f}</button>
+        ))}
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : users.length === 0 ? empty('👥', 'No users found')
+       : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Name</th><th style={th}>Phone</th><th style={th}>Email</th>
+            <th style={th}>Role</th><th style={th}>Joined</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id}>
+                <td style={td}><strong>{u.name}</strong></td>
+                <td style={td}>{u.phone}</td>
+                <td style={td}>{u.email}</td>
+                <td style={td}><span style={{ background:'#eee', padding:'2px 8px', borderRadius:4, fontSize:11 }}>{u.role}</span></td>
+                <td style={td}>{u.created_at?.slice(0,10)}</td>
+                <td style={td}><button style={dangerBtn} onClick={() => remove(u.id)}>Delete</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── App Users (real Flutter-app end-customers) ───────────────
+export function AdminAppUsers() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  const load = () => { setLoading(true); api.admin.listAppUsers().then(setUsers).finally(() => setLoading(false)) }
+  useEffect(() => { load() }, [])
+
+  const remove = async (id) => {
+    if (!confirm('Delete this app user and ALL their data (claims, wallet, notifications, feedback)? This cannot be undone.')) return
+    await api.admin.deleteAppUser(id)
+    load()
+  }
+
+  const filtered = users.filter(u => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return (u.full_name || '').toLowerCase().includes(q) ||
+      (u.phone || '').includes(q) ||
+      (u.email || '').toLowerCase().includes(q)
+  })
+
+  return (
+    <PageShell title="App Users" subtitle="Real customers using the Claimit mobile app.">
+      <div style={{ display: 'flex', gap: 12, padding: 16, borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
+        <input
+          placeholder="Search by name, phone or email…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, padding: '9px 14px', border: '1px solid #ddd', borderRadius: 8, fontSize: 13, fontFamily: 'Poppins', outline: 'none' }}
+        />
+        <span style={{ fontSize: 12, color: '#888' }}>{filtered.length} user{filtered.length === 1 ? '' : 's'}</span>
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : filtered.length === 0 ? empty('📱', 'No app users found')
+       : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Name</th><th style={th}>Phone</th><th style={th}>Email</th>
+            <th style={th}>City</th><th style={th}>Joined</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(u => (
+              <tr key={u.id}>
+                <td style={td}><strong>{u.full_name || '—'}</strong></td>
+                <td style={td}>{u.phone || '—'}</td>
+                <td style={td}>{u.email || '—'}</td>
+                <td style={td}>{u.city || '—'}</td>
+                <td style={td}>{(u.created_at || '').slice(0, 10) || '—'}</td>
+                <td style={td}><button style={dangerBtn} onClick={() => remove(u.id)}>Delete</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Ads ─────────────────────────────────────────────────────
+export function AdminAds() {
+  const [ads, setAds] = useState([]); const [loading, setLoading] = useState(true)
+  const load = () => { setLoading(true); api.admin.listAds().then(setAds).finally(() => setLoading(false)) }
+  useEffect(() => { load() }, [])
+
+  const setStatus = async (id, status) => { await api.admin.updateAd(id, { status }); load() }
+  const remove = async (id) => { if (confirm('Delete this ad?')) { await api.admin.deleteAd(id); load() } }
+
+  return (
+    <PageShell title="Ads" subtitle="Every ad created across all advertisers.">
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : ads.length === 0 ? empty('📢', 'No ads yet')
+       : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Title</th><th style={th}>Type</th><th style={th}>Pincode</th>
+            <th style={th}>Publish</th><th style={th}>Views</th><th style={th}>Likes</th>
+            <th style={th}>Amount</th><th style={th}>Status</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {ads.map(a => {
+              const views = a.ad_type === 'promo_reelz' ? (a.view_count ?? a.views ?? 0) : (a.views ?? 0)
+              const likes = a.ad_type === 'promo_reelz' ? (a.like_count ?? 0) : 0
+              return (
+                <tr key={a.id}>
+                  <td style={td}><strong>{a.title}</strong></td>
+                  <td style={td}>{a.ad_type}</td>
+                  <td style={td}>{a.pincode}</td>
+                  <td style={td}>{a.publish_date}</td>
+                  <td style={td}>{views >= 1000 ? (views / 1000).toFixed(1) + 'k' : views}</td>
+                  <td style={td}>{likes > 0 ? (likes >= 1000 ? (likes / 1000).toFixed(1) + 'k' : likes) : '—'}</td>
+                  <td style={td}>₹{a.amount}</td>
+                  <td style={td}>
+                    <select value={a.status} onChange={e => setStatus(a.id, e.target.value)}
+                      style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
+                      <option value="active">active</option>
+                      <option value="scheduled">scheduled</option>
+                      <option value="paused">paused</option>
+                    </select>
+                  </td>
+                  <td style={td}><button style={dangerBtn} onClick={() => remove(a.id)}>Delete</button></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Shops ───────────────────────────────────────────────────
+const filterInput = { padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 12, fontFamily: 'Poppins', outline: 'none', minWidth: 130 }
+
+export function AdminShops() {
+  const navigate = useNavigate()
+  const [shops, setShops] = useState([]); const [loading, setLoading] = useState(true)
+  const [options, setOptions] = useState({ states: [], districts: [], cities: [], categories: [] })
+  const [filters, setFilters] = useState({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '', shop_type: '', status: '', claimed: '' })
+
+  const load = (f) => {
+    setLoading(true)
+    const params = Object.fromEntries(Object.entries(f || filters).filter(([, v]) => v))
+    api.admin.listShops(params).then(setShops).finally(() => setLoading(false))
+  }
+  useEffect(() => { load(filters) }, [filters])
+  useEffect(() => { api.admin.shopFilterOptions().then(setOptions).catch(() => {}) }, [])
+
+  const setStatus = async (id, status, e) => { e.stopPropagation(); await api.admin.updateShop(id, { status }); load() }
+  const remove = async (id, e) => { e.stopPropagation(); if (confirm('Delete this shop?')) { await api.admin.deleteShop(id); load() } }
+  const setF = (k, v) => setFilters(prev => ({ ...prev, [k]: v }))
+  const clearFilters = () => setFilters({ state: '', district: '', city: '', pincode: '', category: '', shop_name: '', shop_type: '', status: '', claimed: '' })
+  const anyFilterApplied = Object.values(filters).some(Boolean)
+
+  return (
+    <PageShell title="Shops" subtitle="Registered shops and their approval state. Click a row for the full landing page.">
+      <div style={{ display: 'flex', gap: 10, padding: 16, borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={filters.state} onChange={e => setF('state', e.target.value)} style={filterInput}>
+          <option value="">All states</option>
+          {options.states.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filters.district} onChange={e => setF('district', e.target.value)} style={filterInput}>
+          <option value="">All districts</option>
+          {options.districts.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={filters.city} onChange={e => setF('city', e.target.value)} style={filterInput}>
+          <option value="">All cities</option>
+          {options.cities.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input placeholder="Pincode" value={filters.pincode} onChange={e => setF('pincode', e.target.value)} style={{ ...filterInput, minWidth: 100 }} />
+        <select value={filters.category} onChange={e => setF('category', e.target.value)} style={filterInput}>
+          <option value="">All categories</option>
+          {options.categories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input placeholder="Shop name" value={filters.shop_name} onChange={e => setF('shop_name', e.target.value)} style={filterInput} />
+        <select value={filters.shop_type} onChange={e => setF('shop_type', e.target.value)} style={filterInput}>
+          <option value="">Redeem + Reward</option>
+          <option value="redeem">Redeem only</option>
+          <option value="reward">Reward only</option>
+        </select>
+        <select value={filters.status} onChange={e => setF('status', e.target.value)} style={filterInput}>
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        <select value={filters.claimed} onChange={e => setF('claimed', e.target.value)} style={filterInput}>
+          <option value="">Claimed + Unclaimed</option>
+          <option value="yes">Claimed only</option>
+          <option value="no">Unclaimed (bulk) only</option>
+        </select>
+        {anyFilterApplied && <button onClick={clearFilters} style={ghostBtn}>Clear filters</button>}
+        <span style={{ fontSize: 12, color: '#888', marginLeft: 'auto' }}>{shops.length} shop{shops.length === 1 ? '' : 's'}</span>
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : shops.length === 0 ? empty('🏪', 'No shops match these filters')
+       : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Shop</th><th style={th}>Address</th><th style={th}>State / District / City</th>
+            <th style={th}>Pincode</th><th style={th}>Category</th><th style={th}>Type</th>
+            <th style={th}>Discount</th><th style={th}>Favorites</th><th style={th}>Status</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {shops.map(s => (
+              <tr key={s.id} onClick={() => navigate(`/admin/shops/${s.id}`)} style={{ cursor: 'pointer' }}>
+                <td style={td}><strong>{s.shop_name || s.name}</strong></td>
+                <td style={td}>{s.shop_address || s.address}</td>
+                <td style={td}>{[s.state, s.district, s.city].filter(Boolean).join(' / ') || '—'}</td>
+                <td style={td}>{s.pincode || '—'}</td>
+                <td style={td}>{s.category}</td>
+                <td style={td}>
+                  {s.shop_type
+                    ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20, textTransform: 'capitalize', background: s.shop_type === 'reward' ? '#e8f5e9' : '#e3f2fd', color: s.shop_type === 'reward' ? '#2e7d32' : '#1565c0' }}>{s.shop_type}</span>
+                    : <span style={{ fontSize: 11, color: '#999' }}>unclaimed</span>}
+                </td>
+                <td style={td}>{s.discount_percentage ?? 0}%</td>
+                <td style={td}>{s.favorites_count ?? 0}</td>
+                <td style={td} onClick={e => e.stopPropagation()}>
+                  <select value={s.status || 'pending'} onChange={e => setStatus(s.id, e.target.value, e)}
+                    style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
+                    <option value="pending">pending</option>
+                    <option value="active">active</option>
+                    <option value="suspended">suspended</option>
+                  </select>
+                </td>
+                <td style={td} onClick={e => e.stopPropagation()}><button style={dangerBtn} onClick={e => remove(s.id, e)}>Delete</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Reviews ─────────────────────────────────────────────────
+export function AdminReviews() {
+  const [reviews, setReviews] = useState([]); const [loading, setLoading] = useState(true)
+  const load = () => { setLoading(true); api.admin.listReviews().then(setReviews).finally(() => setLoading(false)) }
+  useEffect(() => { load() }, [])
+
+  const remove = async (id) => { if (confirm('Delete this review?')) { await api.admin.deleteReview(id); load() } }
+
+  return (
+    <PageShell title="Reviews" subtitle="Customer reviews left on shops.">
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : reviews.length === 0 ? empty('⭐', 'No reviews yet')
+       : (
+        <div>
+          {reviews.map(r => (
+            <div key={r.id} style={{ borderBottom: '1px solid #f0f0f0', padding: '14px 18px', display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 4 }}>
+                  <strong style={{ fontSize: 14 }}>{r.name}</strong>
+                  <span style={{ color: '#F5A623' }}>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                  <span style={{ fontSize: 11, color: '#888' }}>{r.date}</span>
+                </div>
+                <div style={{ fontSize: 13, color: '#444' }}>{r.comment}</div>
+                {r.reply && <div style={{ fontSize: 12, color: '#1a237e', marginTop: 4 }}>↳ Owner: {r.reply}</div>}
+              </div>
+              <button style={dangerBtn} onClick={() => remove(r.id)}>Delete</button>
+            </div>
+          ))}
+        </div>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Tickets ─────────────────────────────────────────────────
+export function AdminTickets() {
+  const [tickets, setTickets] = useState([]); const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState({})
+
+  const load = () => { setLoading(true); api.admin.listTickets().then(setTickets).finally(() => setLoading(false)) }
+  useEffect(() => { load() }, [])
+
+  const setStatus = async (id, status) => { await api.admin.updateTicket(id, { status }); load() }
+  const sendReply = async (id) => {
+    const reply = (editing[id] || '').trim()
+    if (!reply) return
+    await api.admin.updateTicket(id, { reply, status: 'resolved' })
+    setEditing(prev => { const n = {...prev}; delete n[id]; return n })
+    load()
+  }
+
+  return (
+    <PageShell title="Support Tickets" subtitle="User-submitted support requests.">
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : tickets.length === 0 ? empty('🎫', 'No tickets yet')
+       : (
+        <div>
+          {tickets.map(t => (
+            <div key={t.id} style={{ borderBottom: '1px solid #f0f0f0', padding: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{t.subject}</div>
+                  <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                    {t.user_name} ({t.role}) · {t.user_email} · {t.user_phone}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999' }}>{String(t.created_at).slice(0, 16)} · {t.category}</div>
+                </div>
+                <select value={t.status || 'open'} onChange={e => setStatus(t.id, e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}>
+                  <option value="open">open</option>
+                  <option value="resolved">resolved</option>
+                  <option value="closed">closed</option>
+                </select>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 10, color: '#333' }}>{t.message}</div>
+              {t.reply && (
+                <div style={{ fontSize: 12, color: '#1a237e', marginTop: 8, background: '#f4f6ff', padding: 8, borderRadius: 6 }}>
+                  ↳ Admin reply: {t.reply}
+                </div>
+              )}
+              <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                <input
+                  className="input-field" placeholder="Reply to user..."
+                  style={{ fontSize: 13, padding: '8px 12px' }}
+                  value={editing[t.id] || ''}
+                  onChange={e => setEditing(prev => ({ ...prev, [t.id]: e.target.value }))}
+                />
+                <button style={ghostBtn} onClick={() => sendReply(t.id)}>Send Reply</button>
+              </div>
+            </div>
+          ))}
+        </div>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── Feedback / Complaints (full ticket system, app users) ───
+export function AdminFeedback() {
+  const [items, setItems] = useState([]); const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [editing, setEditing] = useState({})
+  const [sending, setSending] = useState({})
+
+  const load = (status = filter) => {
+    setLoading(true)
+    api.admin.listFeedback(status).then(d => setItems(Array.isArray(d) ? d : [])).finally(() => setLoading(false))
+  }
+  useEffect(() => { load(filter) }, [filter])
+
+  const sendReply = async (id) => {
+    const reply = (editing[id] || '').trim()
+    if (!reply) return
+    setSending(prev => ({ ...prev, [id]: true }))
+    try {
+      await api.admin.replyFeedback(id, { reply, status: 'replied' })
+      setEditing(prev => { const n = { ...prev }; delete n[id]; return n })
+      load()
+    } finally {
+      setSending(prev => ({ ...prev, [id]: false }))
+    }
+  }
+
+  const remove = async (id) => { if (confirm('Delete this feedback?')) { await api.admin.deleteFeedback(id); load() } }
+
+  const CATEGORY_LABEL = { feedback: 'Feedback', complaint: 'Complaint', suggestion: 'Suggestion' }
+  const STATUS_COLOR = { open: '#F57C00', replied: '#2E7D32', closed: '#777' }
+
+  return (
+    <PageShell title="Feedback & Complaints" subtitle="Submissions from real app users — reply here and they'll see it in the app.">
+      <div style={{ display: 'flex', gap: 8, padding: 16, borderBottom: '1px solid #f0f0f0' }}>
+        {['all', 'open', 'replied', 'closed'].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{
+              padding: '6px 14px', border: '1px solid #ddd', borderRadius: 6,
+              background: filter === f ? '#1a237e' : '#fff',
+              color: filter === f ? '#fff' : '#333',
+              fontSize: 12, cursor: 'pointer', fontFamily: 'Poppins', textTransform: 'capitalize',
+            }}>{f}</button>
+        ))}
+      </div>
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+       : items.length === 0 ? empty('💬', 'No feedback yet')
+       : (
+        <div>
+          {items.map(t => (
+            <div key={t.id} style={{ borderBottom: '1px solid #f0f0f0', padding: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{t.subject}</div>
+                  <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                    {t.user_name || 'App user'} · {(t.user_id || '').slice(-8)}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999' }}>{String(t.created_at || '').slice(0, 16)}</div>
+                </div>
+                <span style={{
+                  background: '#eee', color: STATUS_COLOR[t.status] || '#555',
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize',
+                }}>
+                  {CATEGORY_LABEL[t.category] || t.category} · {t.status}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 10, color: '#333' }}>{t.message}</div>
+              {t.admin_reply && (
+                <div style={{ fontSize: 12, color: '#1a237e', marginTop: 8, background: '#f4f6ff', padding: 8, borderRadius: 6 }}>
+                  ↳ Admin reply: {t.admin_reply}
+                </div>
+              )}
+              <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                <input
+                  className="input-field" placeholder="Reply to user..."
+                  style={{ fontSize: 13, padding: '8px 12px' }}
+                  value={editing[t.id] || ''}
+                  onChange={e => setEditing(prev => ({ ...prev, [t.id]: e.target.value }))}
+                />
+                <button style={ghostBtn} disabled={sending[t.id]} onClick={() => sendReply(t.id)}>
+                  {sending[t.id] ? 'Sending…' : 'Send Reply'}
+                </button>
+                <button style={dangerBtn} onClick={() => remove(t.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+       )}
+    </PageShell>
+  )
+}
+
+// ─── PDFs viewer ─────────────────────────────────────────────
+export function AdminPDFs() {
+  const labels = {
+    shop: 'Shop Registration flow',
+    sales: 'Sales / Affiliate flow',
+    advertiser: 'Create Ad flow',
+  }
+  const [pdfs, setPdfs] = useState([])
+  const [active, setActive] = useState(null)
+  const [blobUrl, setBlobUrl] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // Load list once
+  useEffect(() => {
+    api.admin.listPdfs().then(list => {
+      setPdfs(list)
+      const first = list.find(p => p.exists) || list[0]
+      if (first) setActive(first.key)
+    }).catch(() => setError('Could not list project PDFs'))
+  }, [])
+
+  // Fetch the active PDF as a blob (the JWT goes via the axios interceptor)
+  useEffect(() => {
+    if (!active) return
+    let url = ''
+    setLoading(true); setError('')
+    api.admin.getPdfBlob(active)
+      .then(blob => {
+        url = URL.createObjectURL(blob)
+        setBlobUrl(url)
+      })
+      .catch(() => setError('Could not load PDF — check the file exists in the project root.'))
+      .finally(() => setLoading(false))
+    // Revoke the previous blob URL when switching tabs / unmounting.
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [active])
+
+  return (
+    <PageShell title="Project PDFs" subtitle="Original design specifications uploaded with the project.">
+      <div style={{ display: 'flex', gap: 8, padding: 16, borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap' }}>
+        {pdfs.length === 0 && <div style={{ color: '#888', fontSize: 13 }}>No PDFs available</div>}
+        {pdfs.map(p => (
+          <button key={p.key}
+            onClick={() => setActive(p.key)}
+            disabled={!p.exists}
+            style={{
+              padding: '8px 14px', border: '1px solid #ddd', borderRadius: 6,
+              background: active === p.key ? '#1a237e' : '#fff',
+              color: active === p.key ? '#fff' : (p.exists ? '#333' : '#bbb'),
+              fontSize: 12, cursor: p.exists ? 'pointer' : 'not-allowed',
+              fontFamily: 'Poppins',
+            }}>
+            {labels[p.key] || p.filename}{!p.exists && ' (missing)'}
+          </button>
+        ))}
+        {blobUrl && (
+          <a href={blobUrl} target="_blank" rel="noreferrer"
+            style={{ marginLeft: 'auto', alignSelf: 'center', color: '#1a237e', fontSize: 12, fontWeight: 600 }}>
+            Open in new tab ↗
+          </a>
+        )}
+      </div>
+      {error && <div style={{ padding: 16, color: '#c62828', fontSize: 13 }}>{error}</div>}
+      {loading && <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading PDF…</div>}
+      {!loading && blobUrl && (
+        <iframe key={blobUrl} src={blobUrl}
+          style={{ width: '100%', height: 'calc(100vh - 220px)', border: 'none' }}
+          title="Project PDF"
+        />
+      )}
+    </PageShell>
+  )
+}
+
+// ─── Sales Team ──────────────────────────────────────────────
+const SUB_ROLE_LABEL = {
+  sales_head:             'Sales Head',
+  sales_executive:        'Sales Executive',
+  advertising_executive:  'Advertising Executive',
+  freelancer:             'Freelancer',
+}
+const SUB_ROLE_COLOR = {
+  sales_head:             { bg: '#FFF8E1', color: '#F57F17' },
+  sales_executive:        { bg: '#E8F5E9', color: '#2E7D32' },
+  advertising_executive:  { bg: '#E3F2FD', color: '#1565C0' },
+  freelancer:             { bg: '#F3E5F5', color: '#6A1B9A' },
+}
+
+export function AdminSalesTeam() {
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filter, setFilter]     = useState('all')
+  const [search, setSearch]     = useState('')
+
+  useEffect(() => {
+    api.sales.getAllEmployees()
+      .then(setEmployees)
+      .catch(() => setEmployees([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = employees.filter(e => {
+    if (filter !== 'all' && e.sub_role !== filter) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return e.name.toLowerCase().includes(q) ||
+        e.unique_id?.toLowerCase().includes(q) ||
+        e.phone?.includes(q) ||
+        e.email?.toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  const counts = {
+    all: employees.length,
+    sales_head: employees.filter(e => e.sub_role === 'sales_head').length,
+    sales_executive: employees.filter(e => e.sub_role === 'sales_executive').length,
+    advertising_executive: employees.filter(e => e.sub_role === 'advertising_executive').length,
+    freelancer: employees.filter(e => e.sub_role === 'freelancer').length,
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4 }}>Sales Team</h1>
+          <p style={{ color: '#666', fontSize: 13 }}>All registered sales employees with their unique IDs</p>
+        </div>
+        <div style={{ background: '#1565C0', color: '#fff', borderRadius: 10, padding: '10px 18px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{employees.length}</div>
+          <div style={{ fontSize: 11, opacity: 0.85 }}>Total Employees</div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { key: 'sales_head',             label: 'Sales Heads' },
+          { key: 'sales_executive',        label: 'Sales Executives' },
+          { key: 'advertising_executive',  label: 'Ad Executives' },
+          { key: 'freelancer',             label: 'Freelancers' },
+        ].map(r => {
+          const c = SUB_ROLE_COLOR[r.key] || { bg: '#f5f5f5', color: '#333' }
+          return (
+            <div key={r.key}
+              onClick={() => setFilter(filter === r.key ? 'all' : r.key)}
+              style={{
+                background: filter === r.key ? c.bg : '#fff',
+                border: `1.5px solid ${filter === r.key ? c.color : '#eee'}`,
+                borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: c.color }}>{counts[r.key]}</div>
+              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{r.label}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Search + table */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <input
+            placeholder="Search by name, ID, phone or email…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              flex: 1, padding: '9px 14px', border: '1px solid #ddd',
+              borderRadius: 8, fontSize: 13, fontFamily: 'Poppins', outline: 'none'
+            }}
+          />
+          {filter !== 'all' && (
+            <button onClick={() => setFilter('all')}
+              style={{ ...ghostBtn, fontSize: 12 }}>Clear filter ✕</button>
+          )}
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center', color: '#bbb' }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>👥</div>
+            <div style={{ fontWeight: 500 }}>No employees found</div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['Employee', 'Unique ID', 'Role', 'Phone', 'Referred By (Head ID)', 'Shops', 'Joined'].map(h => (
+                  <th key={h} style={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((e, i) => {
+                const c = SUB_ROLE_COLOR[e.sub_role] || { bg: '#f5f5f5', color: '#555' }
+                return (
+                  <tr key={e.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 600 }}>{e.name}</div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{e.email}</div>
+                    </td>
+                    <td style={td}>
+                      <span style={{
+                        background: '#EEF4FF', color: '#1565C0',
+                        fontWeight: 700, fontSize: 13, padding: '4px 10px',
+                        borderRadius: 6, fontFamily: 'monospace', letterSpacing: 0.5
+                      }}>
+                        {e.unique_id || '—'}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <span style={{
+                        background: c.bg, color: c.color,
+                        fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20
+                      }}>
+                        {SUB_ROLE_LABEL[e.sub_role] || e.sub_role || '—'}
+                      </span>
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{e.phone || '—'}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', color: '#1565C0', fontWeight: 600 }}>
+                      {e.referred_by || <span style={{ color: '#ccc', fontFamily: 'Poppins', fontWeight: 400 }}>—</span>}
+                    </td>
+                    <td style={td}>
+                      <span style={{ background: '#E8F5E9', color: '#2E7D32', fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 6 }}>
+                        {e.total_shops}
+                      </span>
+                    </td>
+                    <td style={{ ...td, color: '#888' }}>{e.created_at?.slice(0, 10) || '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Bill Reviews ─────────────────────────────────────────────
+// ─── Bill Reviews ─────────────────────────────────────────────
+export function AdminBillReviews() {
+  const [reviews, setReviews]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filter, setFilter]     = useState('pending')
+  const [selected, setSelected] = useState(null)
+  const [pts, setPts]           = useState('')
+  const [cb, setCb]             = useState('')
+  const [note, setNote]         = useState('')
+  const [actioning, setActioning] = useState(false)
+
+  const load = (status = filter) => {
+    setLoading(true)
+    api.admin.listBillReviews(status)
+      .then(data => setReviews(Array.isArray(data) ? data : []))
+      .catch(() => setReviews([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [filter])
+
+  const handleAction = async (action) => {
+    if (!selected) return
+    setActioning(true)
+    try {
+      await api.admin.actionBillReview(selected.id, {
+        action,
+        reward_points: pts ? parseInt(pts) : undefined,
+        cashback:      cb  ? parseFloat(cb) : undefined,
+        admin_note:    note || undefined,
+      })
+      setSelected(null); setPts(''); setCb(''); setNote('')
+      load()
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Action failed')
+    } finally { setActioning(false) }
+  }
+
+  const REASON_LABEL = { missing_fields: 'Missing fields', wrong_data: 'Wrong OCR data' }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4 }}>Bill Reviews</h1>
+          <p style={{ color: '#666', fontSize: 13 }}>Manual bill submissions awaiting verification</p>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {[
+          { key: 'pending',  label: 'Pending',  color: '#F57C00' },
+          { key: 'approved', label: 'Approved', color: '#2E7D32' },
+          { key: 'rejected', label: 'Rejected', color: '#C62828' },
+          { key: 'all',      label: 'All',      color: '#555' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setFilter(t.key)}
+            style={{
+              padding: '8px 18px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Poppins', fontSize: 13,
+              fontWeight: filter === t.key ? 700 : 500,
+              background: filter === t.key ? t.color : '#f5f5f5',
+              color: filter === t.key ? '#fff' : '#555',
+              border: `1.5px solid ${filter === t.key ? t.color : '#e0e0e0'}`,
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Reviews table */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading...</div>
+        ) : reviews.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center', color: '#bbb' }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>🧾</div>
+            <div style={{ fontWeight: 500 }}>No {filter} reviews</div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['User ID', 'Shop', 'Amount', 'Reason', 'Date', 'Status', 'Actions'].map(h => (
+                  <th key={h} style={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {reviews.map((r, i) => {
+                const statusColor = r.status === 'approved' ? '#2E7D32' : r.status === 'rejected' ? '#C62828' : '#F57C00'
+                const statusBg    = r.status === 'approved' ? '#E8F5E9' : r.status === 'rejected' ? '#FFEBEE' : '#FFF3E0'
+                return (
+                  <tr key={r.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{(r.user_id || '').slice(-8) || '—'}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{r.shop_name || '—'}</td>
+                    <td style={{ ...td, fontWeight: 700, color: '#1565C0' }}>₹{r.total_amount}</td>
+                    <td style={td}>
+                      <span style={{ background: '#EEF4FF', color: '#1565C0', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>
+                        {REASON_LABEL[r.manual_reason] || r.manual_reason}
+                      </span>
+                    </td>
+                    <td style={{ ...td, color: '#888', fontSize: 12 }}>{(r.submitted_at || '').slice(0, 10)}</td>
+                    <td style={td}>
+                      <span style={{ background: statusBg, color: statusColor, fontSize: 11, padding: '3px 8px', borderRadius: 20, fontWeight: 700 }}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => setSelected({ ...r, _viewOnly: true })} style={ghostBtn}>View Bill</button>
+                        {r.status === 'pending' && (
+                          <button onClick={() => { setSelected(r); setPts(Math.round(r.total_amount * 0.1).toString()); setCb((r.total_amount * 0.01).toFixed(2)) }}
+                            style={{ ...ghostBtn, borderColor: '#4CAF50', color: '#2E7D32' }}>
+                            Review
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Modal: view bill + approve/reject */}
+      {selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 18 }}>{selected._viewOnly ? 'Bill Image' : 'Review Bill'}</h3>
+              <button onClick={() => { setSelected(null); setPts(''); setCb(''); setNote('') }}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#666' }}>✕</button>
+            </div>
+
+            {/* Bill details */}
+            <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              {[
+                ['Shop', selected.shop_name || '—'],
+                ['Amount', `₹${selected.total_amount}`],
+                ['Bill Date', selected.bill_date || '—'],
+                ['Bill Number', selected.bill_number || '—'],
+                ['Reason', REASON_LABEL[selected.manual_reason] || selected.manual_reason],
+                ['User ID', selected.user_id],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #eee' }}>
+                  <span style={{ color: '#888', fontSize: 13 }}>{label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Bill image */}
+            {selected.image_url && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, color: '#888', marginBottom: 8, fontWeight: 600 }}>BILL IMAGE</p>
+                <img
+                  src={selected.image_url}
+                  alt="Bill"
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid #e0e0e0' }}
+                />
+              </div>
+            )}
+
+            {/* Approve/reject form */}
+            {!selected._viewOnly && selected.status === 'pending' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Reward Points</label>
+                    <input value={pts} onChange={e => setPts(e.target.value)} type="number"
+                      placeholder={`Default: ${Math.round(selected.total_amount * 0.1)}`}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Cashback (₹)</label>
+                    <input value={cb} onChange={e => setCb(e.target.value)} type="number" step="0.01"
+                      placeholder={`Default: ${(selected.total_amount * 0.01).toFixed(2)}`}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Admin Note (optional)</label>
+                  <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                    placeholder="Reason for approval or rejection…"
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, fontSize: 13, fontFamily: 'Poppins', resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => handleAction('approve')} disabled={actioning}
+                    style={{ flex: 1, padding: '12px', background: '#2E7D32', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'Poppins', opacity: actioning ? 0.6 : 1 }}>
+                    {actioning ? 'Processing…' : '✓ Approve & Add Rewards'}
+                  </button>
+                  <button onClick={() => handleAction('reject')} disabled={actioning}
+                    style={{ flex: 1, padding: '12px', background: '#C62828', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'Poppins', opacity: actioning ? 0.6 : 1 }}>
+                    {actioning ? 'Processing…' : '✕ Reject'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Bonus Settings ───────────────────────────────────────────
+export function AdminBonusSettings() {
+  const [pts, setPts]       = useState('')
+  const [cb, setCb]         = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getAppConfig()
+      .then(cfg => {
+        setPts(String(cfg.reward_points ?? 1000))
+        setCb(String(cfg.cashback ?? 10))
+      })
+      .catch(() => { setPts('1000'); setCb('10') })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setError('')
+    const p = parseInt(pts, 10)
+    const c = parseFloat(cb)
+    if (isNaN(p) || p < 0) { setError('Reward points must be a number ≥ 0'); return }
+    if (isNaN(c) || c < 0) { setError('Cashback must be a number ≥ 0'); return }
+    setSaving(true)
+    try {
+      await api.admin.updateAppConfig({ reward_points: p, cashback: c })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>New User Bonus Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Configure the welcome reward every new user receives when they first scan a bill.
+        Changes take effect immediately — new wallets created after saving will use the updated values.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current settings…</div>
+      ) : (
+        <div style={{ maxWidth: 520 }}>
+          {/* Current values card */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a237e 0%, #1565C0 100%)',
+            borderRadius: 14, padding: 24, marginBottom: 28, color: '#fff',
+          }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, fontWeight: 600, letterSpacing: 0.5 }}>
+              CURRENT NEW USER WELCOME BONUS
+            </div>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{pts}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Reward Points</div>
+              </div>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>₹{parseFloat(cb || '0').toFixed(0)}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Cashback</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit form */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 28 }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Reward Points
+              </label>
+              <input
+                type="number" min="0" step="1" value={pts}
+                onChange={e => { setPts(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 1000"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Points credited to every new user's wallet on signup.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Cashback (₹)
+              </label>
+              <input
+                type="number" min="0" step="0.5" value={cb}
+                onChange={e => { setCb(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 10"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Cashback (in rupees) added to every new user's cashback wallet on signup.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            {saved && (
+              <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+                ✓ Settings saved successfully!
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+                color: '#fff', border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+                fontFamily: 'Poppins', transition: 'background 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
+
+          {/* Info box */}
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              When a new user scans their first bill, the app creates a wallet for them.
+              The wallet starts with the reward points and cashback you set here.
+              Existing users are not affected — only new wallets created after saving.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Premium Ad Slot Settings ──────────────────────────────────
+export function AdminAdSettings() {
+  const [maxNearby, setMaxNearby] = useState('')
+  const [maxBrand, setMaxBrand]   = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getAdSettings()
+      .then(cfg => {
+        setMaxNearby(String(cfg.max_nearby ?? 3))
+        setMaxBrand(String(cfg.max_brand ?? 3))
+      })
+      .catch(() => { setMaxNearby('3'); setMaxBrand('3') })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setError('')
+    const n = parseInt(maxNearby, 10)
+    const b = parseInt(maxBrand, 10)
+    if (isNaN(n) || n < 0) { setError('Nearby Deals cap must be a number ≥ 0'); return }
+    if (isNaN(b) || b < 0) { setError('Brand Deals cap must be a number ≥ 0'); return }
+    setSaving(true)
+    try {
+      await api.admin.updateAdSettings({ max_nearby: n, max_brand: b })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Premium Ad Slot Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Set how many Premium slots advertisers can book. Nearby Deals Premium slots
+        are per-location (each pincode gets its own pool). Brand Deals Premium slots
+        are shared across the whole app (not location filtered). Changes apply
+        immediately to new bookings — already-booked ads are unaffected.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current settings…</div>
+      ) : (
+        <div style={{ maxWidth: 520 }}>
+          {/* Current values card */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a237e 0%, #1565C0 100%)',
+            borderRadius: 14, padding: 24, marginBottom: 28, color: '#fff',
+          }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, fontWeight: 600, letterSpacing: 0.5 }}>
+              CURRENT PREMIUM SLOT CAPS
+            </div>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{maxNearby}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Nearby Deals / location</div>
+              </div>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{maxBrand}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Brand Deals (global)</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit form */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 28 }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Max Premium — Nearby Deals (per pincode)
+              </label>
+              <input
+                type="number" min="0" step="1" value={maxNearby}
+                onChange={e => { setMaxNearby(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 3"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Max active/scheduled Premium Nearby Deals allowed at once for the same pincode.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Max Premium — Brand Deals (global)
+              </label>
+              <input
+                type="number" min="0" step="1" value={maxBrand}
+                onChange={e => { setMaxBrand(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 3"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Max active/scheduled Premium Brand Deals allowed at once, app-wide.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            {saved && (
+              <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+                ✓ Settings saved successfully!
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+                color: '#fff', border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+                fontFamily: 'Poppins', transition: 'background 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
+
+          {/* Info box */}
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              When an advertiser tries to book a Premium slot and the cap is reached,
+              they're blocked with a message asking them to pick Standard instead
+              (or a different location, for Nearby Deals). Slots free up automatically
+              7 days after an ad's publish date, once it's no longer active/scheduled.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Central Pricing Settings ──────────────────────────────────
+// Every amount charged anywhere in Claimit — shop registration/claim,
+// advertiser ad bookings, Local Finds business plans — lives in one
+// app_config document (key="pricing") edited here via GET/PUT /admin/pricing.
+// Every payment flow (both backends) reads the current value from that same
+// document, so a change here takes effect on the very next payment.
+const PRICING_FIELDS = [
+  {
+    section: 'Shop Registration & Claim',
+    note: 'Charged when a shop owner registers or claims their business (Choose Shop Type / Shop Claim). The "Other" custom-amount plan is intentionally not set here.',
+    fields: [
+      { key: 'shop_premium',        label: 'Premium plan (per year)' },
+      { key: 'shop_standard',       label: 'Standard plan (per year)' },
+      { key: 'shop_annual_renewal', label: 'Annual renewal (per year)' },
+    ],
+  },
+  {
+    section: 'Advertiser — Ad Bookings (weekly, GST-incl.)',
+    note: 'Charged when an advertiser books a 7-day ad campaign (Choose Ad Type).',
+    fields: [
+      { key: 'ad_home_banner',           label: 'Home Page Hero Ad' },
+      { key: 'ad_nearby_deals_premium',  label: 'Nearby Deals — Premium' },
+      { key: 'ad_nearby_deals_standard', label: 'Nearby Deals — Standard' },
+      { key: 'ad_brand_deals_premium',   label: 'Brand Deals — Premium' },
+      { key: 'ad_brand_deals_standard',  label: 'Brand Deals — Standard' },
+      { key: 'ad_promo_reelz_premium',   label: 'Promo Reelz — Premium' },
+      { key: 'ad_promo_reelz_standard',  label: 'Promo Reelz — Standard' },
+    ],
+  },
+  {
+    section: 'Local Finds — Business Listing Plans (per year)',
+    note: "Shown on the app's Local Finds business listing plan picker. The Free plan is always ₹0 and isn't editable.",
+    fields: [
+      { key: 'local_finds_standard', label: 'Standard plan' },
+      { key: 'local_finds_premium',  label: 'Premium plan' },
+    ],
+  },
+]
+
+export function AdminPricing() {
+  const [values, setValues]   = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getPricing()
+      .then(cfg => {
+        const v = {}
+        PRICING_FIELDS.forEach(sec => sec.fields.forEach(f => { v[f.key] = String(cfg[f.key] ?? '0') }))
+        setValues(v)
+      })
+      .catch(() => setError('Could not load current prices.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const setField = (key, val) => {
+    setValues(prev => ({ ...prev, [key]: val }))
+    setSaved(false)
+  }
+
+  const handleSave = async () => {
+    setError('')
+    const payload = {}
+    for (const sec of PRICING_FIELDS) {
+      for (const f of sec.fields) {
+        const n = parseInt(values[f.key], 10)
+        if (isNaN(n) || n < 0) {
+          setError(`"${f.label}" must be a number ≥ 0`)
+          return
+        }
+        payload[f.key] = n
+      }
+    }
+    setSaving(true)
+    try {
+      await api.admin.updatePricing(payload)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px 10px 26px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box', transition: 'border-color 0.15s',
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Pricing Settings</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        Every amount charged across Claimit — shop registration/claim, advertiser ad bookings,
+        and Local Finds business plans — comes from here. Changes apply immediately to the
+        very next payment; anything already paid for is unaffected.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current prices…</div>
+      ) : (
+        <div style={{ maxWidth: 640 }}>
+          {PRICING_FIELDS.map(sec => (
+            <div key={sec.section} style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 24, marginBottom: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{sec.section}</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 18 }}>{sec.note}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                {sec.fields.map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 6 }}>
+                      {f.label}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 12, top: 11, color: '#888', fontSize: 15 }}>₹</span>
+                      <input
+                        type="number" min="0" step="1"
+                        value={values[f.key] ?? ''}
+                        onChange={e => setField(f.key, e.target.value.replace(/[^0-9]/g, ''))}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {error && (
+            <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+
+          {saved && (
+            <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+              ✓ Prices saved successfully!
+            </div>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+              color: '#fff', border: 'none', borderRadius: 10,
+              fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+              fontFamily: 'Poppins', transition: 'background 0.15s',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save All Prices'}
+          </button>
+
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              These are the exact prices the server charges — shop registration/claim, ad
+              bookings, and Local Finds plans all read live from this page (never a hardcoded
+              value), so a change here takes effect on the next payment across the app and
+              website. The "Other" plan on shop registration still lets the shop owner enter a
+              custom amount — that one is intentionally not set here.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Deleted Users ────────────────────────────────────────────
+export function AdminDeletedUsers() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState({})
+
+  useEffect(() => {
+    api.admin.listDeletedUsers().then(setItems).finally(() => setLoading(false))
+  }, [])
+
+  const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  const roleColor = { advertiser: '#1565C0', shop: '#388E3C', sales: '#7B1FA2' }
+
+  return (
+    <PageShell title="Deleted Users" subtitle="Archive of self-deleted accounts. Full data preserved for admin review.">
+      {loading ? (
+        <div style={{ padding: 30, textAlign: 'center', color: '#888' }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{ padding: 60, textAlign: 'center', color: '#999' }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🗑</div>
+          <div style={{ fontSize: 14 }}>No deleted accounts yet</div>
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Name</th><th style={th}>Email</th><th style={th}>Phone</th>
+            <th style={th}>Role</th><th style={th}>Ads</th><th style={th}>Had Shop</th>
+            <th style={th}>Deleted At</th><th style={th}>Details</th>
+          </tr></thead>
+          <tbody>
+            {items.flatMap(u => {
+              const rows = [
+                <tr key={u.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                  <td style={td}><strong>{u.user?.name || '—'}</strong></td>
+                  <td style={td}>{u.user?.email || '—'}</td>
+                  <td style={td}>{u.user?.phone || '—'}</td>
+                  <td style={td}>
+                    <span style={{ background: roleColor[u.role] || '#888', color: '#fff', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td style={td}>{u.ads_count}</td>
+                  <td style={td}>{u.had_shop ? '✅ Yes' : '—'}</td>
+                  <td style={td}>{(u.deleted_at || '').slice(0, 16).replace('T', ' ')}</td>
+                  <td style={td}>
+                    <button style={ghostBtn} onClick={() => toggle(u.id)}>
+                      {expanded[u.id] ? 'Hide' : 'View'}
+                    </button>
+                  </td>
+                </tr>
+              ]
+              if (expanded[u.id]) {
+                rows.push(
+                  <tr key={u.id + '_d'}>
+                    <td colSpan={8} style={{ padding: '12px 20px', background: '#f9f9f9', fontSize: 12 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Full User Record:</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#333', lineHeight: 1.6 }}>
+                        {JSON.stringify(u.user, null, 2)}
+                      </pre>
+                    </td>
+                  </tr>
+                )
+              }
+              return rows
+            })}
+          </tbody>
+        </table>
+      )}
+    </PageShell>
+  )
+}

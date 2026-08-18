@@ -1,0 +1,48 @@
+Subject: Claimit — today's work: Learn Claimit feature, S3 storage fix, Featured Zones bug fixes
+
+Hi [Client name],
+
+Summary of everything completed on Claimit today (app, website, and both backends), plus what's still pending deployment.
+
+1. PRODUCTION INCIDENT — RESOLVED
+The server went down (MongoDB stopped, backend API errored, app showed network errors). Root cause: an automatic Ubuntu kernel update broke MongoDB due to a known MongoDB bug. Fixed by pinning MongoDB to a stable version and holding it there. Took a full database backup before touching anything — no data was lost or changed. Confirmed app and both backends back to normal.
+Not yet done: the underlying cause (unattended automatic OS updates that can reboot the server) hasn't been disabled/reviewed yet — recommend scheduling this.
+
+2. SHOP LIST — PAGINATION, LOCATION, PREMIUM-FIRST ORDERING
+Finished the Reward Zone / Redeem Zone shop list: pages instead of loading everything at once, sorted by the user's location with premium shops first, more loads automatically on scroll. Backward-compatible.
+
+3. FEATURED ZONES (HOME POPUP) — ICON SIZING + TWO OVERFLOW BUGS FIXED
+- Rebalanced zone icon sizes so all icons are a consistent size (the "More" tile was previously oddly bigger).
+- Reward Zone, Redeem Zone, and Local Finder icons ~2.5% bigger than the others, as requested.
+- Fixed a shop-card layout overflow (traced to the pagination change above).
+- Fixed a layout overflow in the Featured Zones popup itself, plus added a permanent safeguard against this class of bug on any screen size.
+- Fixed an unrelated pre-existing overflow on the Reels offer badge while in the area.
+
+4. HOME SCREEN CATEGORY ICONS
+Replaced the 16 scrolling category icons (+ new "All" icon) with the new artwork provided — asset swap only, nothing else changed.
+
+5. "CLAIM YOUR BUSINESS" — NEW FEATURE
+Bulk-uploaded shops (no owner yet) now show a "Claim Your Business" banner linking to the website's registration page. Disappears automatically once claimed and paid for. Moved to the top and restyled per feedback.
+Confirmed: full payment transaction history was already recorded in its own database collection with an existing admin view — no new work needed.
+
+6. LEARN CLAIMIT — NEW FEATURE (BUILT END-TO-END)
+New "Learn Claimit" tile opens a list of how-to-use-the-app questions; tapping one plays its answer video fullscreen with sound, mute toggle, and a like button. Fully admin-managed — add a question + video from a new admin page, appears in the app immediately, no app update needed.
+Built: new admin page, new admin upload API, new public API for the app, new app screens matching the Reels player look. Also fixed two video-playback bugs found during testing (video wasn't filling the screen; a layout bug was cutting it off partway down) — both fixed, video is now properly fullscreen.
+
+7. STORAGE CLEAN-UP — ORPHANED FILES IN S3
+Checked whether deleting an image/video actually removes it from S3 storage or just leaves it orphaned. Found six places where it was orphaned: shop delete, user delete (shop photos), user delete (claim documents + bill photos), category image removal, gallery photo removal, classified listing delete. All six now clean up S3 properly. (Ad deletion and Learn Claimit deletion already did this correctly.)
+
+PENDING — DEPLOYMENT (NEXT)
+Nothing above is live on the server yet:
+1. App server — pagination, Claim Your Business, Learn Claimit API, S3 clean-up fixes.
+2. Website server — Learn Claimit admin API, S3 clean-up fixes.
+3. Website — rebuild/redeploy frontend for the new Learn Claimit admin page.
+4. App — rebuild for Featured Zones fixes, new icons, Claim Your Business, Learn Claimit.
+
+Also still outstanding from the incident review (not urgent, worth scheduling):
+- Disable/review unattended OS updates on the server (root cause of today's outage risk).
+- Automated database backups + rotation.
+- Uptime monitoring/alerting for both backends.
+
+Thanks,
+[Your name]

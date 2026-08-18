@@ -32,6 +32,20 @@ import '../../features/shops/screens/shop_detail_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
+import '../../features/learn/screens/learn_list_screen.dart';
+// ── Claimit Select ──────────────────────────────────────────────────────────
+import '../../features/select/models/select_category.dart';
+import '../../features/select/models/select_professional.dart';
+import '../../features/select/models/select_chat.dart';
+import '../../features/select/screens/select_home_screen.dart';
+import '../../features/select/screens/select_list_screen.dart';
+import '../../features/select/screens/select_profile_screen.dart';
+import '../../features/select/screens/select_booking_screen.dart';
+import '../../features/select/screens/select_bookings_screen.dart';
+import '../../features/select/screens/select_register_flow.dart';
+import '../../features/select/screens/select_messages_screen.dart';
+import '../../features/select/screens/select_chat_screen.dart';
+import '../../features/select/screens/select_profile_tab_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
 import '../../features/classifieds/screens/classified_ads_screen.dart';
 import '../../features/classifieds/screens/local_finds_screen.dart';
@@ -250,6 +264,88 @@ class AppRouter {
         GoRoute(
           path: '/reelz',
           builder: (context, state) => const ReelzScreen(),
+        ),
+
+        // ── Learn Claimit ────────────────────────────────────────────────
+        GoRoute(
+          path: '/learn',
+          builder: (context, state) => const LearnListScreen(),
+        ),
+
+        // ── Claimit Select ───────────────────────────────────────────────
+        // Directory of local professionals. Every builder below reads
+        // `state.extra` defensively so a deep link or a lost `extra` after a
+        // hot restart falls back to a valid screen instead of crashing.
+        GoRoute(
+          path: '/select',
+          builder: (context, state) => const SelectHomeScreen(),
+        ),
+        GoRoute(
+          path: '/select/list',
+          builder: (context, state) {
+            final extra = state.extra;
+            SelectCategory? category;
+            String? search;
+            if (extra is Map) {
+              final c = extra['category'];
+              if (c is SelectCategory) category = c;
+              final s = extra['search'];
+              if (s is String && s.trim().isNotEmpty) search = s.trim();
+            } else if (extra is SelectCategory) {
+              category = extra;
+            }
+            return SelectListScreen(category: category, searchTerm: search);
+          },
+        ),
+        GoRoute(
+          path: '/select/professional',
+          builder: (context, state) {
+            final id = state.extra is String ? state.extra as String : '';
+            return SelectProfileScreen(professionalId: id);
+          },
+        ),
+        GoRoute(
+          path: '/select/book',
+          builder: (context, state) {
+            final extra = state.extra;
+            // Without a professional there's nothing to book — fall back to
+            // the Select home rather than rendering a broken screen.
+            if (extra is! SelectProfessional) return const SelectHomeScreen();
+            return SelectBookingScreen(professional: extra);
+          },
+        ),
+        GoRoute(
+          path: '/select/bookings',
+          builder: (context, state) => const SelectBookingsScreen(),
+        ),
+        GoRoute(
+          path: '/select/register',
+          builder: (context, state) {
+            // `extra` is the caller's existing listing when editing; null
+            // (or anything else) means a fresh registration.
+            final e = state.extra;
+            return SelectRegisterFlow(
+              existing: e is SelectProfessional ? e : null,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/select/messages',
+          builder: (context, state) => const SelectMessagesScreen(),
+        ),
+        GoRoute(
+          path: '/select/chat',
+          builder: (context, state) {
+            final extra = state.extra;
+            // Without a conversation there's no thread to show — fall back to
+            // the Messages list rather than rendering a broken screen.
+            if (extra is! SelectConversation) return const SelectMessagesScreen();
+            return SelectChatScreen(conversation: extra);
+          },
+        ),
+        GoRoute(
+          path: '/select/profile',
+          builder: (context, state) => const SelectProfileTabScreen(),
         ),
 
         // ── Classifieds ────────────────────────────────────────────────────

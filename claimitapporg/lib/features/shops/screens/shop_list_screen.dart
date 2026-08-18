@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:geocoding/geocoding.dart';
 import '../models/shop_category.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart';
 import '../services/shop_service.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/services/location_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ShopItem data model — now driven by real API data from MongoDB.
@@ -64,6 +66,11 @@ class ShopItem {
   final double? lat;
   final double? lng;
 
+  /// False only for bulk-uploaded shops nobody has claimed yet (no owner
+  /// account linked). Defaults to true (button hidden) if the API ever
+  /// omits this field, so it never mistakenly shows on an owned shop.
+  final bool isClaimed;
+
   const ShopItem({
     required this.id,
     required this.name,
@@ -90,6 +97,7 @@ class ShopItem {
     this.distance = '',
     this.lat,
     this.lng,
+    this.isClaimed = true,
   });
 }
 
@@ -175,6 +183,23 @@ class _ShopListScreenState extends State<ShopListScreen> {
   bool _isLoading = true;
   String? _loadError;
 
+  // ── Location-based pagination (infinite scroll) ────────────────────────────
+  // Nearby shops are fetched a page at a time (nearest first, Premium plan
+  // shops floated to the top of each page) so the first screen renders fast
+  // instead of waiting on the full shop list. Scrolling near the bottom
+  // fetches the next page and appends it to _shops — the existing
+  // _filteredShops getter below is completely untouched, it just runs over
+  // a list that grows over time instead of one loaded all at once.
+  static const int _pageSize = 10;
+  static const double _searchRadiusKm = 25.0;
+  final ScrollController _scrollController = ScrollController();
+  double? _userLat;
+  double? _userLng;
+  bool _locationAvailable = false;
+  int _loadedCount = 0;
+  bool _hasMore = false;
+  bool _isLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -184,25 +209,141 @@ class _ShopListScreenState extends State<ShopListScreen> {
     // "X% Disc + 1% Cashback" instead of "Free Reward + 1% Cashback".)
     // For isTab / id==-1 (Nearby) the toggle is hidden; value doesn't affect filtering.
     _isRewards = !widget.isTab && widget.category.id >= 0;
+    _scrollController.addListener(_onScroll);
     _loadShops();
   }
 
+  // Resolves the coordinates to search around:
+  //  1) the location the user manually picked in the app (geocoded), or
+  //  2) the device's current GPS position (same LocationService used by
+  //     the dashboard's "nearby" section),
+  // falling back to false (no location) if neither is available — in
+  // which case _loadShops falls back to the old unfiltered behaviour so
+  // the screen never ends up broken or empty because of a location error.
+  Future<bool> _resolveLocation() async {
+    final manualLoc = mounted ? context.read<AuthProvider>().user?.location : null;
+    if (manualLoc != null && manualLoc.trim().isNotEmpty) {
+      try {
+        final results = await locationFromAddress(manualLoc.trim());
+        if (results.isNotEmpty) {
+          _userLat = results.first.latitude;
+          _userLng = results.first.longitude;
+          return true;
+        }
+      } catch (_) {
+        // Fall through to GPS below.
+      }
+    }
+    try {
+      final pos = await LocationService.getPosition();
+      if (pos != null) {
+        _userLat = pos.latitude;
+        _userLng = pos.longitude;
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadMoreShops();
+    }
+  }
+
   Future<void> _loadShops() async {
-    setState(() { _isLoading = true; _loadError = null; });
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+      _shops = [];
+      _loadedCount = 0;
+      _hasMore = false;
+    });
     try {
       // Refresh liked IDs so heart buttons always show correct state
       final profileProvider = context.read<ProfileProvider>();
       await profileProvider.fetchLikedIds();
 
-      final shops = await ShopService.instance.fetchAllShops();
-      if (mounted) setState(() { _shops = shops; _isLoading = false; });
+      _locationAvailable = await _resolveLocation();
+
+      if (_locationAvailable) {
+        final page = await ShopService.instance.fetchNearbyShopsPaged(
+          lat: _userLat!,
+          lng: _userLng!,
+          radiusKm: _searchRadiusKm,
+          skip: 0,
+          limit: _pageSize,
+        );
+        if (!mounted) return;
+        if (page.shops.isEmpty && !page.hasMore) {
+          // Nothing found nearby (e.g. sparse area) — fall back to the full
+          // list once, rather than the user seeing an empty screen.
+          final all = await ShopService.instance.fetchAllShops();
+          if (mounted) {
+            setState(() {
+              _shops = all;
+              _hasMore = false;
+              _loadedCount = all.length;
+              _isLoading = false;
+            });
+          }
+        } else {
+          setState(() {
+            _shops = page.shops;
+            _hasMore = page.hasMore;
+            _loadedCount = page.shops.length;
+            _isLoading = false;
+          });
+        }
+      } else {
+        // No location available at all — old behaviour, unfiltered full list.
+        final shops = await ShopService.instance.fetchAllShops();
+        if (mounted) {
+          setState(() {
+            _shops = shops;
+            _hasMore = false;
+            _loadedCount = shops.length;
+            _isLoading = false;
+          });
+        }
+      }
     } catch (e) {
       if (mounted) setState(() { _loadError = e.toString(); _isLoading = false; });
     }
   }
 
+  Future<void> _loadMoreShops() async {
+    if (_isLoadingMore || !_hasMore || !_locationAvailable) return;
+    if (_userLat == null || _userLng == null) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await ShopService.instance.fetchNearbyShopsPaged(
+        lat: _userLat!,
+        lng: _userLng!,
+        radiusKm: _searchRadiusKm,
+        skip: _loadedCount,
+        limit: _pageSize,
+      );
+      if (!mounted) return;
+      setState(() {
+        _shops = [..._shops, ...page.shops];
+        _loadedCount += page.shops.length;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      // Silent — a failed background page fetch shouldn't show an error
+      // banner over an otherwise working list. User can pull-to-refresh.
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -509,6 +650,20 @@ class _ShopListScreenState extends State<ShopListScreen> {
   Widget build(BuildContext context) {
     final shops = _filteredShops;
 
+    // The visible (filtered) list can be much shorter than a fetched page
+    // (e.g. a specific-category or search filter over a "nearby" page that
+    // mostly didn't match). Since the scrollbar reflects only what's
+    // rendered, the user may never reach the bottom to trigger _onScroll.
+    // Proactively fetch the next page in that case so filtered lists still
+    // fill up instead of looking short forever while more matches exist
+    // further out. Bounded by _hasMore, which the backend sets accurately.
+    if (!_isLoading &&
+        !_isLoadingMore &&
+        _hasMore &&
+        shops.length < _pageSize) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadMoreShops());
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: _buildAppBar(),
@@ -596,9 +751,24 @@ class _ShopListScreenState extends State<ShopListScreen> {
                             color: const Color(0xFF2563EB),
                             child: Consumer<ProfileProvider>(
                               builder: (ctx, profile, _) => ListView.builder(
-                                itemCount: shops.length,
+                                controller: _scrollController,
+                                itemCount: shops.length + (_isLoadingMore ? 1 : 0),
                                 padding: const EdgeInsets.only(top: 4, bottom: 16),
                                 itemBuilder: (_, i) {
+                                  if (i >= shops.length) {
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 20),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Color(0xFF2563EB)),
+                                        ),
+                                      ),
+                                    );
+                                  }
                                   final s = shops[i];
                                   return _ShopCard(
                                     shop: s,
@@ -856,15 +1026,21 @@ class _ShopCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                         ],
-                        Builder(builder: (_) {
-                          final cat = _catName(shop.categoryIds);
-                          if (cat.isEmpty) return const SizedBox.shrink();
-                          return _Badge(
-                            label: cat,
-                            bgColor: const Color(0xFFEFF6FF),
-                            textColor: const Color(0xFF2563EB),
-                          );
-                        }),
+                        // Flexible — long category names (e.g. "Photography
+                        // & Studios") plus a distance badge could overflow
+                        // this Row on narrow cards; this lets the category
+                        // badge shrink/ellipsize instead of overflowing.
+                        Flexible(
+                          child: Builder(builder: (_) {
+                            final cat = _catName(shop.categoryIds);
+                            if (cat.isEmpty) return const SizedBox.shrink();
+                            return _Badge(
+                              label: cat,
+                              bgColor: const Color(0xFFEFF6FF),
+                              textColor: const Color(0xFF2563EB),
+                            );
+                          }),
+                        ),
                       ],
                     ),
                   ],
@@ -898,6 +1074,8 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,

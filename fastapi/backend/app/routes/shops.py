@@ -109,6 +109,12 @@ async def _doc_to_response(doc: dict, distance_km: Optional[float] = None) -> di
         result.setdefault("has_rewards", True)
         result.setdefault("has_redeem",  True)
 
+    # Ownership: shops the admin bulk-uploaded have no user_id until an
+    # owner finds their shop in the app and claims it (pays via the
+    # website's /shop/auth → claim flow). The app uses this flag to show
+    # the "Claim Your Business" button only on shops nobody owns yet.
+    result["is_claimed"] = bool(str(result.get("user_id") or "").strip())
+
     return result
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /shops  — list / filter / search
@@ -219,13 +225,22 @@ async def get_nearby_shops(
     lng: float = Query(..., description="User longitude"),
     radius_km: float = Query(4.0, ge=0.1, le=50.0, description="Search radius in km"),
     exclude_id: Optional[str] = Query(None, description="Shop ID to exclude from results"),
+    skip: int = Query(0, ge=0, description="Pagination offset — 0 = start from nearest"),
+    limit: int = Query(0, ge=0, description="Max shops to return. 0 (default) = no limit, return every shop in radius — unchanged behaviour for existing callers."),
+    premium_first: bool = Query(False, description="Sort Premium-plan shops to the top of the (already distance-sorted) results. Default False — off unless a caller explicitly asks for it."),
     current_user: dict = Depends(get_current_user),
 ):
     """
-    GET /shops/nearby?lat=X&lng=Y&radius_km=4
-    Returns all shops within `radius_km` of the given GPS coordinates.
-    Each shop gets a `distance` field e.g. "2.3 km".
+    GET /shops/nearby?lat=X&lng=Y&radius_km=4[&skip=0&limit=10&premium_first=true]
+    Returns shops within `radius_km` of the given GPS coordinates, nearest
+    first. Each shop gets a `distance` field e.g. "2.3 km".
     Shops without stored GPS coordinates are excluded (same as before).
+
+    skip/limit/premium_first are OPTIONAL and default to the original
+    behaviour (return every shop in radius, distance-sorted, no reordering)
+    so existing callers (dashboard "nearby" widget, shop-detail "stores
+    nearby" widget) are unaffected. Pass limit>0 to page results — used by
+    the shop list (Reward/Redeem Zone) screens for infinite scroll.
 
     Uses a $geoNear aggregation against the `geo` 2dsphere index instead of
     pulling every shop into memory and computing haversine distance in
@@ -261,10 +276,29 @@ async def get_nearby_shops(
         dist_km = shop.pop("_dist_m", 0) / 1000
         shops_out.append(await _doc_to_response(shop, distance_km=dist_km))
 
+    # Premium-first: stable sort, so within each group (premium / not) the
+    # existing nearest-first order is preserved — same pattern already used
+    # for deals (see utils/helpers.py sort_by_tier).
+    if premium_first:
+        shops_out = sorted(
+            shops_out,
+            key=lambda s: 0 if str(s.get("plan", "")).strip().lower() == "premium" else 1,
+        )
+
+    total_in_radius = len(shops_out)
+    if limit:
+        page = shops_out[skip: skip + limit]
+    elif skip:
+        page = shops_out[skip:]
+    else:
+        page = shops_out
+
     return {
         "success": True,
-        "shops": shops_out,
-        "total": len(shops_out),
+        "shops": page,
+        "total": total_in_radius,
+        "returned": len(page),
+        "has_more": (skip + len(page)) < total_in_radius,
         "radius_km": radius_km,
         "user_lat": lat,
         "user_lng": lng,

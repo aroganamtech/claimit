@@ -9,6 +9,7 @@ from utils.auth import (
     create_access_token, UNIVERSAL_OTP,
 )
 from utils.dependencies import get_current_user
+from utils.email import send_email
 from bson import ObjectId
 from datetime import datetime
 
@@ -45,15 +46,29 @@ async def send_otp(request: RegisterRequest):
         )
 
     otp = generate_otp()
-    await store_otp(request.role, request.phone, otp)
-    print(f"[DEV OTP] role={request.role} phone={request.phone} otp={otp}")
-    return {"message": "OTP sent successfully", "dev_otp": otp}
+    # Verified by email now — phone is collected and stored as profile data
+    # only, it's no longer the OTP delivery/verification channel.
+    await store_otp(request.role, request.email, otp)
+    sent = False
+    try:
+        sent = send_email(
+            request.email, f"{otp} is your Claimit verification code",
+            f"<p style='font-family:Arial'>Your Claimit verification code is "
+            f"<b style='font-size:22px'>{otp}</b>.<br>Valid for 10 minutes.</p>",
+        )
+    except Exception:
+        sent = False
+    resp = {"message": "OTP sent successfully", "sent": sent}
+    if not sent:                       # SMTP not configured → surface for testing
+        resp["dev_otp"] = otp
+        print(f"[DEV OTP] role={request.role} email={request.email} otp={otp}")
+    return resp
 
 
 # ─── Step 2: verify OTP ───────────────────────────────────────
 @router.post("/verify-otp")
 async def verify_otp_endpoint(request: OTPVerifyRequest):
-    valid = await verify_otp(request.role, request.phone, request.otp)
+    valid = await verify_otp(request.role, request.email, request.otp)
     if not valid:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     return {"message": "OTP verified successfully", "verified": True}

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from ..database import get_db
 from ..utils.auth import get_current_user
+from ..utils.s3 import delete_object as _s3_delete
 
 router = APIRouter(prefix="/classifieds", tags=["classifieds"])
 
@@ -39,9 +40,14 @@ def _serialize(doc: dict) -> dict:
 
 # ── Local Finds business plans (see the Local Finds PDF) ──────────────────────
 # price is per year in rupees; photo_limit caps how many photos a listing on
-# that plan may store. NOTE: the Premium price below is a placeholder — change
-# "premium" price once finalised. Free is fully functional; paid-plan payment
-# (Razorpay) is intentionally deferred and wired in later.
+# that plan may store. Free is fully functional; paid-plan payment (Razorpay)
+# is intentionally deferred and wired in later.
+#
+# Prices are admin-configurable (claimit_web_org/fastapi/backend/utils/pricing.py,
+# same claimit_db.app_config collection this backend's db points at — key="pricing",
+# fields "local_finds_standard"/"local_finds_premium"). The dict below is only the
+# fallback used until admin sets a value; photo_limit isn't a money amount so it
+# stays defined here.
 LOCAL_FIND_PLANS = {
     "free":     {"price": 0,    "photo_limit": 1},
     "standard": {"price": 999,  "photo_limit": 5},
@@ -49,14 +55,31 @@ LOCAL_FIND_PLANS = {
 }
 
 
-def _plan(name: str) -> dict:
-    return LOCAL_FIND_PLANS.get((name or "free").strip().lower(), LOCAL_FIND_PLANS["free"])
+async def _local_find_plans(db) -> dict:
+    """LOCAL_FIND_PLANS with live prices merged in from app_config (key="pricing"),
+    same collection/document the web admin panel edits via GET/PUT /admin/pricing."""
+    plans = {name: dict(info) for name, info in LOCAL_FIND_PLANS.items()}
+    try:
+        cfg = await db.app_config.find_one({"key": "pricing"})
+    except Exception:
+        cfg = None
+    if cfg:
+        if cfg.get("local_finds_standard") is not None:
+            plans["standard"]["price"] = cfg["local_finds_standard"]
+        if cfg.get("local_finds_premium") is not None:
+            plans["premium"]["price"] = cfg["local_finds_premium"]
+    return plans
+
+
+async def _plan(name: str, db=None) -> dict:
+    plans = await _local_find_plans(db) if db is not None else LOCAL_FIND_PLANS
+    return plans.get((name or "free").strip().lower(), plans["free"])
 
 
 @router.get("/plans")
 async def get_local_find_plans(current_user: dict = Depends(get_current_user)):
-    """Plan catalogue for the Local Finds registration screen."""
-    return {"plans": LOCAL_FIND_PLANS}
+    """Plan catalogue for the Local Finds registration screen — live prices."""
+    return {"plans": await _local_find_plans(get_db())}
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
@@ -175,7 +198,7 @@ async def create_classified(
     # (Free 1 / Standard 5 / Premium 15). Classifieds keep their photos as-is.
     photos = body.photos
     if body.listing_type == "local_find":
-        photos = body.photos[: _plan(body.plan)["photo_limit"]]
+        photos = body.photos[: (await _plan(body.plan, db))["photo_limit"]]
     doc = {
         "user_id": current_user["_id"],
         "user_name": current_user.get("name", "User"),
@@ -296,6 +319,12 @@ async def delete_classified(
         raise HTTPException(status_code=404, detail="Not found")
     if str(doc.get("user_id", "")) != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not your post")
+
+    # Best-effort clean-up of the listing's uploaded photos in S3 — never
+    # blocks the delete if a key is already gone or S3 is unreachable.
+    for key in (doc.get("photos") or []):
+        if key:
+            await _s3_delete(key)
 
     await db["classifieds"].delete_one({"_id": oid})
     return {"deleted": True}

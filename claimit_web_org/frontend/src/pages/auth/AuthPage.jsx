@@ -238,11 +238,16 @@ export default function AuthPage({ portal }) {
             <>
               <h2 style={{ fontWeight: 700, fontSize: 24, marginBottom: 8 }}>Enter OTP</h2>
               <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
-                We've sent a 6-digit code to your phone and email
+                We've sent a 6-digit code to {email || 'your email'}
               </p>
               {devOtp && (
                 <div style={{ background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, padding: '8px 12px', marginBottom: 16, fontSize: 13, color: '#2e7d32' }}>
                   Dev OTP: <strong>{devOtp}</strong>
+                </div>
+              )}
+              {!devOtp && (
+                <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>
+                  Don't see it? Check your spam/junk folder — it can take a minute to arrive.
                 </div>
               )}
               {error && <div style={{ color: '#e53935', marginBottom: 12, fontSize: 13 }}>{error}</div>}

@@ -40,6 +40,10 @@ class _Plan {
       this.features, this.badge);
 }
 
+// Fallback prices shown until the live prices load from GET /classifieds/plans
+// (admin-configurable — same claimit_db.app_config "pricing" document the web
+// admin panel edits). Kept in sync with the app backend's LOCAL_FIND_PLANS
+// defaults so the picker never flashes a wrong price before the fetch resolves.
 const List<_Plan> _plans = [
   _Plan('free', 'Free Plan', 0, 1,
       'List your business for free and connect with local customers.',
@@ -94,11 +98,34 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
   String _planId = 'free';
   final List<String> _photos = []; // base64 strings
   bool _submitting = false;
+  // Live-priced copy of _plans, refreshed from GET /classifieds/plans once it
+  // loads (admin-configurable). Starts as the hardcoded fallback so the UI
+  // never has to wait for the network before rendering the plan cards.
+  List<_Plan> _effectivePlans = List.of(_plans);
 
   @override
   void initState() {
     super.initState();
     _categoryId = widget.initialZone?.id;
+    _loadLivePricing();
+  }
+
+  // Merge live prices (admin-configurable) over the hardcoded fallback plans.
+  // Only `price` changes — photo limits, taglines, features and badges stay
+  // as designed since those aren't money amounts.
+  Future<void> _loadLivePricing() async {
+    final live = await ClassifiedService.instance.fetchPlans();
+    if (live == null || !mounted) return;
+    setState(() {
+      _effectivePlans = _plans.map((p) {
+        final entry = live[p.id];
+        if (entry is Map && entry['price'] != null) {
+          final price = (entry['price'] as num).toInt();
+          return _Plan(p.id, p.name, price, p.photoLimit, p.tagline, p.features, p.badge);
+        }
+        return p;
+      }).toList();
+    });
   }
 
   @override
@@ -156,7 +183,7 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
     }
   }
 
-  _Plan get _plan => _plans.firstWhere((p) => p.id == _planId);
+  _Plan get _plan => _effectivePlans.firstWhere((p) => p.id == _planId);
   LocalFindZone? get _zone {
     if (_categoryId == null) return null;
     for (final z in localFindZones) {
@@ -521,7 +548,7 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ..._plans.map(_planCard),
+        ..._effectivePlans.map(_planCard),
         const SizedBox(height: 8),
         _label('Photos (up to ${_plan.photoLimit})'),
         Wrap(

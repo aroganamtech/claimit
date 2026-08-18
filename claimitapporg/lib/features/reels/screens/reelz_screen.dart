@@ -702,12 +702,20 @@ class _ReelPageState extends State<_ReelPage> with RouteAware {
                         const Icon(Icons.local_offer_rounded,
                             color: Color(0xFFFBBF24), size: 14),
                         const SizedBox(width: 5),
-                        Text(
-                          reel.offer,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        // Long offer text on some reels was pushing this
+                        // pill past the available width (the shop-name Row
+                        // above already guards against this the same way —
+                        // this one just didn't have it).
+                        Flexible(
+                          child: Text(
+                            reel.offer,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],

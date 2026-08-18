@@ -118,6 +118,8 @@ export default function PaymentPage() {
       const returnUrl = `${window.location.origin}/advertiser/create-ad/payment`
       const link = await api.payments.createLink({
         amount: pending.amount,
+        ad_type: pending.adType,
+        tier: pending.tier,
         purpose: `Claimit ${pending.adTypeLabel} — 7 day campaign`,
         return_url: returnUrl,
       })

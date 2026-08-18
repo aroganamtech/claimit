@@ -1,0 +1,506 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — one professional's public profile.
+//
+// Header photo + name/rating/experience/location, About (expandable),
+// Services, Portfolio, Special Offer, and a pinned Call / Enquire / Book Now
+// action bar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectProfileScreen extends StatefulWidget {
+  const SelectProfileScreen({super.key, required this.professionalId});
+
+  final String professionalId;
+
+  @override
+  State<SelectProfileScreen> createState() => _SelectProfileScreenState();
+}
+
+class _SelectProfileScreenState extends State<SelectProfileScreen> {
+  bool _loading = true;
+  bool _aboutExpanded = false;
+  SelectProfessional? _pro;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final pro = await SelectService.instance.fetchProfessional(widget.professionalId);
+    if (!mounted) return;
+    setState(() {
+      _pro = pro;
+      _loading = false;
+    });
+  }
+
+  Future<void> _call() async {
+    final p = (_pro?.phone ?? '').trim();
+    if (p.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No phone number listed')),
+      );
+      return;
+    }
+    final uri = Uri.parse('tel:$p');
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  Future<void> _enquire() async {
+    final p = (_pro?.phone ?? '').trim();
+    if (p.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No contact number listed')),
+      );
+      return;
+    }
+    // WhatsApp enquiry — same convention as Local Finds.
+    final uri = Uri.parse('https://wa.me/$p');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _book() {
+    final pro = _pro;
+    if (pro == null) return;
+    context.push('/select/book', extra: pro);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pro = _pro;
+    return Scaffold(
+      backgroundColor: kSelBg,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: kSelBlue))
+          : pro == null
+              ? SelEmptyState(
+                  icon: Icons.person_off_rounded,
+                  title: 'Profile unavailable',
+                  message: "We couldn't load this professional. "
+                      'Please go back and try again.',
+                  action: ElevatedButton(
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/select'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kSelBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Go back'),
+                  ),
+                )
+              : _content(pro),
+      bottomNavigationBar: pro == null ? null : _actionBar(),
+    );
+  }
+
+  Widget _content(SelectProfessional pro) {
+    return Column(
+      children: [
+        _blueHeader(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _identity(pro),
+                const SizedBox(height: 18),
+                if (pro.about.trim().isNotEmpty) ...[
+                  _sectionTitle('About'),
+                  const SizedBox(height: 6),
+                  Text(
+                    pro.about,
+                    maxLines: _aboutExpanded ? null : 3,
+                    overflow: _aboutExpanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, color: kSelInk, height: 1.5),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _aboutExpanded = !_aboutExpanded),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _aboutExpanded ? 'Read Less' : 'Read More',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: kSelBlue,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (pro.services.isNotEmpty) ...[
+                  _sectionTitle('Services'),
+                  const SizedBox(height: 10),
+                  _servicesGrid(pro),
+                  const SizedBox(height: 18),
+                ],
+                if (pro.portfolioUrls.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Expanded(child: _sectionTitle('Portfolio')),
+                      const Text(
+                        'View All',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: kSelBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _portfolioRow(pro),
+                  const SizedBox(height: 18),
+                ],
+                if (pro.hasOffer) _offerCard(pro),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _blueHeader() {
+    return Container(
+      width: double.infinity,
+      color: kSelBlue,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 14, 12),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/select'),
+              ),
+              const Expanded(
+                child: Text(
+                  'Profile',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Icon(Icons.share_rounded, color: Colors.white, size: 21),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _identity(SelectProfessional pro) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SelPhoto(url: pro.photoUrl, width: 108, height: 128, radius: 14),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      pro.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: kSelInk,
+                      ),
+                    ),
+                  ),
+                  if (pro.isVerified) ...[
+                    const SizedBox(width: 5),
+                    const SelVerifiedBadge(size: 17),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                pro.role,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, color: kSelMuted),
+              ),
+              const SizedBox(height: 6),
+              SelRatingRow(
+                  rating: pro.rating, reviewCount: pro.reviewCount, fontSize: 13),
+              if (pro.experienceYears > 0) ...[
+                const SizedBox(height: 6),
+                _iconLine(Icons.workspace_premium_rounded,
+                    '${pro.experienceYears}+ Years Experience'),
+              ],
+              if (pro.locationLabel.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                _iconLine(Icons.location_on_outlined, pro.locationLabel),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _iconLine(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: kSelMuted),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12.5, color: kSelInk),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String t) => Text(
+        t,
+        style: const TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w700, color: kSelInk),
+      );
+
+  Widget _servicesGrid(SelectProfessional pro) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: pro.services.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        // Tall enough for a 2-line service name — prevents tile overflow.
+        childAspectRatio: 0.82,
+      ),
+      itemBuilder: (_, i) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: kSelLine),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.design_services_rounded, size: 22, color: kSelBlue),
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                pro.services[i],
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 10, height: 1.2, color: kSelInk),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _portfolioRow(SelectProfessional pro) {
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: pro.portfolioUrls.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => SelPhoto(
+          url: pro.portfolioUrls[i],
+          width: 118,
+          height: 92,
+          radius: 10,
+        ),
+      ),
+    );
+  }
+
+  Widget _offerCard(SelectProfessional pro) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFE082)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.local_offer_rounded, color: Color(0xFFF5A623), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Special Offer',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF5D4037),
+                  ),
+                ),
+                if (pro.offerText.trim().isNotEmpty)
+                  Text(
+                    pro.offerText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF6D4C41), height: 1.4),
+                  ),
+                if (pro.offerValidTill.trim().isNotEmpty)
+                  Text(
+                    'Valid till ${pro.offerValidTill}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Color(0xFF8D6E63)),
+                  ),
+              ],
+            ),
+          ),
+          if (pro.offerPercent > 0) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                    color: const Color(0xFFF5A623), style: BorderStyle.solid),
+              ),
+              child: Text(
+                '${pro.offerPercent}%\nOFF',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.15,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFF5A623),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Pinned Call / Enquire / Book Now bar ────────────────────────────────────
+  Widget _actionBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: kSelLine)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _call,
+                icon: const Icon(Icons.call_rounded, size: 17),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Call', maxLines: 1),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kSelBlue,
+                  side: const BorderSide(color: kSelBlue),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _enquire,
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Enquire', maxLines: 1),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kSelBlue,
+                  side: const BorderSide(color: kSelBlue),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _book,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kSelYellow,
+                  foregroundColor: const Color(0xFF3A2E00),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'Book Now',
+                    maxLines: 1,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
