@@ -211,7 +211,7 @@ class _SelectListScreenState extends State<SelectListScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color.fromARGB(255, 250, 217, 88) : Colors.white,
+          color: selected ? const Color.fromARGB(255, 255, 254, 254): const Color.fromARGB(255, 250, 217, 88) ,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(

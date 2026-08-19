@@ -83,19 +83,10 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         title: const Text('Local Classifieds',
             style: TextStyle(color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
-          // Create Ad — opens the category page (self-posting flow). Filled
-          // rather than a bare outline icon so it reads as the primary action.
+          // Create Ad — opens the category page (self-posting flow).
           IconButton(
             tooltip: 'Create Ad',
-            icon: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Icon(Icons.post_add, color: Colors.black, size: 19),
-            ),
+            icon: const Icon(Icons.post_add, color: _blue),
             onPressed: () => context.push('/classified/add'),
           ),
           IconButton(
@@ -105,27 +96,11 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           ),
         ],
       ),
-      // ── Posting an ad is the one thing people come here to do, so the call
-      // to action now sits at the very top instead of below the whole page,
-      // and a floating button keeps it reachable while the list scrolls.
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/classified/add'),
-        backgroundColor: _gold,
-        foregroundColor: Colors.black,
-        elevation: 6,
-        icon: const Icon(Icons.add_circle_rounded, size: 22),
-        label: const Text('Post Your Ad',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-      ),
       body: RefreshIndicator(
         onRefresh: _load,
-        // Bottom padding leaves room for the floating button so it never
-        // covers the last card.
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
-            _findBanner(),
-            const SizedBox(height: 22),
             // ── Ads first: the created classifieds with their details ──────────
             _sectionHeader('Latest Ads', _openAll),
             const SizedBox(height: 12),
@@ -151,6 +126,8 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
               )
             else
               _categoriesGrid(cats),
+            const SizedBox(height: 20),
+            _findBanner(),
           ],
         ),
       ),

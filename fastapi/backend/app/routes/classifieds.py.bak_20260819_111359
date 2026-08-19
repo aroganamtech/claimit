@@ -121,20 +121,12 @@ async def list_classifieds(
 
 @router.get("/mine")
 async def list_my_classifieds(
-    listing_type: Optional[str] = Query(None),  # "local_find" | "classified"
     current_user: dict = Depends(get_current_user),
 ):
-    """The caller's own posts. `listing_type` keeps Local Finds and Local
-    Classifieds apart — they share this collection, so without the filter a
-    user's businesses show up inside Classifieds and vice versa. Omitting it
-    still returns everything (kept for backwards compatibility)."""
     db = get_db()
-    query: dict = {"user_id": current_user["_id"]}
-    if listing_type:
-        query["listing_type"] = listing_type
     cursor = (
         db["classifieds"]
-        .find(query)
+        .find({"user_id": current_user["_id"]})
         .sort("created_at", -1)
     )
     docs = await cursor.to_list(length=200)

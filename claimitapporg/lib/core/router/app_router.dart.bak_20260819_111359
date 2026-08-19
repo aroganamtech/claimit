@@ -391,14 +391,6 @@ class AppRouter {
           path: '/classified/mine',
           builder: (context, state) => const MyListingsScreen(),
         ),
-        // Local Finds owners get their own My Listings, scoped to their
-        // businesses — the Classifieds one above only shows classified posts,
-        // so without this their listings would be unreachable.
-        GoRoute(
-          path: '/local-finds/mine',
-          builder: (context, state) =>
-              const MyListingsScreen(listingType: 'local_find'),
-        ),
         GoRoute(
           path: '/local-finds/categories',
           builder: (context, state) => const LocalFindsCategoriesScreen(),

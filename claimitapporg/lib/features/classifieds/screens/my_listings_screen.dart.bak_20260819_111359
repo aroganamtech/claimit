@@ -8,21 +8,15 @@ import '../widgets/listing_flow_widgets.dart';
 const Color _navy = Color(0xFF1E3A5F);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shows the current user's own posts with edit / delete / availability toggle.
+// Shows the current user's own posts (Local Finds business listings +
+// Local Classifieds posts) with edit / delete / availability toggle.
 // Only the owner ever sees their own posts here — the backend enforces this
 // (GET /classifieds/mine is scoped to the signed-in user, and PATCH/DELETE
 // both check ownership server-side too).
-//
-// [listingType] scopes the list to ONE product: Local Finds and Local
-// Classifieds share a collection, so without it a user's businesses would show
-// up inside Classifieds and vice versa.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MyListingsScreen extends StatefulWidget {
-  const MyListingsScreen({super.key, this.listingType = 'classified'});
-
-  /// "classified" | "local_find" — which product's listings to show.
-  final String listingType;
+  const MyListingsScreen({super.key});
 
   @override
   State<MyListingsScreen> createState() => _MyListingsScreenState();
@@ -40,8 +34,7 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final posts = await ClassifiedService.instance
-        .fetchMyPosts(listingType: widget.listingType);
+    final posts = await ClassifiedService.instance.fetchMyPosts();
     if (!mounted) return;
     setState(() {
       _posts = posts;

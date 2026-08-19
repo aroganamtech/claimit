@@ -50,9 +50,6 @@ import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminCreateAd from './pages/admin/AdminCreateAd'
 import AdminBulkShops from './pages/admin/AdminBulkShops'
-import AdminBulkSelect from './pages/admin/AdminBulkSelect'
-import AdminBulkClassifieds from './pages/admin/AdminBulkClassifieds'
-import AdminFeatureCategoryImages from './pages/admin/AdminFeatureCategoryImages'
 import AdminTransactions from './pages/admin/AdminTransactions'
 import AdminShopDetail from './pages/admin/AdminShopDetail'
 import AdminCategoryImages from './pages/admin/AdminCategoryImages'
@@ -299,9 +296,6 @@ export default function App() {
             <Route path="/admin/shops/:id" element={<AdminShopDetail />} />
             <Route path="/admin/transactions" element={<AdminTransactions />} />
             <Route path="/admin/bulk-shops" element={<AdminBulkShops />} />
-            <Route path="/admin/bulk-select" element={<AdminBulkSelect />} />
-            <Route path="/admin/bulk-classifieds" element={<AdminBulkClassifieds />} />
-            <Route path="/admin/feature-category-images" element={<AdminFeatureCategoryImages />} />
             <Route path="/admin/category-images" element={<AdminCategoryImages />} />
             <Route path="/admin/learn-claimit" element={<AdminLearnClaimit />} />
             <Route path="/admin/reviews"   element={<AdminReviews />} />

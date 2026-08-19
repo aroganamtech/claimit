@@ -1800,17 +1800,20 @@ const Set<String> _kBoostedZoneLabels = {'Reward Zone', 'Redeem Zone', 'Local Fi
 const _zonesPage1 = [
   _ZoneItem(label: 'Reward\nZone',  icon: "assets/images/zone_1.png", route: '/home'),
   _ZoneItem(label: 'Redeem\nZone',  icon: "assets/images/zone_2.png", route: '/home'),
-  _ZoneItem(label: 'Local\nFinder', icon: "assets/images/zone_3.png", route: '/classified'),
-  _ZoneItem(label: 'Nearby\nDeals', icon: "assets/images/zone_4.png", route: '/nearby-deals'),
-  _ZoneItem(label: 'Brand\nDeals',  icon: "assets/images/zone_5.png", route: '/brands'),
+   _ZoneItem(label: 'Nearby\nDeals', icon: "assets/images/zone_4.png", route: '/nearby-deals'),
+   _ZoneItem(label: 'Brand\nDeals',  icon: "assets/images/zone_5.png", route: '/brands'),
+    _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
+
+ 
+  
 ];
 
 // Page 2 — shown when the user taps "More". The remaining 4 zones.
 const _zonesPage2 = [
-  _ZoneItem(label: 'Promo\nReelz',   icon: "assets/images/zone_6.png", route: '/reelz'),
+   _ZoneItem(label: 'Local\nFinder', icon: "assets/images/zone_3.png", route: '/classified'),
     _ZoneItem(label: 'Claimit\nSelect', icon: "assets/images/zone_10.png", route: '/select'),
-  _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
-  _ZoneItem(label: 'Classifieds', icon: "assets/images/zone_8.png", route: '/classified/ads'),
+  // _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
+  _ZoneItem(label: 'Local\nClassifieds', icon: "assets/images/zone_8.png", route: '/classified/ads'),
   // _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/ads'),
     _ZoneItem(label: 'Learn\nClaimit', icon: "assets/images/zone_learn.png", route: '/learn'),
 

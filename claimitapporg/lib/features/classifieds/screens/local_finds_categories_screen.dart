@@ -51,7 +51,7 @@ class _LocalFindsCategoriesScreenState
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kLfBlue, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Local Finds Categories',
+        title: const Text('Local Finder Categories',
             style: TextStyle(color: kLfBlue, fontWeight: FontWeight.w700, fontSize: 17)),
         actions: [
           Padding(

@@ -165,15 +165,6 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
             ),
           ],
         ),
-        // Owners reach their own business listings here. Scoped to
-        // listingType 'local_find', so Classifieds posts never appear.
-        actions: [
-          IconButton(
-            tooltip: 'My Listings',
-            icon: const Icon(Icons.receipt_long_rounded, color: kLfBlue, size: 22),
-            onPressed: () => context.push('/local-finds/mine'),
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,

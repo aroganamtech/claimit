@@ -494,10 +494,6 @@ def _num(v):
 
 class BulkUploadBody(BaseModel):
     key: str = ""          # S3 key of the uploaded .xlsx (browser PUTs it first)
-    # {original filename: s3 key} for photos the admin uploaded BEFORE the
-    # sheet. Rows reference a photo by filename in their `image` column. Empty
-    # for the shops importer, which takes its images from category pools.
-    images: dict = {}
 
 
 @router.post("/shops/bulk-upload")
@@ -707,40 +703,6 @@ async def shops_bulk_upload(
 _select_professionals = app_db["select_professionals"]
 _classifieds_collection = app_db["classifieds"]
 
-# ── Scoped category image pools ───────────────────────────────────────────────
-# Shops already have per-category image pools (category_images_collection, keyed
-# by an int id). Claimit Select / Local Finds / Classifieds need the same idea
-# but their category ids are STRINGS and their category sets differ, so they get
-# their own collection keyed by (scope, category_id). Kept separate from the
-# shops pools deliberately — nothing here can disturb existing shop data.
-_feature_category_images = app_db["feature_category_images"]
-
-# scope → the category ids/labels that scope allows.
-def _scope_categories(scope: str) -> dict:
-    """{category_id: label} for a scope, or {} when the scope is unknown."""
-    if scope == "select":
-        from utils.select_bulk import CATEGORY_LEGEND
-        return dict(CATEGORY_LEGEND)
-    if scope in ("local_find", "classified"):
-        from utils.classified_bulk import categories_for
-        # These use the label itself as the id (that's what the app stores).
-        return {label: label for label in categories_for(scope)}
-    return {}
-
-
-FEATURE_SCOPES = ("select", "local_find", "classified")
-
-
-async def _category_pool(scope: str) -> dict:
-    """{category_id: [s3 keys]} for one scope — used by the bulk importers to
-    give a row an image when it didn't name one."""
-    pool: dict = {}
-    async for d in _feature_category_images.find({"scope": scope}):
-        keys = [k for k in (d.get("keys") or []) if k]
-        if keys:
-            pool[d.get("category_id")] = keys
-    return pool
-
 
 def _bulk_cell_reader(ws, columns):
     """header→column mapping with positional fallback (same approach as the
@@ -761,13 +723,7 @@ def _bulk_cell_reader(ws, columns):
 
 
 async def _upload_row_image(img, folder: str) -> str:
-    """(bytes, ext) tuple from extract_row_images → S3 key, or "" on failure.
-
-    Only a FALLBACK. Pictures pasted into a workbook are unreliable (they don't
-    survive Google Sheets and re-anchor when rows are edited), which is why the
-    shops importer dropped that approach. The primary path is _match_image()
-    below: the admin uploads image files first and names them in the sheet.
-    """
+    """(bytes, ext) tuple from extract_row_images → S3 key, or "" on failure."""
     if not img:
         return ""
     try:
@@ -776,35 +732,6 @@ async def _upload_row_image(img, folder: str) -> str:
         return await upload_bytes(data, folder, filename=f"row{ext}")
     except Exception:
         return ""
-
-
-def _build_image_index(images: dict) -> dict:
-    """Normalise the {filename: s3_key} map the browser sends after uploading
-    the pictures, so a sheet can reference a photo loosely.
-
-    Indexed twice per file — with and without its extension — and lowercased,
-    so "Ananya.JPG", "ananya.jpg" and "ananya" all resolve to the same key.
-    """
-    idx = {}
-    for fname, key in (images or {}).items():
-        if not fname or not key:
-            continue
-        base = str(fname).strip().lower()
-        idx[base] = key
-        stem = base.rsplit(".", 1)[0] if "." in base else base
-        idx.setdefault(stem, key)
-    return idx
-
-
-def _match_image(cell_value, index: dict) -> str:
-    """Sheet's `image` cell → S3 key, or "" when blank/unmatched."""
-    name = str(cell_value or "").strip().lower()
-    if not name or not index:
-        return ""
-    if name in index:
-        return index[name]
-    stem = name.rsplit(".", 1)[0] if "." in name else name
-    return index.get(stem, "")
 
 
 # ── Claimit Select ────────────────────────────────────────────────────────────
@@ -852,9 +779,7 @@ async def select_bulk_upload(
 
     ws = wb["Professionals"] if "Professionals" in wb.sheetnames else wb.worksheets[0]
     cell = _bulk_cell_reader(ws, COLUMNS)
-    img_index = _build_image_index(body.images)   # 1st: uploaded-first photos
-    pasted = extract_row_images(raw)              # 2nd: pasted into the sheet
-    cat_pool = await _category_pool("select")     # 3rd: the category's pool
+    images = extract_row_images(raw)
 
     if replace:
         await _select_professionals.delete_many({"source": "bulk"})
@@ -923,30 +848,10 @@ async def select_bulk_upload(
             doc["lat"] = lat
             doc["lng"] = lng
 
-        # Photo, in order of preference:
-        #   1. the filename named in the sheet (uploaded beforehand)
-        #   2. a picture pasted into the sheet (legacy fallback)
-        #   3. a random image from this category's pool (Admin → Category
-        #      Images), so a row with no photo of its own still looks right
-        # Only set when we actually found one, so re-uploading a sheet without
-        # images keeps whatever photo the professional already had.
-        named = str(cell(row, "image") or "").strip()
-        key = _match_image(named, img_index)
-        if not key:
-            key = await _upload_row_image(pasted.get(r), "select/profile")
-        if not key:
-            _pool = cat_pool.get(cat)
-            if _pool:
-                key = random.choice(_pool)
+        # Pasted photo (optional) — only overwrite when this row had one.
+        key = await _upload_row_image(images.get(r), "select/profile")
         if key:
             doc["photo_s3_key"] = key
-        if named and not _match_image(named, img_index):
-            # They named a file that wasn't uploaded — say so, rather than
-            # silently substituting a category image without explanation.
-            errors.append({"row": r, "name": name,
-                           "error": f"Photo '{named}' wasn't among the uploaded images"
-                                    + (" — used a category image instead." if key
-                                       else " — row saved without a photo.")})
 
         # Phone is the stable identity for bulk rows, so a corrected sheet can
         # be re-uploaded without creating duplicates.
@@ -1035,9 +940,7 @@ async def classifieds_bulk_upload(
     ws = wb[sheet] if sheet in wb.sheetnames else wb.worksheets[0]
     columns = columns_for(listing_type)
     cell = _bulk_cell_reader(ws, columns)
-    img_index = _build_image_index(body.images)   # 1st: uploaded-first photos
-    pasted = extract_row_images(raw)              # 2nd: pasted into the sheet
-    cat_pool = await _category_pool(listing_type) # 3rd: this product's pools
+    images = extract_row_images(raw)
 
     if replace:
         # Scoped to this product AND to bulk rows only — never deletes a
@@ -1115,22 +1018,9 @@ async def classifieds_bulk_upload(
                 "years_of_exp": int(_num(cell(row, "years_of_exp")) or 0),
             })
 
-        # Photo: named file → pasted picture → this category's pool.
-        named = str(cell(row, "image") or "").strip()
-        key = _match_image(named, img_index)
-        if not key:
-            key = await _upload_row_image(pasted.get(r), "classifieds")
-        if not key:
-            _pool = cat_pool.get(cat)
-            if _pool:
-                key = random.choice(_pool)
+        key = await _upload_row_image(images.get(r), "classifieds")
         if key:
             doc["photos"] = [key]
-        if named and not _match_image(named, img_index):
-            errors.append({"row": r, "name": title,
-                           "error": f"Photo '{named}' wasn't among the uploaded images"
-                                    + (" — used a category image instead." if key
-                                       else " — row saved without a photo.")})
 
         # Identity = product + phone + title, so re-uploading a corrected sheet
         # updates rather than duplicating.
@@ -1220,68 +1110,6 @@ async def set_category_images(
     )
     return {"ok": True, "category_id": category_id, "count": len(keys),
             "urls": [_presign(k) or "" for k in keys]}
-
-
-# ─── Category images for Select / Local Finds / Classifieds ───────────────────
-# Same idea as the shops pools above, but scoped per feature because their
-# category ids are strings and their category sets differ. A listing with no
-# photo of its own falls back to a random image from its category's pool.
-
-@router.get("/feature-category-images")
-async def list_feature_category_images(
-    scope: str = Query("select", description="select | local_find | classified"),
-    _admin=Depends(get_current_admin),
-):
-    """Every category in `scope`, each with its stored keys + presigned URLs."""
-    cats = _scope_categories(scope)
-    if not cats:
-        raise HTTPException(status_code=400,
-                            detail=f"scope must be one of {FEATURE_SCOPES}")
-    docs = {d["category_id"]: d async for d in _feature_category_images.find({"scope": scope})}
-    out = []
-    for cid, label in cats.items():
-        keys = (docs.get(cid) or {}).get("keys", [])
-        out.append({
-            "category_id": cid,
-            "name": label,
-            "keys": keys,
-            "urls": [_presign(k) or "" for k in keys],
-        })
-    return {"scope": scope, "categories": out}
-
-
-@router.put("/feature-category-images/{scope}/{category_id}")
-async def set_feature_category_images(
-    scope: str,
-    category_id: str,
-    body: CategoryImagesPut,
-    _admin=Depends(get_current_admin),
-):
-    """Replace one category's image pool for one feature."""
-    cats = _scope_categories(scope)
-    if not cats:
-        raise HTTPException(status_code=400,
-                            detail=f"scope must be one of {FEATURE_SCOPES}")
-    if category_id not in cats:
-        raise HTTPException(status_code=400,
-                            detail=f"Unknown category '{category_id}' for scope '{scope}'")
-
-    keys = [k for k in body.keys if isinstance(k, str) and k][:_MAX_CATEGORY_IMAGES]
-    # Same removal semantics as the shops pools: anything dropped from the pool
-    # is deleted from S3, so removing an image in the UI doesn't orphan a file.
-    existing = await _feature_category_images.find_one(
-        {"scope": scope, "category_id": category_id})
-    old_keys = set((existing or {}).get("keys") or [])
-    for removed_key in old_keys - set(keys):
-        await _s3_delete(removed_key)
-
-    await _feature_category_images.update_one(
-        {"scope": scope, "category_id": category_id},
-        {"$set": {"scope": scope, "category_id": category_id, "keys": keys}},
-        upsert=True,
-    )
-    return {"ok": True, "scope": scope, "category_id": category_id,
-            "count": len(keys), "urls": [_presign(k) or "" for k in keys]}
 
 
 # ─── Reviews ──────────────────────────────────────────────────

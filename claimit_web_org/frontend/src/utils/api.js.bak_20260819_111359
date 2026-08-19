@@ -197,26 +197,6 @@ const admin = {
     http.post('/admin/shops/bulk-upload', payload, {
       params: { replace },
     }).then(r => r.data),
-
-  // ── Bulk upload: Claimit Select (its own collection) ──────────────────
-  downloadSelectTemplate: () =>
-    http.get('/admin/select/bulk-template', { responseType: 'blob' }).then(r => r.data),
-  bulkUploadSelect: (payload, replace = false) =>
-    http.post('/admin/select/bulk-upload', payload, {
-      params: { replace },
-    }).then(r => r.data),
-
-  // ── Bulk upload: Local Finds / Classifieds ────────────────────────────
-  // listingType ("local_find" | "classified") picks the template and is
-  // stamped on every inserted row — it's what keeps the two products apart.
-  downloadClassifiedsTemplate: (listingType = 'local_find') =>
-    http.get('/admin/classifieds/bulk-template', {
-      params: { listing_type: listingType }, responseType: 'blob',
-    }).then(r => r.data),
-  bulkUploadClassifieds: (payload, listingType = 'local_find', replace = false) =>
-    http.post('/admin/classifieds/bulk-upload', payload, {
-      params: { listing_type: listingType, replace },
-    }).then(r => r.data),
   listReviews:  ()          => get('/admin/reviews'),
   deleteReview: (id)        => del(`/admin/reviews/${id}`),
   listTickets:  ()          => get('/admin/tickets'),
@@ -252,13 +232,6 @@ const admin = {
   // Category images (up to 15 per category; shops show a random one).
   listCategoryImages: ()               => get('/admin/category-images'),
   setCategoryImages:  (catId, keys)    => put(`/admin/category-images/${catId}`, { keys }),
-
-  // Category images for Claimit Select / Local Finds / Classifieds. Scoped per
-  // product — each keeps its own pools and none of them touch the shop pools.
-  listFeatureCategoryImages: (scope = 'select') =>
-    get('/admin/feature-category-images', { scope }),
-  setFeatureCategoryImages: (scope, catId, keys) =>
-    put(`/admin/feature-category-images/${scope}/${encodeURIComponent(catId)}`, { keys }),
 
   // Learn Claimit — question + how-to video lessons shown in the app.
   listLearnItems:  ()               => get('/admin/learn'),

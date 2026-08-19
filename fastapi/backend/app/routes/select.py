@@ -57,18 +57,18 @@ router = APIRouter(prefix="/select", tags=["select"])
 # Fixed catalogue shown on the Claimit Select home grid, in display order.
 # `id` is the stable key stored on each professional document.
 SELECT_CATEGORIES = [
-    {"id": "doctors",       "label": "Doctors"},
-    {"id": "lawyers",       "label": "Lawyers"},
-    {"id": "ca_tax",        "label": "CA & Tax"},
-    {"id": "architects",    "label": "Architects"},
-    {"id": "interior",      "label": "Interior Designers"},
-    {"id": "tutors",        "label": "Tutors"},
-    {"id": "beauty",        "label": "Beauty Experts"},
-    {"id": "fitness",       "label": "Fitness Trainers"},
-    {"id": "photographers", "label": "Photographers"},
-    {"id": "events",        "label": "Event Planners"},
-    {"id": "financial",     "label": "Financial Advisors"},
-    {"id": "home_services", "label": "Home Services"},
+    {"id": "doctors",     "label": "Doctors"},
+    {"id": "lawyers",     "label": "Lawyers"},
+    {"id": "ca_tax",      "label": "CA & Tax"},
+    {"id": "architects",  "label": "Architects"},
+    {"id": "interior",    "label": "Interiors"},
+    {"id": "financial",   "label": "Financial Advisors"},
+    {"id": "business",    "label": "Business Consultants"},
+    {"id": "real_estate", "label": "Real Estate"},
+    {"id": "marketing",   "label": "Marketing Experts"},
+    {"id": "it_ai",       "label": "IT & AI Experts"},
+    {"id": "career",      "label": "Career Consultants"},
+    {"id": "events",      "label": "Event Planners"},
 ]
 
 _CATEGORY_LABELS = {c["id"]: c["label"] for c in SELECT_CATEGORIES}

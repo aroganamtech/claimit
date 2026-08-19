@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
+import '../../auth/providers/auth_provider.dart';
 import '../models/select_category.dart';
 import '../widgets/select_common.dart';
 
@@ -25,9 +27,6 @@ class SelectHomeScreen extends StatefulWidget {
 
 class _SelectHomeScreenState extends State<SelectHomeScreen> {
   final _searchCtrl = TextEditingController();
-
-  // Shown in the location chip. Static for now — the picker is a later step.
-  static const String _location = 'Anna Nagar, Chennai';
 
   @override
   void dispose() {
@@ -168,33 +167,41 @@ class _SelectHomeScreenState extends State<SelectHomeScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
-            // Not a const Row: ConstrainedBox has no const constructor (it
-            // asserts on its constraints), so the children are marked const
-            // individually instead.
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.location_on, size: 15, color: Color(0xFFE53935)),
-                const SizedBox(width: 5),
-                // Constrained so a long area name ellipsises instead of
-                // overflowing the chip.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 200),
-                  child: const Text(
-                    _location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: kSelInk,
+            // Tappable — opens the app's shared location picker and reflects
+            // the user's saved area, same as the dashboard header. Not a const
+            // Row: ConstrainedBox has no const constructor (it asserts on its
+            // constraints), so the children are marked const individually.
+            child: GestureDetector(
+              onTap: () => context.push('/location'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on, size: 15, color: Color(0xFFE53935)),
+                  const SizedBox(width: 5),
+                  // Constrained so a long area name ellipsises instead of
+                  // overflowing the chip.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Text(
+                      context.select<AuthProvider, String>(
+                        (a) => a.user?.location?.isNotEmpty == true
+                            ? a.user!.location!
+                            : 'Select Area',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: kSelInk,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(Icons.keyboard_arrow_down_rounded,
-                    size: 18, color: kSelInk),
-              ],
+                  const SizedBox(width: 2),
+                  const Icon(Icons.keyboard_arrow_down_rounded,
+                      size: 18, color: kSelInk),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -279,22 +286,31 @@ class _CategoryTile extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: category.color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(13),
+            // Client-supplied illustrated icon (transparent PNG). Falls back
+            // to the Material icon if the asset is ever missing, so a tile is
+            // never blank.
+            Image.asset(
+              category.iconAsset,
+              width: 52,
+              height: 52,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: category.color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(category.icon, size: 26, color: category.color),
               ),
-              child: Icon(category.icon, size: 26, color: category.color),
             ),
             const SizedBox(height: 8),
-            // Flexible + 2 lines + ellipsis: the long names ("Interior
-            // Designers", "Financial Advisors") wrap neatly and can never
+            // Flexible + 2 lines + ellipsis: the long names ("Business
+            // Consultants", "Financial Advisors") wrap neatly and can never
             // overflow the tile.
             Flexible(
               child: Text(
-                '$index. ${category.label}',
+                '${category.label}',
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

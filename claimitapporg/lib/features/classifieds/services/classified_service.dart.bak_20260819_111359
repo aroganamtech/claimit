@@ -53,17 +53,10 @@ class ClassifiedService {
     return null;
   }
 
-  /// GET /classifieds/mine — the current user's own posts (for My Listings).
-  /// Pass [listingType] ("local_find" or "classified") to keep the two apart —
-  /// they share one collection, so omitting it returns both mixed.
-  Future<List<ClassifiedPost>> fetchMyPosts({String? listingType}) async {
+  /// GET /classifieds/mine — the current user's own posts (for My Listings)
+  Future<List<ClassifiedPost>> fetchMyPosts() async {
     try {
-      final params = <String, dynamic>{};
-      if (listingType != null && listingType.isNotEmpty) {
-        params['listing_type'] = listingType;
-      }
-      final resp = await _api.get('${AppConstants.classifieds}/mine',
-          queryParams: params.isEmpty ? null : params);
+      final resp = await _api.get('${AppConstants.classifieds}/mine');
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['classifieds'] as List? ?? [];
         return list
