@@ -87,21 +87,9 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
                           onPageChanged: (i) =>
                               setState(() => _photoIndex = i),
                           itemBuilder: (_, i) {
-                            final raw = p.photos[i];
-                            // Bulk-uploaded listings arrive as an S3 URL;
-                            // app-posted ones are base64.
-                            if (raw.startsWith('http')) {
-                              return Image.network(
-                                raw,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _AvatarHero(
-                                    initials: initials,
-                                    color: _avatarColor(p.userName)),
-                              );
-                            }
                             try {
                               return Image.memory(
-                                base64Decode(raw),
+                                base64Decode(p.photos[i]),
                                 fit: BoxFit.cover,
                               );
                             } catch (_) {

@@ -80,29 +80,38 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _blue, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Local Classifieds',
-            style: TextStyle(color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
+        titleSpacing: 0,
+        // Two labelled buttons leave the title roughly 130px on a small
+        // phone, which "Local Classifieds" at 18pt doesn't fit into.
+        // scaleDown shrinks it to fit instead of cutting it to "Local Clas…".
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text('Local Classifieds',
+              maxLines: 1,
+              style: TextStyle(
+                  color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
+        ),
         actions: [
-          // Create Ad — opens the category page (self-posting flow). Filled
-          // rather than a bare outline icon so it reads as the primary action.
-          IconButton(
-            tooltip: 'Create Ad',
-            icon: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Icon(Icons.post_add, color: Colors.black, size: 19),
-            ),
-            onPressed: () => context.push('/classified/add'),
+          // Two solid tiles instead of bare outline icons. Gold is the
+          // primary action (post an ad); blue is secondary (see your own
+          // ads). Kept icon-sized rather than labelled pills so the row can
+          // never overflow the app bar on a narrow phone.
+          _appBarButton(
+            tooltip: 'Post Ad',
+            icon: Icons.add_rounded,
+            bg: _gold,
+            fg: Colors.black,
+            onTap: () => context.push('/classified/add'),
           ),
-          IconButton(
-            tooltip: 'My Listings',
-            icon: const Icon(Icons.list_alt_rounded, color: _blue),
-            onPressed: () => context.push('/classified/mine'),
+          _appBarButton(
+            tooltip: 'My Ads',
+            icon: Icons.list_alt_rounded,
+            bg: const Color(0xFFE8F0FE),
+            fg: _blue,
+            onTap: () => context.push('/classified/mine'),
           ),
+          const SizedBox(width: 10),
         ],
       ),
       // ── Posting an ad is the one thing people come here to do, so the call
@@ -112,10 +121,13 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         onPressed: () => context.push('/classified/add'),
         backgroundColor: _gold,
         foregroundColor: Colors.black,
-        elevation: 6,
-        icon: const Icon(Icons.add_circle_rounded, size: 22),
+        elevation: 8,
+        shape: const StadiumBorder(),
+        extendedPadding: const EdgeInsets.symmetric(horizontal: 22),
+        icon: const Icon(Icons.add_circle_rounded, size: 24),
         label: const Text('Post Your Ad',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            style: TextStyle(
+                fontWeight: FontWeight.w800, fontSize: 15.5, letterSpacing: 0.2)),
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -156,6 +168,52 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
       ),
     );
   }
+
+  /// A solid rounded tile for the app bar, with a label underneath so it's
+  /// obvious what each one does rather than relying on the icon alone.
+  Widget _appBarButton({
+    required String tooltip,
+    required IconData icon,
+    required Color bg,
+    required Color fg,
+    required VoidCallback onTap,
+  }) =>
+      Tooltip(
+        message: tooltip,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 6),
+          child: Material(
+            color: bg,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: onTap,
+              child: Container(
+                width: 62,
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, color: fg, size: 18),
+                    const SizedBox(height: 1),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(tooltip,
+                          maxLines: 1,
+                          style: TextStyle(
+                              color: fg,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              height: 1.1)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 
   Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -300,81 +358,156 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
         ),
       );
 
+  // ── "Latest Ads" card ─────────────────────────────────────────────────────
+  // Photo, headline, asking price, area and category. The old card showed the
+  // seller's phone number where the price belongs, which told a browsing user
+  // nothing about what was for sale or what it costs.
   Widget _recentCard(ClassifiedPost b) {
+    final heading = b.title.isNotEmpty ? b.title : b.userName;
     final phone = b.whatsapp.isNotEmpty ? b.whatsapp : b.userPhone;
-    return GestureDetector(
-      onTap: () => context.push('/classified/detail', extra: b),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFEEF1F5)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
-        ),
-        child: IntrinsicHeight(
+    final hasPrice = b.price > 0;
+    final tag = b.subcategory.isNotEmpty
+        ? b.subcategory
+        : classifiedCategoryLabel(b.category);
+
+    // The gap between cards is Padding on the OUTSIDE of the Material. As a
+    // margin on the inner Container it would sit inside the Material, which
+    // would then paint its white rounded background across the gap too.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push('/classified/detail', extra: b),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE9EEF5)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
           child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
-              child: _thumb(b),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(width: 96, height: 96, child: _thumb(b)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(b.title,
+                    Text(heading,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w700, color: _ink, height: 1.25)),
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: _ink,
+                            height: 1.25)),
                     const SizedBox(height: 5),
-                    if (phone.isNotEmpty)
-                      Text(phone,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600, color: _blue)),
+                    // Price when there is one. When there isn't, fall back to
+                    // the contact number rather than an empty line — that's
+                    // what this card showed before and it's still useful.
+                    Text(
+                      hasPrice
+                          ? '₹ ${_money(b.price)}'
+                          : (phone.isNotEmpty ? phone : 'Ask for price'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: hasPrice ? 15.5 : 13,
+                        fontWeight: hasPrice ? FontWeight.w800 : FontWeight.w600,
+                        color: hasPrice
+                            ? _blue
+                            : (phone.isNotEmpty ? _blue : _muted),
+                      ),
+                    ),
+                    if (b.area.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on_rounded,
+                              size: 13, color: _muted),
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(b.area,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12, color: _muted)),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 8),
-                    _chip(classifiedCategoryLabel(b.category)),
+                    if (tag.isNotEmpty) _chip(tag),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
+      ),
       ),
     );
   }
 
+  /// "68000" → "68,000". Plain grouping, no currency symbol.
+  static String _money(double v) {
+    final s = v.abs().toStringAsFixed(0);
+    final out = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) out.write(',');
+      out.write(s[i]);
+    }
+    return out.toString();
+  }
+
   Widget _chip(String label) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-            color: const Color(0xFFEFF3F8), borderRadius: BorderRadius.circular(20)),
+            color: const Color(0xFFEFF4FB), borderRadius: BorderRadius.circular(20)),
         child: Text(label,
-            style: const TextStyle(fontSize: 11.5, color: _ink, fontWeight: FontWeight.w500)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontSize: 11, color: _blue, fontWeight: FontWeight.w600)),
       );
 
   Widget _thumb(ClassifiedPost b) {
     if (b.photos.isNotEmpty) {
+      final raw = b.photos.first;
+      // App posts store base64; bulk-imported rows may arrive as a URL.
+      if (raw.startsWith('http')) {
+        return Image.network(raw,
+            fit: BoxFit.cover, errorBuilder: (_, __, ___) => _thumbFallback());
+      }
       try {
-        return Image.memory(base64Decode(b.photos.first),
-            width: 104, height: 104, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _thumbFallback());
-      } catch (_) {}
+        return Image.memory(base64Decode(raw),
+            fit: BoxFit.cover, errorBuilder: (_, __, ___) => _thumbFallback());
+      } catch (_) {
+        // Not decodable — fall through to the placeholder.
+      }
     }
     return _thumbFallback();
   }
 
   Widget _thumbFallback() => Container(
-      width: 104, height: 104, color: const Color(0xFFEFF3F8),
-      child: const Icon(Icons.image_rounded, color: _blue, size: 32));
+      color: const Color(0xFFF1F5F9),
+      alignment: Alignment.center,
+      child: const Icon(Icons.image_rounded, color: Color(0xFFB6C2D3), size: 30));
 
   Widget _emptyRecent() => Container(
         padding: const EdgeInsets.all(24),

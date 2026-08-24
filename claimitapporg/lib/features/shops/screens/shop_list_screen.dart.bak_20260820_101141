@@ -200,16 +200,6 @@ class _ShopListScreenState extends State<ShopListScreen> {
   bool _hasMore = false;
   bool _isLoadingMore = false;
 
-  // ── The user's address, in words ───────────────────────────────────────────
-  // Sent alongside the coordinates so the server can also return shops that
-  // have NO stored lat/lng — a shop registered without "use my current
-  // location", or bulk-uploaded from a sheet with no coordinate columns.
-  // Those can't appear in a distance search, so the server matches them on
-  // pincode / area / city / district instead.
-  String _userPincode = '';
-  String _userCity = '';
-  String _userArea = '';
-
   @override
   void initState() {
     super.initState();
@@ -231,20 +221,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
   // which case _loadShops falls back to the old unfiltered behaviour so
   // the screen never ends up broken or empty because of a location error.
   Future<bool> _resolveLocation() async {
-    // Collect the address in words first — this is independent of whether
-    // coordinates resolve, and it's what finds shops that have no lat/lng.
-    // The area/pincode the dashboard reverse-geocoded from GPS is preferred
-    // (it's where the user actually is); the saved profile is the fallback.
-    final user = mounted ? context.read<AuthProvider>().user : null;
-    _userArea = LocationService.lastArea.trim().isNotEmpty
-        ? LocationService.lastArea.trim()
-        : (user?.location ?? '').trim();
-    _userPincode = LocationService.lastPincode.trim().isNotEmpty
-        ? LocationService.lastPincode.trim()
-        : (user?.pincode ?? '').trim();
-    _userCity = (user?.city ?? '').trim();
-
-    final manualLoc = user?.location;
+    final manualLoc = mounted ? context.read<AuthProvider>().user?.location : null;
     if (manualLoc != null && manualLoc.trim().isNotEmpty) {
       try {
         final results = await locationFromAddress(manualLoc.trim());
@@ -298,24 +275,11 @@ class _ShopListScreenState extends State<ShopListScreen> {
           radiusKm: _searchRadiusKm,
           skip: 0,
           limit: _pageSize,
-          pincode: _userPincode,
-          city: _userCity,
-          area: _userArea,
         );
         if (!mounted) return;
-        // Fall back to the full list when this screen would otherwise show
-        // nothing. Checked against the SCREEN'S OWN filter (_filteredShops),
-        // not just the raw page: a Redeem+ Zone page full of reward-only
-        // shops is empty as far as the user is concerned, and that used to
-        // leave them staring at "no shops" while redeem shops existed.
-        setState(() {
-          _shops = page.shops;
-          _hasMore = page.hasMore;
-          _loadedCount = page.shops.length;
-        });
-        await _fillUntilEnough();
-        if (!mounted) return;
-        if (_filteredShops.isEmpty && !_hasMore) {
+        if (page.shops.isEmpty && !page.hasMore) {
+          // Nothing found nearby (e.g. sparse area) — fall back to the full
+          // list once, rather than the user seeing an empty screen.
           final all = await ShopService.instance.fetchAllShops();
           if (mounted) {
             setState(() {
@@ -325,8 +289,13 @@ class _ShopListScreenState extends State<ShopListScreen> {
               _isLoading = false;
             });
           }
-        } else if (mounted) {
-          setState(() => _isLoading = false);
+        } else {
+          setState(() {
+            _shops = page.shops;
+            _hasMore = page.hasMore;
+            _loadedCount = page.shops.length;
+            _isLoading = false;
+          });
         }
       } else {
         // No location available at all — old behaviour, unfiltered full list.
@@ -345,37 +314,6 @@ class _ShopListScreenState extends State<ShopListScreen> {
     }
   }
 
-  /// Keeps pulling pages until this screen actually has something to show.
-  ///
-  /// Infinite scroll can't rescue a list that is too short to scroll. The
-  /// server pages over ALL nearby shops, but each screen then filters that
-  /// page down — the Redeem+ Zone keeps only redeem shops, a category screen
-  /// keeps only its own category. So if page 1 happens to be all Reward
-  /// shops, the user sees an empty screen with nothing to scroll, the scroll
-  /// listener never fires, and page 2 is never requested — even though the
-  /// matching shops are sitting right there on it.
-  ///
-  /// Shops matched by address rather than distance are appended after the
-  /// distance-sorted ones, so they land on the last page and are exactly the
-  /// kind of result this rescues.
-  ///
-  /// This runs during the initial load, so the "fall back to the full list"
-  /// decision below is made against a filled list rather than page 1 alone.
-  /// The build-time top-up in build() keeps going from there.
-  ///
-  /// Capped at 3 pages so the first paint isn't held up by a chain of
-  /// requests — it stops earlier as soon as the screen has enough, or when
-  /// the server runs out of pages.
-  Future<void> _fillUntilEnough() async {
-    var guard = 0;
-    while (mounted && _hasMore && _filteredShops.length < _pageSize && guard < 3) {
-      guard++;
-      final before = _loadedCount;
-      await _loadMoreShops();
-      if (!mounted || _loadedCount == before) break; // no progress — give up
-    }
-  }
-
   Future<void> _loadMoreShops() async {
     if (_isLoadingMore || !_hasMore || !_locationAvailable) return;
     if (_userLat == null || _userLng == null) return;
@@ -387,9 +325,6 @@ class _ShopListScreenState extends State<ShopListScreen> {
         radiusKm: _searchRadiusKm,
         skip: _loadedCount,
         limit: _pageSize,
-        pincode: _userPincode,
-        city: _userCity,
-        area: _userArea,
       );
       if (!mounted) return;
       setState(() {

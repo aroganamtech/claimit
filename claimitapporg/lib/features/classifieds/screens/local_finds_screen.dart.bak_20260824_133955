@@ -315,19 +315,8 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
 
   Widget _thumb(ClassifiedPost b) {
     if (b.photos.isNotEmpty) {
-      final raw = b.photos.first;
-      // Two kinds of photo live in this field: a listing posted from the app
-      // stores base64, while an admin bulk upload stores an S3 image the API
-      // hands back as a URL. Only base64 used to be handled, so every
-      // bulk-uploaded business showed the grey placeholder instead of its
-      // picture.
-      if (raw.startsWith('http')) {
-        return Image.network(raw,
-            width: 108, height: 108, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _thumbFallback());
-      }
       try {
-        return Image.memory(base64Decode(raw),
+        return Image.memory(base64Decode(b.photos.first),
             width: 108, height: 108, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => _thumbFallback());
       } catch (_) {}
@@ -520,18 +509,11 @@ class LfCategoriesGrid extends StatelessWidget {
                             errorBuilder: (_, __, ___) => _fallback(z, iconSize))
                         : _fallback(z, iconSize),
                     const SizedBox(height: 6),
-                    // Longer names ("Professional Services", "Fitness &
-                    // Wellness") shrink to fit rather than truncating to
-                    // "Professional S…". scaleDown never grows the text and
-                    // never overflows the tile.
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(z.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600, color: kLfInk)),
-                    ),
+                    Text(z.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600, color: kLfInk)),
                   ],
                 ),
               ))

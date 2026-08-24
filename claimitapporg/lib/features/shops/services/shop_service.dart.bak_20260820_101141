@@ -173,13 +173,6 @@ class ShopService {
   /// New, additive method — does not change fetchNearbyShops above, which
   /// existing callers (dashboard, shop detail "stores nearby") keep using
   /// unchanged.
-  /// [pincode], [city], [area], [district] — the user's address, used by the
-  /// server to also return shops that have NO stored coordinates (registered
-  /// without "use my current location", or bulk-uploaded with no lat/lng
-  /// columns). Those can't take part in the distance query, so they are
-  /// matched on address and appended after the distance-sorted results.
-  /// All optional: when omitted the server falls back to the signed-in
-  /// user's saved profile address.
   Future<ShopPageResult> fetchNearbyShopsPaged({
     required double lat,
     required double lng,
@@ -188,12 +181,7 @@ class ShopService {
     int limit = 10,
     bool premiumFirst = true,
     String? excludeId,
-    String? pincode,
-    String? city,
-    String? area,
-    String? district,
   }) async {
-    bool has(String? v) => v != null && v.trim().isNotEmpty;
     try {
       final resp = await _api.get(
         AppConstants.shopsNearby,
@@ -205,10 +193,6 @@ class ShopService {
           'limit': limit,
           'premium_first': premiumFirst,
           if (excludeId != null) 'exclude_id': excludeId,
-          if (has(pincode)) 'pincode': pincode!.trim(),
-          if (has(city)) 'city': city!.trim(),
-          if (has(area)) 'area': area!.trim(),
-          if (has(district)) 'district': district!.trim(),
         },
       );
       if (resp.statusCode == 200 && resp.data is Map) {

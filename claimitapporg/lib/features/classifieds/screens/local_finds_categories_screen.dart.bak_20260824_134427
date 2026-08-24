@@ -34,9 +34,6 @@ class _LocalFindsCategoriesScreenState
     if (_query.trim().isEmpty) return localFindZones;
     final q = _query.toLowerCase();
     return localFindZones.where((z) {
-      // Match the shown name AND the stored one, so searching either
-      // "Stay" or "Stay & Travel" finds the zone.
-      if (z.title.toLowerCase().contains(q)) return true;
       if (z.label.toLowerCase().contains(q)) return true;
       return z.subcategories.any((s) => s.name.toLowerCase().contains(q));
     }).toList();
