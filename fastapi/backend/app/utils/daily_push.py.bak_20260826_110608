@@ -19,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from .fcm import send_push_to_tokens
-from .whatsapp import broadcast_notification
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -42,31 +41,20 @@ _WINDOW_END_H   = 20   # 20:00 IST
 
 
 async def _broadcast(title: str, body: str) -> None:
-    """Send to every registered device token, chunked at FCM's 500 limit,
-    then the same message over WhatsApp."""
+    """Send to every registered device token, chunked at FCM's 500 limit."""
     db = get_db()
     docs = await db.fcm_tokens.find({}, {"token": 1}).to_list(20000)
     tokens = list({d["token"] for d in docs if d.get("token")})
     if not tokens:
         print("📣 Daily push: no device tokens registered yet — skipping")
-    else:
-        print(f"📣 Daily push: sending to {len(tokens)} device(s)")
-        for i in range(0, len(tokens), 500):
-            chunk = tokens[i:i + 500]
-            invalid = await send_push_to_tokens(
-                chunk, title, body, {"type": "daily_engagement"})
-            if invalid:
-                await db.fcm_tokens.delete_many({"token": {"$in": invalid}})
-
-    # Same message over WhatsApp, to every user who has a phone number.
-    #
-    # Dormant until TWILIO_NOTIFY_TEMPLATE_SID is set. Note this one costs
-    # money per message and goes to the whole user base, so watch the spend
-    # and the WhatsApp quality rating in the Twilio console after enabling it.
-    try:
-        await broadcast_notification(db, title, body)
-    except Exception as e:
-        print(f"⚠️  WhatsApp daily broadcast skipped: {e}")
+        return
+    print(f"📣 Daily push: sending to {len(tokens)} device(s)")
+    for i in range(0, len(tokens), 500):
+        chunk = tokens[i:i + 500]
+        invalid = await send_push_to_tokens(
+            chunk, title, body, {"type": "daily_engagement"})
+        if invalid:
+            await db.fcm_tokens.delete_many({"token": {"$in": invalid}})
 
 
 async def _already_sent(db, today: str) -> bool:

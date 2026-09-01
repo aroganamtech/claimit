@@ -1631,8 +1631,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   int _selectedIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
     if (loc.startsWith('/home')) return 0;
-    // Slot 1 is the Learn Claimit tab.
-    if (loc.startsWith('/learn')) return 1;
     if (loc.startsWith('/redeem-zone')) return 1;
     if (loc.startsWith('/claims') && !loc.contains('new')) return 1;
     if (loc.startsWith('/notifications')) return 2;
@@ -1640,12 +1638,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     return 0;
   }
 
-  /// Centre button — opens the full Featured Zones grid.
-  ///
-  /// This was briefly narrowed to a two-button Reward/Redeem sheet, then put
-  /// back at the client's request. The Explore Claimit strip on the home page
-  /// and this grid now both exist; they share the same zone list and routing
-  /// via features/home/data/explore_zones.dart.
   void _showFeaturedZones(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1717,22 +1709,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     fontSize: dynamicFontSize,
                     assetPadding: const EdgeInsets.all(4.0),
                   ),
-                  // Learn Claimit, in the slot that used to hold Reels.
-                  // Reels is still reachable as "Promo Reelz" in the Explore
-                  // Claimit strip and in the centre button's grid.
-                  //
-                  // assetIcon falls back to the Material icon below it if the
-                  // PNG is ever missing, so a bad asset path can't leave an
-                  // empty gap in the navigation bar.
                   _NavItem(
-                    icon: Icons.school_outlined,
-                    activeIcon: Icons.school_rounded,
-                    label: 'Learn',
+                    icon: Icons.play_circle_outline_rounded,
+                    activeIcon: Icons.play_circle_rounded,
+                    label: 'Reels',
                     isSelected: sel == 1,
-                    onTap: () => context.go('/learn'),
-                    assetIcon: 'assets/images/zone_learn.png',
-                    assetActiveIcon: 'assets/images/zone_learn.png',
-                    iconSize: dynamicHomeReelsSize,
+                    onTap: () => context.go('/reelz'),
+                    iconSize: dynamicHomeReelsSize, 
                     fontSize: dynamicFontSize,
                     assetPadding: EdgeInsets.zero,
                   ),
@@ -1782,9 +1765,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Featured Zones bottom sheet — what the centre button opens.
+// Featured Zones bottom sheet
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ZoneItem {

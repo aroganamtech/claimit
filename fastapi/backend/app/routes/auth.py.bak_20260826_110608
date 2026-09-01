@@ -17,7 +17,6 @@ from ..utils.helpers import serialize_doc
 from ..utils.otp import generate_otp, send_otp_sms, store_otp, verify_otp
 from ..utils.notify import notify_user
 from ..utils.welcome_email import send_welcome_email
-from ..utils.whatsapp import send_welcome as send_whatsapp_welcome
 import asyncio
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -194,18 +193,12 @@ async def verify_otp_endpoint(request: VerifyOtpRequest):
             )
         # Register mode — create account (with the real typed name)
         user = await _auto_create_user(db, identifier, request.name or "")
-        # NEW USER: send the promo/welcome message in the background
-        # (fire-and-forget — registration never waits for it).
-        #
-        # Whichever way they signed up decides the channel: an email address
-        # gets the welcome email, a mobile number gets the WhatsApp welcome.
-        # Both are no-ops when their credentials aren't configured, so a
-        # delivery problem can never fail a registration.
-        _welcome_name = user.get("full_name", "")
+        # NEW USER: send the promo/welcome email in the background
+        # (fire-and-forget — registration never waits for it; no-op for
+        # phone-only signups or when SMTP isn't configured)
         if _is_email(identifier):
-            asyncio.create_task(send_welcome_email(identifier, _welcome_name))
-        else:
-            asyncio.create_task(send_whatsapp_welcome(identifier, _welcome_name))
+            asyncio.create_task(
+                send_welcome_email(identifier, user.get("full_name", "")))
     else:
         if request.mode == "register":
             # Registration attempted with an already-registered identifier
