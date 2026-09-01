@@ -134,7 +134,7 @@ class _LocalFindZoneScreenState extends State<LocalFindZoneScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kLfBlue, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: Text(widget.zone.label,
+        title: Text(widget.zone.title,
             style: const TextStyle(color: kLfBlue, fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
           // GestureDetector(
@@ -262,7 +262,7 @@ class _LocalFindZoneScreenState extends State<LocalFindZoneScreen> {
                 ? const Center(child: CircularProgressIndicator(color: kLfBlue))
                 : visible.isEmpty
                     ? Center(
-                        child: Text('No ${widget.zone.label.toLowerCase()} businesses yet.',
+                        child: Text('No ${widget.zone.title.toLowerCase()} businesses yet.',
                             style: const TextStyle(color: kLfMuted)))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -366,8 +366,17 @@ class _LocalFindZoneScreenState extends State<LocalFindZoneScreen> {
 
   Widget _thumb(ClassifiedPost b) {
     if (b.photos.isNotEmpty) {
+      final raw = b.photos.first;
+      // App-posted listings store base64; admin bulk uploads come back from
+      // the API as an S3 URL. Handling only base64 is what left every
+      // bulk-uploaded business showing the placeholder.
+      if (raw.startsWith('http')) {
+        return Image.network(raw,
+            width: 90, height: 90, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _fb());
+      }
       try {
-        return Image.memory(base64Decode(b.photos.first),
+        return Image.memory(base64Decode(raw),
             width: 90, height: 90, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => _fb());
       } catch (_) {}

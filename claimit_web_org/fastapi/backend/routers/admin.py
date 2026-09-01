@@ -933,7 +933,7 @@ async def select_bulk_upload(
         named = str(cell(row, "image") or "").strip()
         key = _match_image(named, img_index)
         if not key:
-            key = await _upload_row_image(pasted.get(r), "select/profile")
+            key = await _upload_row_image(pasted.get(r), "select/images")
         if not key:
             _pool = cat_pool.get(cat)
             if _pool:
@@ -1119,7 +1119,9 @@ async def classifieds_bulk_upload(
         named = str(cell(row, "image") or "").strip()
         key = _match_image(named, img_index)
         if not key:
-            key = await _upload_row_image(pasted.get(r), "classifieds")
+            # Folder named after the product, so Local Finds and Classifieds
+            # photos never share an S3 prefix.
+            key = await _upload_row_image(pasted.get(r), f"{listing_type}/images")
         if not key:
             _pool = cat_pool.get(cat)
             if _pool:

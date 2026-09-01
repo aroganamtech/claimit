@@ -79,6 +79,18 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
   final _nameCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();          // door / street line
   String? _categoryId;
+  /// Chosen sub category name, e.g. "Interior Designers". Saved on the
+  /// listing so it shows under that sub category's filter.
+  String? _subcategory;
+
+  /// The zone matching [_categoryId], or null when nothing is chosen yet.
+  LocalFindZone? get _selectedZone {
+    if (_categoryId == null) return null;
+    for (final z in localFindZones) {
+      if (z.id == _categoryId) return z;
+    }
+    return null;
+  }
 
   // Structured address (pincode-driven, like the website form).
   static const String _country = 'India';
@@ -107,6 +119,17 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
   void initState() {
     super.initState();
     _categoryId = widget.initialZone?.id;
+    // Honour a subcategory passed in from the browse screen, but only if it
+    // actually belongs to the chosen category — otherwise leave it for the
+    // user to pick.
+    final initial = widget.initialSubcategoryName;
+    if (initial != null && initial.trim().isNotEmpty) {
+      final zone = _selectedZone;
+      if (zone != null &&
+          zone.subcategories.any((s) => s.name == initial)) {
+        _subcategory = initial;
+      }
+    }
     _loadLivePricing();
   }
 
@@ -254,8 +277,10 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
 
     final post = ClassifiedPost(
       id: '', userId: '', userName: '', userPhone: '',
+      // The STORED category value, not the display name — a listing saved as
+      // "Stay & Travel" would never match the "Stay" filter.
       category: zone.label,
-      subcategory: widget.initialSubcategoryName ?? '',
+      subcategory: _subcategory ?? widget.initialSubcategoryName ?? '',
       title: _nameCtrl.text.trim(),
       description: '',
       price: _plan.price.toDouble(),
@@ -488,12 +513,60 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
               value: _categoryId,
               hint: const Text('Select a category'),
               items: localFindZones
-                  .map((z) => DropdownMenuItem(value: z.id, child: Text(z.label)))
+                  .map((z) => DropdownMenuItem(
+                        value: z.id,
+                        // Shown name, which may differ from the stored one.
+                        child: Text(z.title, overflow: TextOverflow.ellipsis),
+                      ))
                   .toList(),
-              onChanged: (v) => setState(() => _categoryId = v),
+              onChanged: (v) => setState(() {
+                _categoryId = v;
+                // The old subcategory belongs to the previous category, so
+                // clear it — otherwise a business could be saved as, say,
+                // "Auto / Restaurants".
+                _subcategory = null;
+              }),
             ),
           ),
         ),
+        // Subcategory appears once a category is chosen, and lists only that
+        // category's options. This is the "main category then sub category"
+        // step the client asked for — previously a subcategory could only
+        // arrive pre-filled from the browse screen, so anyone registering
+        // straight from the form saved no subcategory at all and their
+        // business never showed under a subcategory filter.
+        if (_selectedZone != null && _selectedZone!.subcategories.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _label('Sub Category'),
+          Container(
+            decoration: _boxDeco(),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _subcategory,
+                hint: const Text('Select a sub category'),
+                items: _selectedZone!.subcategories
+                    .map((s) => DropdownMenuItem(
+                          value: s.name,
+                          child: Row(
+                            children: [
+                              Icon(s.icon, size: 18, color: _blue),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(s.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+                onChanged: (v) => setState(() => _subcategory = v),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 18),
         Container(
           padding: const EdgeInsets.all(16),

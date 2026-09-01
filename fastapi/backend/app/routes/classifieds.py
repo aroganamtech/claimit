@@ -13,6 +13,8 @@ PATCH  /classifieds/{id}/toggle  → toggle availability (owner only)
 DELETE /classifieds/{id}         → delete post (owner only)
 """
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
@@ -21,7 +23,7 @@ from datetime import datetime, timezone
 
 from ..database import get_db
 from ..utils.auth import get_current_user
-from ..utils.s3 import delete_object as _s3_delete
+from ..utils.s3 import delete_object as _s3_delete, public_url
 
 router = APIRouter(prefix="/classifieds", tags=["classifieds"])
 
@@ -33,8 +35,45 @@ def _oid(id_str: str) -> ObjectId:
         raise HTTPException(status_code=400, detail="Invalid id")
 
 
+# ── Photos ────────────────────────────────────────────────────────────────────
+# The `photos` array holds TWO different things depending on where the listing
+# came from:
+#
+#   • posted from the app   → a base64-encoded JPEG, inline in the document
+#   • admin bulk upload     → an S3 object key, e.g. "local_find/abc123.jpg"
+#
+# The app only ever tried to base64-decode them, so every bulk-uploaded Local
+# Finds listing failed to decode and fell back to the grey placeholder icon —
+# which is exactly the "images not showing after bulk upload" report.
+#
+# Rather than force the client to guess, S3 keys are turned into real URLs
+# here, at the edge of the API. The client then has a simple rule: starts with
+# "http" → load from network, otherwise → base64.
+#
+# An S3 key is short and ends in an image extension. A base64 payload is
+# thousands of characters and never ends in ".jpg", so the two can't be
+# confused — length is checked as well, belt and braces.
+_S3_KEY_RE = re.compile(r"^[A-Za-z0-9._\-/]+\.(jpg|jpeg|png|webp|gif)$", re.I)
+
+
+def _photo_to_url(photo: str) -> str:
+    """S3 key → public URL. Base64 and existing URLs are returned untouched."""
+    s = str(photo or "").strip()
+    if not s:
+        return s
+    if s.startswith("http://") or s.startswith("https://"):
+        return s                      # already a URL
+    if len(s) <= 300 and _S3_KEY_RE.match(s):
+        try:
+            return public_url(s)
+        except Exception:
+            return s                  # never break a listing over one photo
+    return s                          # base64 — leave as-is
+
+
 def _serialize(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))
+    doc["photos"] = [_photo_to_url(p) for p in (doc.get("photos") or [])]
     return doc
 
 

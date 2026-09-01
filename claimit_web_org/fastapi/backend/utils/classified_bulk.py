@@ -35,9 +35,18 @@ from openpyxl.worksheet.datavalidation import DataValidation
 #   localClassifiedCategories → CLASSIFIED_CATEGORIES
 # A category the app doesn't know means the listing never appears under any
 # zone/tab in the app.
+# These are the values STORED on a listing, not what the app displays. The app
+# shows friendlier names for four of them (Services → "Home Services",
+# Fitness → "Fitness & Wellness", Stay → "Stay & Travel", Entertain →
+# "Entertainment") via LocalFindZone.displayLabel, deliberately leaving the
+# stored value alone so existing listings keep matching. Do not "correct" the
+# names here to match the app's labels — that would orphan every listing.
 LOCAL_FIND_CATEGORIES = [
     "Shop", "Eat", "Beauty", "Health", "Fitness", "Education",
     "Services", "Auto", "Stay", "Entertain", "Finance", "Living",
+    # 13th, added at the client's request. New, so its stored value is the
+    # full name.
+    "Professional Services",
 ]
 
 CLASSIFIED_CATEGORIES = [

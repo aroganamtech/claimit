@@ -181,6 +181,62 @@ def _compress_b64_image(b64_raw: str, max_kb: int = 150) -> str:
         return b64_raw
 
 
+async def _geocode_address(
+    address: str = "",
+    pincode: str = "",
+    city: str = "",
+    district: str = "",
+    state: str = "",
+):
+    """Best-effort address → (lat, lng). Returns (None, None) on any failure.
+
+    Used when a shop is registered without coordinates — the website only
+    sends lat/lng if the owner clicks "use my current location", so without
+    this most shops were stored with geo = None and became invisible to the
+    app's $geoNear "nearby shops" query.
+
+    Tries the full address first, then falls back to progressively coarser
+    queries (pincode, then city/district/state), because a partial fix at
+    town level is far better than no coordinates at all.
+
+    NEVER raises and never blocks for long: registration must succeed even
+    when the geocoder is down or rate-limiting us.
+    """
+    import httpx
+
+    candidates = []
+    if str(address or "").strip():
+        candidates.append(str(address).strip())
+    _pin = str(pincode or "").strip()
+    if _pin:
+        candidates.append(f"{_pin}, India")
+    coarse = ", ".join(
+        p for p in (str(city or "").strip(), str(district or "").strip(),
+                    str(state or "").strip(), "India") if p
+    )
+    if coarse and coarse != "India":
+        candidates.append(coarse)
+
+    for q in candidates:
+        try:
+            async with httpx.AsyncClient(timeout=6) as client:
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": q, "format": "json", "limit": 1,
+                            "countrycodes": "in"},
+                    # Nominatim's usage policy requires an identifying UA.
+                    headers={"User-Agent": "ClaimitApp/1.0 (shop geocoding)"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if isinstance(data, list) and data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+        except Exception as e:
+            print(f"[geocode] '{q}' failed: {e}")
+            continue
+    return None, None
+
+
 async def _sync_shop_to_app(shop_id) -> None:
     """
     Sync ONE web shop → app fields (scoped by shop _id so it works when a
@@ -264,6 +320,20 @@ async def _sync_shop_to_app(shop_id) -> None:
         "image_data":      "",
         "image_data_list": [],
     }
+
+    # Rebuild the GeoJSON point from whatever lat/lng the shop now has.
+    # Without this, a shop that gains coordinates later — an admin edit, a
+    # claim, a backfill — keeps its original geo (usually null) and stays
+    # invisible to the app's $geoNear "nearby shops" query even though its
+    # lat/lng look correct in the database.
+    _lat, _lng = shop.get("lat"), shop.get("lng")
+    try:
+        app_fields["geo"] = (
+            {"type": "Point", "coordinates": [float(_lng), float(_lat)]}
+            if _lat is not None and _lng is not None else None
+        )
+    except (TypeError, ValueError):
+        app_fields["geo"] = None   # non-numeric lat/lng — treat as unlocated
 
     # Keep cover_photo_b64 and gallery_photos — removing them breaks
     # subsequent $push calls (each new gallery upload would recreate the
@@ -393,6 +463,20 @@ async def register_shop(
 
     user_id = str(current_user["_id"])
     user_email = current_user.get("email", "")
+
+    # The website only sends lat/lng when the owner clicks "use my current
+    # location", so most registrations arrive without coordinates. Derive them
+    # from the address instead — otherwise the shop is stored with geo = None
+    # and the app's $geoNear "nearby shops" query can never see it.
+    #
+    # Best-effort by design: if the geocoder is down or can't place the
+    # address, registration still succeeds and the shop is found by the app's
+    # pincode/city address matching instead.
+    if lat is None or lng is None:
+        lat, lng = await _geocode_address(
+            address=shop_address, pincode=pincode,
+            city=city, district=district, state=state,
+        )
 
     # GeoJSON point mirror of lat/lng — powers the app's real $geoNear
     # "nearby shops" query (2dsphere index). Coordinate order is [lng, lat].

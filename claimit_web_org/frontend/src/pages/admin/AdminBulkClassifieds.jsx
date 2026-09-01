@@ -93,8 +93,11 @@ export default function AdminBulkClassifieds() {
         const f = files[i]
         setImgBusy(`Uploading photo ${i + 1} of ${files.length}…`)
         const ct = f.type || 'image/jpeg'
+        // Photos go into a folder named after the product being uploaded —
+        // "local_find/images" or "classified/images" — so the two products'
+        // images stay separate in S3 instead of sharing one prefix.
         const presign = await api.admin.presignUpload({
-          filename: f.name, content_type: ct, folder: 'bulk-uploads/images',
+          filename: f.name, content_type: ct, folder: `${type}/images`,
         })
         const put = await fetch(presign.upload_url, {
           method: 'PUT', headers: { 'Content-Type': ct }, body: f,

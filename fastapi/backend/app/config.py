@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # production WhatsApp (business-initiated messages must use an approved
     # template). Leave blank only for the Twilio sandbox / testing.
     twilio_otp_template_sid: str = ""
+    # Approved templates for the OTHER WhatsApp messages (see utils/whatsapp.py).
+    # WhatsApp forbids free-form business-initiated text, so each message type
+    # needs its own approved template. Leave blank to keep that message type
+    # off WhatsApp — the in-app notification and FCM push are unaffected.
+    twilio_welcome_template_sid: str = ""   # first login   — {{1}} = name
+    twilio_notify_template_sid: str = ""    # notifications — {{1}} = title, {{2}} = message
     # Default country code prepended to 10-digit numbers (E.164 prefix, e.g. +91 for India)
     twilio_default_country_code: str = "+91"
 

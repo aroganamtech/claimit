@@ -1129,6 +1129,7 @@ import '../../profile/providers/profile_provider.dart';
 import '../../reels/models/reel_model.dart';
 import '../../reels/services/reel_service.dart';
 import '../../../core/services/video_cache_service.dart';
+import '../../home/data/explore_zones.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock data  (replace with live API calls once backend is wired up)
@@ -1983,19 +1984,34 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
+            // ── Explore Claimit ──────────────────────────────────────────
+            // The ten product zones, five at a time. These used to be hidden
+            // behind the centre button, which the client found hard to
+            // discover, so they now sit on the home page.
+            //
+            // No negative offset here: an earlier version pulled this up by
+            // 12px to tuck under the banner, which made the "Explore Claimit"
+            // heading sit on top of the banner image. It starts below the
+            // banner instead.
+            const _ExploreClaimitStrip(),
+
             // ── Category row ─────────────────────────────────────────────
-            Transform.translate(
-              offset: const Offset(0, -12),
-              child: _CategoryRow(
-                selected: _selectedCategory,
-                onSelect: (i) => setState(() => _selectedCategory = i),
-              ),
+            // No Transform here any more. It used to be pulled up 12px to
+            // tuck under the banner, but the Explore Claimit strip now sits
+            // between the two — so that offset dragged the category icons on
+            // top of the Explore labels. Transform shifts painting without
+            // changing layout, which is exactly how it produced an overlap
+            // that no amount of padding could fix.
+            _CategoryRow(
+              selected: _selectedCategory,
+              onSelect: (i) => setState(() => _selectedCategory = i),
             ),
 
-            // ── Nearby / Brand toggle + Deal cards (shifted up) ──────────
-            Transform.translate(
-              offset: const Offset(0, -28),
-              child: Column(
+            // ── Nearby / Brand toggle + Deal cards ───────────────────────
+            // The -28 pull-up is gone for the same reason. The space it was
+            // compensating for has been removed properly instead, by
+            // trimming the padding above.
+            Column(
                 children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2023,11 +2039,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                 ],
-              ),
             ),
 
             // ── GPS Nearby Shops (within 4 km) ────────────────────────────
-            if (_isNearby) ...[
+            // Hidden at the client's request — see _kShowNearbyShopsStrip.
+            if (_kShowNearbyShopsStrip && _isNearby) ...[
               const SizedBox(height: 8),
               if (_loadingNearbyShops)
                 const Padding(
@@ -2442,9 +2458,270 @@ class _BannerShimmer extends StatelessWidget {
   }
 }
 
+/// Whether to show the "Near <area> / Shops Near You" strip at the bottom of
+/// the home page.
+///
+/// The client asked for it to go. The code is left in place rather than
+/// deleted, so flipping this back to `true` restores it exactly as it was —
+/// the shop data is still fetched either way, it simply isn't rendered.
+const bool _kShowNearbyShopsStrip = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Explore Claimit — the ten product zones, five per page.
+//
+// Replaces the old popup behind the centre button, which the client said users
+// found hard to discover. Two pages of five, swipeable, with an arrow on the
+// side that has more to show.
+//
+// The zone list and the tap handling live in features/home/data/explore_zones
+// so this strip and the centre-button popup can never disagree about where a
+// tile goes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ExploreClaimitStrip extends StatefulWidget {
+  const _ExploreClaimitStrip();
+
+  @override
+  State<_ExploreClaimitStrip> createState() => _ExploreClaimitStripState();
+}
+
+class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
+  final PageController _ctrl = PageController();
+  int _page = 0;
+
+  // All ten zones as one list, shown four at a time. Four rather than five
+  // was the client's call — it leaves a real gap between icons and lets each
+  // one be much bigger. Ten zones over four gives three pages, the last
+  // holding the remaining two.
+  static const List<ExploreZone> _allZones = [
+    ...kExploreZonesPage1,
+    ...kExploreZonesPage2,
+  ];
+  static const int _perPage = 4;
+
+  int get _pageCount => (_allZones.length + _perPage - 1) ~/ _perPage;
+
+  List<ExploreZone> _itemsFor(int page) =>
+      _allZones.skip(page * _perPage).take(_perPage).toList();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _go(int page) {
+    if (page < 0 || page >= _pageCount) return;
+    _ctrl.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+
+    // ── Sizing ───────────────────────────────────────────────────────────
+    // Five tiles have to fit between two arrow gutters, on everything from a
+    // 320px phone to a tablet. The arrows are deliberately narrow (22px) so
+    // nearly all the width goes to the icons — the client wanted them bigger
+    // with less empty space around them.
+    //
+    // Everything is derived from screen width and clamped at both ends, so
+    // the icons grow on a big screen without ever getting wide enough to
+    // collide on a small one.
+    const gutter = 18.0;                     // arrow column, each side
+    const pagePad = 8.0;                     // padding inside the pager
+    final tileW =
+        ((w - pagePad * 2 - gutter * 2) / _perPage).clamp(62.0, 118.0);
+    // 0.90 rather than filling the tile — the remaining 10% is the gap
+    // between icons the client asked for. Nudged up from 0.86 along with the
+    // caps, since they wanted them a little larger again.
+    final iconSize = (tileW * 0.90).clamp(56.0, 100.0);
+
+    // Icon + small gap + a two-line label box. The row is given 6px more than
+    // the column actually needs, which is the guard against an overflow on an
+    // unusual screen or a large system font.
+    const labelH = 24.0;
+    final rowH = iconSize + 4 + labelH + 6;
+
+    return Padding(
+      // Sits closer to the banner than before (client asked for it a little
+      // higher). Still a real gap, not a negative offset — the heading must
+      // never be painted over the banner image, which is what an earlier
+      // Transform-based version did.
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── "— Explore Claimit —" heading ────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(width: 16, height: 2, color: const Color(0xFFF4B400)),
+              const SizedBox(width: 8),
+              const Text(
+                'Explore Claimit',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(width: 16, height: 2, color: const Color(0xFFF4B400)),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // ── The five tiles, with an arrow either side ────────────────
+          SizedBox(
+            height: rowH,
+            child: Row(
+              children: [
+                _arrow(
+                  icon: Icons.chevron_left_rounded,
+                  visible: _page > 0,
+                  onTap: () => _go(_page - 1),
+                ),
+                Expanded(
+                  child: PageView.builder(
+                    controller: _ctrl,
+                    itemCount: _pageCount,
+                    onPageChanged: (i) => setState(() => _page = i),
+                    itemBuilder: (_, p) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: pagePad),
+                      child: Row(
+                        // start, not spaceBetween: the last page holds only
+                        // two zones, and spaceBetween would fling them to
+                        // opposite edges. Fixed-width tiles from the left
+                        // keep every page aligned the same way.
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: _itemsFor(p)
+                            .map((z) => _tile(z, tileW, iconSize))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ),
+                _arrow(
+                  icon: Icons.chevron_right_rounded,
+                  visible: _page < _pageCount - 1,
+                  onTap: () => _go(_page + 1),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // ── Page dots ────────────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_pageCount, (i) {
+              final on = i == _page;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: on ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: on ? const Color(0xFF2563EB) : const Color(0xFFD1D5DB),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Side arrow. Kept in the layout even when hidden so the tiles don't shift
+  /// sideways as you page between them.
+  Widget _arrow({
+    required IconData icon,
+    required bool visible,
+    required VoidCallback onTap,
+  }) =>
+      SizedBox(
+        width: 22,
+        child: visible
+            ? IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: Icon(icon, size: 22, color: const Color(0xFF64748B)),
+                onPressed: onTap,
+              )
+            : const SizedBox.shrink(),
+      );
+
+  Widget _tile(ExploreZone z, double tileW, double iconSize) => SizedBox(
+        width: tileW,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => openExploreZone(context, z),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                z.icon,
+                width: iconSize,
+                height: iconSize,
+                fit: BoxFit.contain,
+                // A missing asset must not crash the home page.
+                errorBuilder: (_, __, ___) => Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE8F0FE),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.apps_rounded,
+                      color: Color(0xFF2563EB), size: 22),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // scaleDown keeps a long label ("Claimit Privilege") on two
+              // lines inside a narrow tile instead of overflowing it. The
+              // fixed height is what the row reserves space for, so the two
+              // must stay in step (see labelH in build).
+              SizedBox(
+                height: 24,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    z.label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      height: 1.1,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Category row
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Size of a category icon, from screen width.
+///
+/// Reduced at the client's request — the Explore Claimit zones above are now
+/// the biggest thing on the page and these were competing with them.
+///
+/// One function used by both the tile and the row height, so the two can never
+/// drift apart and leave the tile taller than the row that holds it.
+double _categoryIconSize(BuildContext context) =>
+    (MediaQuery.of(context).size.width * 0.105).clamp(38.0, 50.0);
 
 class _CategoryRow extends StatefulWidget {
   final int selected;
@@ -2510,8 +2787,7 @@ class _CategoryRowState extends State<_CategoryRow> {
     // client's home-icon sheet). The All-categories page keeps the tile icons.
     final assetPath = 'assets/icons/home_category/icon${globalIndex + 1}.png';
 
-    // Use screen width for responsive icon size: ~13% of width, clamped 48–62
-    final iconSize = (MediaQuery.of(context).size.width * 0.13).clamp(48.0, 62.0);
+    final iconSize = _categoryIconSize(context);
 
     return SizedBox(
       width: width,
@@ -2650,13 +2926,20 @@ class _CategoryRowState extends State<_CategoryRow> {
 
   @override
   Widget build(BuildContext context) {
-    // 108dp ≈ 13.5% of 800dp design baseline → scales with screen height
-    final catRowH = MediaQuery.of(context).size.height * 0.135;
+    // Row height is derived from the icon, not from screen height.
+    //
+    // It used to be 13.5% of screen height, which breaks on a wide-but-short
+    // screen (landscape, or a small tablet): the icon is sized off WIDTH, so
+    // it can grow while a height-based row shrinks, and the tile overflows.
+    // Deriving the height from the icon makes that impossible, and removes
+    // the leftover gap under the categories at the same time.
+    final iconSize = _categoryIconSize(context);
+    final catRowH = iconSize + 34; // icon + 6 gap + 26 label + 2 spare
     // 5 icons visible at a time (same density as the old pages)
     final slotW = MediaQuery.of(context).size.width / 5;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: SizedBox(
       height: catRowH,
       child: NotificationListener<ScrollNotification>(

@@ -60,8 +60,11 @@ export default function AdminBulkSelect() {
         const f = files[i]
         setImgBusy(`Uploading photo ${i + 1} of ${files.length}…`)
         const ct = f.type || 'image/jpeg'
+        // Each product keeps its photos in its own S3 folder, so Select,
+        // Local Finds and Classifieds images never sit mixed in one bucket
+        // prefix.
         const presign = await api.admin.presignUpload({
-          filename: f.name, content_type: ct, folder: 'bulk-uploads/images',
+          filename: f.name, content_type: ct, folder: 'select/images',
         })
         const put = await fetch(presign.upload_url, {
           method: 'PUT', headers: { 'Content-Type': ct }, body: f,

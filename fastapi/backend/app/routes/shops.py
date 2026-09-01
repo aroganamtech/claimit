@@ -217,6 +217,95 @@ async def search_shops(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Address-based matching for shops that have no GPS coordinates
+# ─────────────────────────────────────────────────────────────────────────────
+# Not every shop has lat/lng. A shop registered from the website without
+# clicking "use my current location", or bulk-uploaded from a sheet with no
+# lat/lng columns, is stored with geo = None. $geoNear can only see documents
+# that carry a geo point, so those shops used to be invisible in the app even
+# though they are paid, active and correct in the database.
+#
+# These shops are matched on ADDRESS instead: the strongest signal we have
+# about the user's whereabouts, in this order —
+#
+#     1. pincode   exact match          (most precise)
+#     2. area      "location" field     (e.g. "Anna Nagar")
+#     3. city
+#     4. district
+#
+# A shop is included as soon as one tier matches, and tiers are searched in
+# order, so a same-pincode shop always outranks a same-district one.
+
+def _clean(v) -> str:
+    return str(v or "").strip()
+
+
+def _ci(value: str) -> dict:
+    """Case-insensitive exact match on a whole field, safely escaped so an
+    address containing regex characters can't break the query."""
+    return {"$regex": f"^{re.escape(value)}$", "$options": "i"}
+
+
+# A shop counts as "unlocated" when it has no usable geo point. Covers the
+# three shapes seen in the collection: missing, explicit null, and an empty
+# object left behind by an older write.
+_NO_GEO = {"$or": [{"geo": {"$exists": False}}, {"geo": None}, {"geo": {}}]}
+
+
+async def _match_unlocated_shops(
+    db,
+    *,
+    pincode: str = "",
+    area: str = "",
+    city: str = "",
+    district: str = "",
+    exclude_oid=None,
+    seen_ids=None,
+) -> List[dict]:
+    """Shops with no coordinates whose address matches the user's location.
+
+    Returns them ordered strongest-match-first. Never raises: if anything at
+    all goes wrong the caller just gets an empty list and the nearby endpoint
+    behaves exactly as it did before this function existed.
+    """
+    out: List[dict] = []
+    seen = set(seen_ids or ())
+    try:
+        # (field, value) tiers, best first. Empty values are skipped, so a
+        # user with only a city set still gets a city match.
+        tiers = [
+            ("pincode",  pincode),
+            ("location", area),
+            ("city",     city),
+            ("area",     area),
+            ("district", district),
+        ]
+        for field, value in tiers:
+            value = _clean(value)
+            if not value:
+                continue
+            query: dict = {"$and": [_NO_GEO, {field: _ci(value)}]}
+            if exclude_oid is not None:
+                query["_id"] = {"$ne": exclude_oid}
+            cursor = db.shops.find(
+                query, {"cover_photo_b64": 0, "gallery_photos": 0}
+            )
+            async for doc in cursor:
+                _id = str(doc.get("_id"))
+                if _id in seen:
+                    continue
+                seen.add(_id)
+                doc["_match_by"] = field
+                out.append(doc)
+    except Exception as e:
+        # Deliberately swallowed — an address-matching problem must never
+        # take down the main nearby list.
+        print(f"[shops/nearby] address fallback skipped: {e}")
+        return []
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /shops/nearby  — must be before /{shop_id}
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/nearby")
@@ -228,6 +317,15 @@ async def get_nearby_shops(
     skip: int = Query(0, ge=0, description="Pagination offset — 0 = start from nearest"),
     limit: int = Query(0, ge=0, description="Max shops to return. 0 (default) = no limit, return every shop in radius — unchanged behaviour for existing callers."),
     premium_first: bool = Query(False, description="Sort Premium-plan shops to the top of the (already distance-sorted) results. Default False — off unless a caller explicitly asks for it."),
+    # Optional address hints. When the app sends them (fresh GPS-derived area
+    # or the area the user picked) they win; otherwise the logged-in user's
+    # own saved profile address is used, so older app builds get the same
+    # behaviour with no update.
+    pincode: Optional[str] = Query(None, description="User pincode — used to find shops that have no GPS coordinates"),
+    city: Optional[str] = Query(None, description="User city — address fallback"),
+    area: Optional[str] = Query(None, description="User area/locality — address fallback"),
+    district: Optional[str] = Query(None, description="User district — address fallback"),
+    include_unlocated: bool = Query(True, description="Include address-matched shops that have no GPS coordinates. Set false for a strict distance-only list."),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -250,9 +348,11 @@ async def get_nearby_shops(
     db = get_db()
 
     geo_query: dict = {}
+    exclude_oid = None
     if exclude_id:
         try:
-            geo_query["_id"] = {"$ne": ObjectId(exclude_id)}
+            exclude_oid = ObjectId(exclude_id)
+            geo_query["_id"] = {"$ne": exclude_oid}
         except Exception:
             pass  # invalid id — behave like before and exclude nothing
 
@@ -285,6 +385,49 @@ async def get_nearby_shops(
             key=lambda s: 0 if str(s.get("plan", "")).strip().lower() == "premium" else 1,
         )
 
+    # ── Address fallback: shops that have no GPS coordinates ─────────────────
+    # These can't take part in $geoNear, so they are matched on address and
+    # appended AFTER the distance-sorted results — a shop the user can measure
+    # a distance to always comes first.
+    #
+    # Where the address comes from, in order: what the caller passed (the app
+    # sends the area/pincode it resolved from GPS or from the area the user
+    # picked), then the logged-in user's own saved profile. The profile
+    # fallback is what lets an app build that knows nothing about these
+    # parameters still get the right shops.
+    if include_unlocated:
+        _pin  = _clean(pincode)  or _clean(current_user.get("pincode"))
+        _area = _clean(area)     or _clean(current_user.get("location"))
+        _city = _clean(city)     or _clean(current_user.get("city"))
+        _dist = _clean(district) or _clean(current_user.get("district"))
+
+        extra_docs = await _match_unlocated_shops(
+            db,
+            pincode=_pin, area=_area, city=_city, district=_dist,
+            exclude_oid=exclude_oid,
+            seen_ids={s.get("id") for s in shops_out},
+        )
+
+        extra_out = []
+        for doc in extra_docs:
+            match_by = doc.pop("_match_by", "")
+            try:
+                item = await _doc_to_response(doc)
+            except Exception:
+                continue  # one bad document must not drop the rest
+            # No coordinates means no honest distance to show. The app renders
+            # an empty distance as blank rather than a wrong "0.0 km".
+            item["distance"] = ""
+            item["match_by"] = match_by
+            extra_out.append(item)
+
+        if premium_first:
+            extra_out = sorted(
+                extra_out,
+                key=lambda s: 0 if str(s.get("plan", "")).strip().lower() == "premium" else 1,
+            )
+        shops_out.extend(extra_out)
+
     total_in_radius = len(shops_out)
     if limit:
         page = shops_out[skip: skip + limit]
@@ -302,6 +445,9 @@ async def get_nearby_shops(
         "radius_km": radius_km,
         "user_lat": lat,
         "user_lng": lng,
+        # How many of `total` were found by address rather than distance.
+        # Handy when checking why a particular shop did or didn't appear.
+        "address_matched": sum(1 for s in shops_out if s.get("match_by")),
     }
 
 

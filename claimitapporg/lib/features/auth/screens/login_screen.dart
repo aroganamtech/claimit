@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (input.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please enter your email')),
+            content: Text('Please enter your email or mobile number')),
       );
       return;
     }
@@ -191,9 +191,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           TextField(
                             controller: _controller,
+                            // Accepts either an email address or a mobile
+                            // number. The backend already routes on this:
+                            // a value containing "@" gets the OTP by email,
+                            // anything else gets it on WhatsApp.
                             keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              hintText: 'Email',
+                              hintText: 'Email or Mobile Number',
                               hintStyle: const TextStyle(
                                 color: Color(0xFF9CA3AF),
                                 fontSize: 15,

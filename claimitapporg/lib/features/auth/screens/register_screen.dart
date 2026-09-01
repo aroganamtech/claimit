@@ -67,7 +67,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (input.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please enter your email')),
+            content: Text('Please enter your email or mobile number')),
       );
       return;
     }
@@ -219,9 +219,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                           TextField(
                             controller: _controller,
+                            // Accepts either an email address or a mobile
+                            // number — the backend sends the OTP by email or
+                            // WhatsApp depending on which was typed.
                             keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              hintText: 'Email',
+                              hintText: 'Email or Mobile Number',
                               hintStyle: const TextStyle(
                                 color: Color(0xFF9CA3AF),
                                 fontSize: 15,

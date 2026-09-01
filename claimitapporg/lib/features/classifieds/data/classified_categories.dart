@@ -249,7 +249,21 @@ final List<ClassifiedTopCategory> localHelperCategories = classifiedCategories
 
 class LocalFindZone {
   final String id;      // stable key, e.g. "shop"
-  final String label;   // display label, e.g. "Shop"
+
+  /// The value STORED on a listing and used to query it back.
+  ///
+  /// Do not change these. A listing saves its category as this exact text, so
+  /// renaming one here silently orphans every business already saved under the
+  /// old name. To show the user a different wording, set [displayLabel].
+  final String label;
+
+  /// What the user sees, when it should differ from the stored [label].
+  ///
+  /// The client asked for friendlier names ("Stay & Travel" rather than
+  /// "Stay"). Keeping the two apart means the wording can change freely
+  /// without touching a single stored listing.
+  final String? displayLabel;
+
   final IconData icon;      // fallback Material icon
   final String? iconAsset;  // preferred — PNG cropped straight from the client's PDF
   final List<ClassifiedSubcategory> subcategories;
@@ -257,10 +271,15 @@ class LocalFindZone {
   const LocalFindZone({
     required this.id,
     required this.label,
+    this.displayLabel,
     required this.icon,
     this.iconAsset,
     this.subcategories = const [],
   });
+
+  /// The name to put on screen. Use this everywhere in the UI; use [label]
+  /// when saving or querying.
+  String get title => displayLabel ?? label;
 }
 
 const List<LocalFindZone> localFindZones = [
@@ -330,7 +349,8 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'fitness',
-    label: 'Fitness',
+    label: 'Fitness',                       // stored — do not change
+    displayLabel: 'Fitness & Wellness',
     icon: Icons.fitness_center_rounded,
     iconAsset: 'assets/images/lf_fitness.png',
     subcategories: [
@@ -358,11 +378,19 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'services',
-    label: 'Services',
+    label: 'Services',                      // stored — do not change
+    displayLabel: 'Home Services',
     icon: Icons.handyman_rounded,
     iconAsset: 'assets/images/lf_services.png',
     subcategories: [
-      ClassifiedSubcategory(name: 'Home Services',           icon: Icons.home_repair_service_rounded),
+      // The trades, per the client's "Home Services — plumbers, electricians,
+      // cleaners, painters and repair technicians".
+      ClassifiedSubcategory(name: 'Plumbers',                icon: Icons.plumbing_rounded),
+      ClassifiedSubcategory(name: 'Electricians',            icon: Icons.electrical_services_rounded),
+      ClassifiedSubcategory(name: 'Carpenters',              icon: Icons.chair_rounded),
+      ClassifiedSubcategory(name: 'Painters',                icon: Icons.format_paint_rounded),
+      ClassifiedSubcategory(name: 'Cleaners',                icon: Icons.cleaning_services_rounded),
+      ClassifiedSubcategory(name: 'AC & Appliance Repair',   icon: Icons.ac_unit_rounded),
       ClassifiedSubcategory(name: 'Repairs',                 icon: Icons.build_rounded),
       ClassifiedSubcategory(name: 'Maintenance',             icon: Icons.handyman_rounded),
       ClassifiedSubcategory(name: 'Printing',                icon: Icons.insert_drive_file_outlined),
@@ -392,7 +420,8 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'stay',
-    label: 'Stay',
+    label: 'Stay',                          // stored — do not change
+    displayLabel: 'Stay & Travel',
     icon: Icons.hotel_rounded,
     iconAsset: 'assets/images/lf_stay.png',
     subcategories: [
@@ -404,7 +433,8 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'entertain',
-    label: 'Entertain',
+    label: 'Entertain',                     // stored — do not change
+    displayLabel: 'Entertainment',
     icon: Icons.theaters_rounded,
     iconAsset: 'assets/images/lf_entertain.png',
     subcategories: [
@@ -434,13 +464,42 @@ const List<LocalFindZone> localFindZones = [
     label: 'Living',
     icon: Icons.home_rounded,
     iconAsset: 'assets/images/lf_living.png',
+    // The 12 "Living" subcategories the client supplied — property, home
+    // goods and moving. The trade services that used to sit here
+    // (electricians, plumbers, carpenters, AC repair) belong under Home
+    // Services, where they are now listed.
     subcategories: [
-      ClassifiedSubcategory(name: 'Home Cleaning',           icon: Icons.cleaning_services_rounded),
-      ClassifiedSubcategory(name: 'Electricians',            icon: Icons.electrical_services_rounded),
-      ClassifiedSubcategory(name: 'Plumbers',                icon: Icons.plumbing_rounded),
-      ClassifiedSubcategory(name: 'Carpenters',               icon: Icons.chair_rounded),
-      ClassifiedSubcategory(name: 'AC & Appliance Repair',   icon: Icons.ac_unit_rounded),
-      ClassifiedSubcategory(name: 'Pest Control',            icon: Icons.bug_report_rounded),
+      ClassifiedSubcategory(name: 'Apartments & Houses for Rent', icon: Icons.apartment_rounded),
+      ClassifiedSubcategory(name: 'Properties for Sale',          icon: Icons.real_estate_agent_rounded),
+      ClassifiedSubcategory(name: 'Builders & Developers',        icon: Icons.foundation_rounded),
+      ClassifiedSubcategory(name: 'Real Estate Agents',           icon: Icons.handshake_rounded),
+      ClassifiedSubcategory(name: 'Paying Guest & Hostels',       icon: Icons.bed_rounded),
+      ClassifiedSubcategory(name: 'Interior Designers',           icon: Icons.design_services_rounded),
+      ClassifiedSubcategory(name: 'Furniture Stores',             icon: Icons.chair_rounded),
+      ClassifiedSubcategory(name: 'Home Furnishing Stores',       icon: Icons.curtains_rounded),
+      ClassifiedSubcategory(name: 'Home Appliances',              icon: Icons.kitchen_rounded),
+      ClassifiedSubcategory(name: 'Packers & Movers',             icon: Icons.local_shipping_rounded),
+      ClassifiedSubcategory(name: 'Home Cleaning Services',       icon: Icons.cleaning_services_rounded),
+      ClassifiedSubcategory(name: 'Pest Control Services',        icon: Icons.bug_report_rounded),
+    ],
+  ),
+  // 13th zone, added at the client's request. New, so its stored label can be
+  // the full name — there are no existing listings to orphan.
+  // No artwork supplied yet: iconAsset is left off so the tile falls back to
+  // the Material icon until the client sends one.
+  LocalFindZone(
+    id: 'professional',
+    label: 'Professional Services',
+    icon: Icons.business_center_rounded,
+    subcategories: [
+      ClassifiedSubcategory(name: 'Lawyers',                icon: Icons.gavel_rounded),
+      ClassifiedSubcategory(name: 'Chartered Accountants',  icon: Icons.calculate_rounded),
+      ClassifiedSubcategory(name: 'Architects',             icon: Icons.architecture_rounded),
+      ClassifiedSubcategory(name: 'Consultants',            icon: Icons.business_center_rounded),
+      ClassifiedSubcategory(name: 'Auditors',               icon: Icons.fact_check_rounded),
+      ClassifiedSubcategory(name: 'Tax Consultants',        icon: Icons.receipt_long_rounded),
+      ClassifiedSubcategory(name: 'Company Secretaries',    icon: Icons.assignment_ind_rounded),
+      ClassifiedSubcategory(name: 'Notaries',               icon: Icons.approval_rounded),
     ],
   ),
 ];
