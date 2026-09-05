@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/location_service.dart';
 import '../models/classified_post.dart';
 
 class ClassifiedService {
@@ -22,6 +23,10 @@ class ClassifiedService {
       if (subcategory != null && subcategory.isNotEmpty) params['subcategory'] = subcategory;
       if (search != null && search.isNotEmpty) params['search'] = search;
       if (listingType != null && listingType.isNotEmpty) params['listing_type'] = listingType;
+      // Limit to the selected radius, so Local Finds and Local Classifieds
+      // agree with the search screen. Empty until a location is chosen, and
+      // the backend then returns the unfiltered list exactly as before.
+      params.addAll(LocationService.geoParams);
 
       final resp = await _api.get(AppConstants.classifieds, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {

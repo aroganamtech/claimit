@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/location_service.dart';
 import '../models/select_category.dart';
 import '../models/select_professional.dart';
 import '../services/select_service.dart';
@@ -50,10 +51,16 @@ class _SelectListScreenState extends State<SelectListScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    // Search around the SELECTED location and its radius, so Claimit Select
+    // agrees with the search screen. Null coordinates simply mean no radius
+    // filter, which is how this screen behaved before.
     final items = await SelectService.instance.fetchProfessionals(
       category: widget.category?.id,
       search: widget.searchTerm,
       sort: _sortKey,
+      lat: LocationService.selectedLat,
+      lng: LocationService.selectedLng,
+      radiusKm: LocationService.radiusKm,
     );
     if (!mounted) return;
     setState(() {

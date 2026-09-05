@@ -7,6 +7,7 @@ from database import (
 )
 from utils.dependencies import get_current_user
 from utils.cashfree import get_payment_link_status
+from utils.pincode_geo import resolve_point_for_ad
 from utils.s3 import (
     generate_presigned_upload_url,
     generate_presigned_url_sync as _presign,
@@ -322,6 +323,21 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "title":        body.name or "",
         })
 
+    # ── Coordinates, so the ad is visible to the app's 5 km radius search ────
+    # The advertiser already gives us a PIN code (it drives the Premium slot
+    # caps above). Turning it into a point here is what makes Nearby Deals,
+    # Brand Deals and Promo Reelz appear in a location search at all — without
+    # it they carry no geo and $geoNear can never return them.
+    #
+    # Best-effort by design: if the lookup fails the ad still publishes, just
+    # without coordinates, and backfill_geo.py can fill it in later. Never let
+    # a geocoding hiccup block a paid ad.
+    ad_lat, ad_lng, ad_geo = await resolve_point_for_ad(
+        app_db, pincode=body.pincode
+    )
+    if ad_geo:
+        ad_doc.update({"lat": ad_lat, "lng": ad_lng, "geo": ad_geo})
+
     result = await ads_collection.insert_one(ad_doc)
     ad_id  = str(result.inserted_id)
 
@@ -338,6 +354,9 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "video_s3_key": ad_doc.get("video_s3_key", ""),
             "video_url":    ad_doc.get("video_url", ""),
             "pincode":      body.pincode,
+            "lat":          ad_lat,
+            "lng":          ad_lng,
+            "geo":          ad_geo,
             "status":       ad_status,
             "end_date":     end_date.strftime("%d/%m/%Y"),
             "created_at":   datetime.utcnow(),
@@ -365,6 +384,11 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "reviews":    0,
             "tags":       parsed_tags,
             "pincode":    body.pincode,
+            # Geo point derived from the PIN code above — this is what lets a
+            # deal show up in "within 5 km of Madurai".
+            "lat":        ad_lat,
+            "lng":        ad_lng,
+            "geo":        ad_geo,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),
             "created_at": datetime.utcnow(),
@@ -387,6 +411,9 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "liked_by":         [],
             "tag":              ad_doc.get("tag", ""),
             "pincode":          body.pincode,
+            "lat":              ad_lat,
+            "lng":              ad_lng,
+            "geo":              ad_geo,
             "status":           ad_status,
             "end_date":         end_date.strftime("%d/%m/%Y"),
             "created_at":       datetime.utcnow(),

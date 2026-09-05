@@ -67,12 +67,19 @@ async def list_reels(
     limit: int = Query(default=20, le=100),
     area: str = Query(default="", description="User's area — local promo reels float to top"),
     pincode: str = Query(default="", description="User's pincode — local promo reels float to top"),
+    lat: Optional[float] = Query(None, description="Latitude of the SELECTED location"),
+    lng: Optional[float] = Query(None, description="Longitude of the selected location"),
+    radius_km: float = Query(5.0, ge=0.5, le=50),
     current_user: dict = Depends(get_current_user),
 ):
     from ..utils.helpers import prioritize_by_location
+    from ..utils.geo_filter import nearby_docs
     db = get_db()
-    cursor = db["reels"].find({}).limit(limit)
-    docs = await cursor.to_list(length=limit)
+    # Radius filter when the app sends the selected point; unchanged behaviour
+    # when it doesn't, so an older app build keeps working.
+    docs = await nearby_docs(db, "reels", lat, lng, radius_km, {}, limit)
+    if docs is None:
+        docs = await db["reels"].find({}).limit(limit).to_list(length=limit)
     user_id: str = current_user["_id"]
     reels = [_serialize(d, user_id) for d in docs]
     # Location-aware ordering: promo reels from the user's area first

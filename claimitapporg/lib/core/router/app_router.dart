@@ -9,6 +9,7 @@ import '../../features/auth/screens/otp_screen.dart';
 import '../../features/auth/screens/success_screen.dart';
 import '../../features/auth/screens/social_complete_profile_screen.dart';
 import '../../features/location/screens/location_screen.dart';
+import '../../features/location/screens/claimit_location_picker.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/claims/screens/claims_list_screen.dart';
 import '../../features/claims/screens/claim_detail_screen.dart';
@@ -30,6 +31,7 @@ import '../../features/shops/models/shop_category.dart';
 import '../../features/shops/screens/shop_list_screen.dart';
 import '../../features/shops/screens/shop_detail_screen.dart';
 import '../../features/search/screens/search_screen.dart';
+import '../../features/search/screens/claimit_search_screen.dart';
 import '../../features/deals/screens/deal_list_screen.dart';
 import '../../features/reels/screens/reelz_screen.dart';
 import '../../features/learn/screens/learn_list_screen.dart';
@@ -194,6 +196,13 @@ class AppRouter {
         GoRoute(
           path: '/location',
           builder: (context, state) => const LocationScreen(),
+        ),
+        // Choose the ONE location the whole app searches around: Near Me,
+        // any typed area or PIN code, plus Recent and Saved. Everything here
+        // works with GPS switched off.
+        GoRoute(
+          path: '/location/pick',
+          builder: (context, state) => const ClaimitLocationPicker(),
         ),
 
         // ── Categories / shops / deals ─────────────────────────────────────
@@ -537,6 +546,20 @@ class AppRouter {
         GoRoute(
           path: '/search',
           builder: (context, state) => const SearchScreen(),
+        ),
+        // One search across all nine Claimit features, measured from the
+        // selected location. `extra` may carry {'feature': …, 'query': …} to
+        // open it already narrowed to one feature.
+        GoRoute(
+          path: '/search/all',
+          builder: (context, state) {
+            final e = state.extra;
+            final m = e is Map<String, dynamic> ? e : const <String, dynamic>{};
+            return ClaimitSearchScreen(
+              initialFeature: m['feature'] as String?,
+              initialQuery: m['query'] as String?,
+            );
+          },
         ),
 
         // ── Redeem flow ────────────────────────────────────────────────────

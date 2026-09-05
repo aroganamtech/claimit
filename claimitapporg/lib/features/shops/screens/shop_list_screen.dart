@@ -192,6 +192,15 @@ class _ShopListScreenState extends State<ShopListScreen> {
   // a list that grows over time instead of one loaded all at once.
   static const int _pageSize = 10;
   static const double _searchRadiusKm = 25.0;
+
+  /// The radius to search within: the one the user chose, or the old 25 km
+  /// default when no location has been selected yet. Keeping the fallback
+  /// means this screen behaves exactly as before for a user who has never
+  /// opened the location picker.
+  double get _effectiveRadiusKm =>
+      (LocationService.selectedLat != null && LocationService.selectedLng != null)
+          ? LocationService.radiusKm
+          : _searchRadiusKm;
   final ScrollController _scrollController = ScrollController();
   double? _userLat;
   double? _userLng;
@@ -231,6 +240,21 @@ class _ShopListScreenState extends State<ShopListScreen> {
   // which case _loadShops falls back to the old unfiltered behaviour so
   // the screen never ends up broken or empty because of a location error.
   Future<bool> _resolveLocation() async {
+    // The location the user SELECTED wins over everything else. Without this
+    // the page geocoded the profile address or read GPS, so a customer who
+    // picked Madurai still saw Chennai shops here while the search screen
+    // correctly showed Madurai — the same app disagreeing with itself.
+    if (LocationService.selectedLat != null &&
+        LocationService.selectedLng != null) {
+      _userLat = LocationService.selectedLat;
+      _userLng = LocationService.selectedLng;
+      _userArea = LocationService.lastArea.trim();
+      _userPincode = LocationService.lastPincode.trim();
+      final user = mounted ? context.read<AuthProvider>().user : null;
+      _userCity = (user?.city ?? '').trim();
+      return true;
+    }
+
     // Collect the address in words first — this is independent of whether
     // coordinates resolve, and it's what finds shops that have no lat/lng.
     // The area/pincode the dashboard reverse-geocoded from GPS is preferred
@@ -295,7 +319,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
         final page = await ShopService.instance.fetchNearbyShopsPaged(
           lat: _userLat!,
           lng: _userLng!,
-          radiusKm: _searchRadiusKm,
+          radiusKm: _effectiveRadiusKm,
           skip: 0,
           limit: _pageSize,
           pincode: _userPincode,
@@ -384,7 +408,7 @@ class _ShopListScreenState extends State<ShopListScreen> {
       final page = await ShopService.instance.fetchNearbyShopsPaged(
         lat: _userLat!,
         lng: _userLng!,
-        radiusKm: _searchRadiusKm,
+        radiusKm: _effectiveRadiusKm,
         skip: _loadedCount,
         limit: _pageSize,
         pincode: _userPincode,

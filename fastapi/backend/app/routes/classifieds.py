@@ -130,6 +130,9 @@ async def list_classifieds(
     pincode: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     listing_type: Optional[str] = Query(None),  # "local_find" | "classified"
+    lat: Optional[float] = Query(None, description="Latitude of the SELECTED location"),
+    lng: Optional[float] = Query(None, description="Longitude of the selected location"),
+    radius_km: float = Query(5.0, ge=0.5, le=50),
     limit: int = Query(default=20, le=50),
     current_user: dict = Depends(get_current_user),
 ):
@@ -149,8 +152,15 @@ async def list_classifieds(
             {"user_name": {"$regex": search, "$options": "i"}},
         ]
 
-    cursor = db["classifieds"].find(query).sort("created_at", -1).limit(limit)
-    docs = await cursor.to_list(length=limit)
+    # Radius filter when the app sends the selected point, so Local Finds and
+    # Local Classifieds agree with the search screen about what is nearby.
+    # No coordinates means unchanged behaviour, so an older app build and the
+    # newest one both keep working against this endpoint.
+    from ..utils.geo_filter import nearby_docs
+    docs = await nearby_docs(db, "classifieds", lat, lng, radius_km, query, limit)
+    if docs is None:
+        docs = await (db["classifieds"].find(query)
+                      .sort("created_at", -1).limit(limit).to_list(length=limit))
     return {"classifieds": [_serialize(d) for d in docs], "total": len(docs)}
 
 

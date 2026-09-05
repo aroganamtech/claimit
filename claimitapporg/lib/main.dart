@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/theme_provider.dart';
+import 'core/providers/location_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/services/fcm_service.dart';
 
@@ -55,6 +56,7 @@ class _ClaimitAppState extends State<ClaimitApp> {
   // splash screen whenever _isLoading changed.
   late final AuthProvider       _authProvider;
   late final BillRewardProvider _billProvider;
+  late final LocationProvider   _locationProvider;
   late final GoRouter _router;
 
   @override
@@ -63,6 +65,13 @@ class _ClaimitAppState extends State<ClaimitApp> {
     _authProvider = AuthProvider();
     _billProvider = BillRewardProvider();
     _router = AppRouter.router(_authProvider);
+
+    // The location every screen searches around. init() restores the last
+    // chosen place from storage first, so the app opens where the user left
+    // it, and only then tries GPS in the background. It never blocks start-up
+    // and never asks for a permission the user has already declined.
+    _locationProvider = LocationProvider();
+    _locationProvider.init();
 
     // ── Auto-load bill wallet + history whenever the user authenticates ──────
     // authStateNotifier fires only when isAuthenticated flips true/false, so
@@ -102,6 +111,7 @@ class _ClaimitAppState extends State<ClaimitApp> {
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
         // Use .value so the same instance pre-loaded in initState is shared
         ChangeNotifierProvider.value(value: _billProvider),
+        ChangeNotifierProvider.value(value: _locationProvider),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp.router(

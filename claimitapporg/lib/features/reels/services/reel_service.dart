@@ -24,6 +24,10 @@ class ReelService {
       if (LocationService.lastPincode.isNotEmpty) {
         params['pincode'] = LocationService.lastPincode;
       }
+      // Limit to the selected radius, so Promo Reelz matches what the search
+      // screen shows. Empty until a location is chosen, and the backend then
+      // returns the full list exactly as before.
+      params.addAll(LocationService.geoParams);
       final resp = await _api.get(AppConstants.reels, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['reels'] as List? ?? [];

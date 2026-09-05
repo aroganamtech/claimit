@@ -1115,6 +1115,7 @@ import 'package:video_player/video_player.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/providers/location_provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/router/app_router.dart'
     show homeShellCovered, shellRouteObserver;
@@ -1798,25 +1799,50 @@ class _DashboardScreenState extends State<DashboardScreen>
 
               const SizedBox(width: 10),
 
-              // ── Location (from user profile) — Expanded so it absorbs the
-              // remaining width and ellipsizes, instead of two fixed Spacers
-              // that could push the row past the screen edge (right overflow).
+              // ── Location header — what the app is searching around ────────
+              // Expanded so it absorbs the remaining width and ellipsizes,
+              // instead of two fixed Spacers that could push the row past the
+              // screen edge (right overflow).
+              //
+              // This now names the SELECTED location and the radius, because a
+              // customer browsing Madurai from Chennai must be able to see, at
+              // a glance, which of the two the results belong to. When those
+              // differ, the second line says where the phone actually is.
               Expanded(
                 child: GestureDetector(
-                  onTap: () => context.push('/location'),
+                  onTap: () => context.push('/location/pick'),
                   child: Row(
                     children: [
+                      // Deliberately ONE line. This app bar is a fixed
+                      // kToolbarHeight + 2, so a second line would overflow it
+                      // on a phone with large system text. The "you are
+                      // somewhere else" case is shown by the icon instead, and
+                      // spelled out in full on the search and picker screens,
+                      // which can grow.
+                      if (context.select<LocationProvider, bool>(
+                          (l) => l.isSearchingElsewhere)) ...[
+                        const Icon(Icons.travel_explore_rounded,
+                            size: 17, color: Color(0xFF1565C0)),
+                        const SizedBox(width: 4),
+                      ],
                       Flexible(
                         child: Text(
-                          context.select<AuthProvider, String>(
-                            (a) => a.user?.location?.isNotEmpty == true
-                                ? a.user!.location!
-                                : 'Select Area',
-                          ),
+                          // Falls back to the location saved on the profile so
+                          // an existing user who upgrades still sees their area
+                          // on first launch, before the new picker is used.
+                          context.select<LocationProvider, bool>(
+                                  (l) => l.hasLocation)
+                              ? context.select<LocationProvider, String>(
+                                  (l) => l.headerText)
+                              : context.select<AuthProvider, String>(
+                                  (a) => a.user?.location?.isNotEmpty == true
+                                      ? a.user!.location!
+                                      : 'Select Area',
+                                ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
@@ -1846,7 +1872,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     size: 28,
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  onPressed: () => context.push('/search'),
+                  // One search across all nine features, measured from the
+                  // selected location — brief point 5.
+                  onPressed: () => context.push('/search/all'),
                   padding: EdgeInsets.zero,
                 ),
               ),

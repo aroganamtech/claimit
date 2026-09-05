@@ -107,8 +107,12 @@ class DealService {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /// Adds the user's detected area/pincode so the backend can float
-  /// local deals to the top of the list (no-op when location unknown).
+  /// Adds the selected location to the request.
+  ///
+  /// area/pincode still float local deals to the top. lat/lng/radius_km are
+  /// what actually LIMIT the list to the selected 5 km, so this page shows the
+  /// same thing the search screen does. Both are no-ops when nothing has been
+  /// selected yet, and the backend then behaves exactly as it used to.
   void _addLocationParams(Map<String, dynamic> params) {
     if (LocationService.lastArea.isNotEmpty) {
       params['area'] = LocationService.lastArea;
@@ -116,6 +120,7 @@ class DealService {
     if (LocationService.lastPincode.isNotEmpty) {
       params['pincode'] = LocationService.lastPincode;
     }
+    params.addAll(LocationService.geoParams);
   }
 
   /// GET /deals/nearby

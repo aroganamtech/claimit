@@ -24,28 +24,6 @@ class LocationService {
   static String lastArea = '';
   static String lastPincode = '';
 
-  /// The SELECTED location — the point every feature searches around, and the
-  /// radius to search within.
-  ///
-  /// LocationProvider is the owner and keeps these in step whenever the user
-  /// changes location. They are mirrored here as plain statics for the same
-  /// reason lastArea is: the feature services (deals, reels, classifieds) are
-  /// context-free singletons, so this is how they reach the selection without
-  /// every screen having to pass it down.
-  ///
-  /// Null coordinates mean "not chosen yet" — every endpoint treats that as
-  /// "no radius filter" and behaves exactly as it did before, so nothing can
-  /// break while the user has not picked a location.
-  static double? selectedLat;
-  static double? selectedLng;
-  static double radiusKm = 5.0;
-
-  /// Query parameters for any endpoint that accepts a radius. Empty when no
-  /// location is selected, which is what keeps the fallback automatic.
-  static Map<String, dynamic> get geoParams => (selectedLat == null || selectedLng == null)
-      ? const {}
-      : {'lat': selectedLat, 'lng': selectedLng, 'radius_km': radiusKm};
-
   /// Timeout for a fresh GPS fix. After this we fall back to last-known.
   static const _timeout = Duration(seconds: 10);
 
@@ -95,31 +73,19 @@ class LocationService {
   }
 
   /// Internal implementation — called only when no request is in flight.
-  ///
-  /// GPS is now OPTIONAL, never demanded.
-  ///
-  /// This used to interrupt the user with a "turn on location" dialog and a
-  /// "go to app settings" dialog. The client asked for those to go: a customer
-  /// who doesn't want to share GPS should still be able to use Claimit by
-  /// typing an area or PIN code instead.
-  ///
-  /// So every failure path here now returns quietly. The caller gets null, and
-  /// the app falls back to the location the user picked by hand.
   static Future<Position?> _doGetPosition({BuildContext? context}) async {
     // 1 ── Are location services turned on at the device level? ──────────────
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // Was: _showServiceDialog(context) — removed, see note above.
-      // Last-known can still be non-null even with services off (cached from
-      // an earlier session on some devices), so it's worth asking.
+      if (context != null && context.mounted) {
+        _showServiceDialog(context);
+      }
+      // Try last-known before giving up; it might be non-null even when
+      // services are off (cached from a previous session on some devices).
       return _lastKnown();
     }
 
     // 2 ── Check / request permission ────────────────────────────────────────
-    //
-    // The system permission sheet is still shown once, because that is the
-    // only way to obtain GPS at all. What's gone is Claimit nagging on top of
-    // it. If the user says no, we accept it and move on.
     LocationPermission perm = await Geolocator.checkPermission();
 
     if (perm == LocationPermission.denied) {
@@ -127,8 +93,9 @@ class LocationService {
     }
 
     if (perm == LocationPermission.deniedForever) {
-      // Was: _showSettingsDialog(context) — removed. Never push the user
-      // into Android settings; manual location entry covers this case.
+      if (context != null && context.mounted) {
+        _showSettingsDialog(context);
+      }
       return _lastKnown();
     }
 
@@ -162,18 +129,7 @@ class LocationService {
     }
   }
 
-  // ── The two dialogs below are no longer called ──────────────────────────
-  //
-  // They interrupted the user with "turn on location" and "open app settings"
-  // prompts. The client asked for GPS to be optional, so _doGetPosition now
-  // returns quietly instead and the user picks a location by hand.
-  //
-  // Kept, not deleted, so they can be switched back on for a screen that
-  // genuinely cannot work without GPS — the bill-scan redeem flow, say —
-  // by calling them from that screen rather than from every location lookup.
-
-  /// Shown when device-level location services are OFF. Currently unused.
-  // ignore: unused_element
+  /// Shown when device-level location services are OFF.
   static void _showServiceDialog(BuildContext context) {
     showDialog<void>(
       context: context,
@@ -203,7 +159,6 @@ class LocationService {
   }
 
   /// Shown when the user has permanently denied location permission.
-  // ignore: unused_element
   static void _showSettingsDialog(BuildContext context) {
     showDialog<void>(
       context: context,

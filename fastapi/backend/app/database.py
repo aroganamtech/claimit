@@ -152,6 +152,21 @@ async def connect_db():
     # Deals
     await db.deals.create_index("deal_group")
     await db.deals.create_index("category")
+
+    # ── Geospatial indexes for the unified /search ($geoNear) ───────────────
+    # Without a 2dsphere index a $geoNear on these collections fails, and the
+    # search quietly returns nothing for them — which is exactly how Nearby
+    # Deals, Promo Reelz and Local Classifieds went missing from the results.
+    # Created here so every deploy and every fresh environment has them, with
+    # no manual mongosh step to forget.
+    #
+    # Wrapped individually: a collection that doesn't exist yet, or an index
+    # that already exists with different options, must not stop start-up.
+    for _geo_coll in ("deals", "reels", "classifieds"):
+        try:
+            await db[_geo_coll].create_index([("geo", "2dsphere")])
+        except Exception as e:
+            print(f"[db] 2dsphere index on {_geo_coll} skipped: {e}")
     # Banners
     await db.banners.create_index("status")
     await db.banners.create_index("created_at")

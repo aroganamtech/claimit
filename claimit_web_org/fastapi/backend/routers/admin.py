@@ -43,6 +43,7 @@ from models.schemas import (
 from utils.auth import create_access_token
 from utils.dependencies import get_current_admin
 from utils.notify import notify_user
+from utils.pincode_geo import resolve_point_for_ad
 
 router = APIRouter()
 
@@ -284,7 +285,36 @@ async def update_ad(ad_id: str, patch: AdminAdPatch, _admin=Depends(get_current_
     res = await ads_collection.update_one({"_id": _id(ad_id)}, {"$set": update})
     if not res.matched_count:
         raise HTTPException(status_code=404, detail="Ad not found")
-    return {"ok": True, "patch": update}
+
+    # ── Mirror the edit into the app-facing copies ───────────────────────────
+    # The Flutter app reads claimit_db.deals / reels / banners, NOT this web
+    # ads collection. Without this, an admin editing an ad saw the change on
+    # the website and nothing at all in the app — the same class of bug the
+    # delete endpoint below was already fixed for.
+    #
+    # Editing the pincode also re-resolves the coordinates, so correcting a
+    # missing or wrong pincode is all an admin has to do to make a deal
+    # appear in the 5 km radius search. No script, no redeploy.
+    mirrored = dict(update)
+    if "pincode" in update:
+        ad_lat, ad_lng, ad_geo = await resolve_point_for_ad(
+            app_db, pincode=update["pincode"]
+        )
+        if ad_geo:
+            located = {"lat": ad_lat, "lng": ad_lng, "geo": ad_geo}
+            mirrored.update(located)
+            await ads_collection.update_one({"_id": _id(ad_id)},
+                                            {"$set": located})
+
+    for coll in (app_banners_collection, app_deals_collection,
+                 app_reels_collection):
+        try:
+            await coll.update_many({"web_ad_id": ad_id}, {"$set": mirrored})
+        except Exception as e:
+            # A mirror failure must not lose the edit that already succeeded.
+            print(f"[admin] ad {ad_id} mirror failed: {e}")
+
+    return {"ok": True, "patch": mirrored}
 
 
 @router.delete("/ads/{ad_id}")
@@ -1914,6 +1944,16 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
     else:
         raise HTTPException(status_code=400, detail=f"Unknown ad_type: {ad_type}")
 
+    # Coordinates from the PIN code, so an admin-created ad is just as
+    # visible to the app's 5 km radius search as an advertiser-created one.
+    # Best-effort: a failed lookup stores the ad without coordinates rather
+    # than rejecting it.
+    ad_lat, ad_lng, ad_geo = await resolve_point_for_ad(
+        app_db, pincode=body.pincode
+    )
+    if ad_geo:
+        ad_doc.update({"lat": ad_lat, "lng": ad_lng, "geo": ad_geo})
+
     result = await ads_collection.insert_one(ad_doc)
     ad_id  = str(result.inserted_id)
 
@@ -1956,6 +1996,9 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "reviews":    0,
             "tags":       parsed_tags,
             "pincode":    body.pincode,
+            "lat":        ad_lat,
+            "lng":        ad_lng,
+            "geo":        ad_geo,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),
             "created_at": datetime.utcnow(),
@@ -1977,6 +2020,9 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "liked_by":         [],
             "tag":              ad_doc.get("tag", ""),
             "pincode":          body.pincode,
+            "lat":              ad_lat,
+            "lng":              ad_lng,
+            "geo":              ad_geo,
             "status":           ad_status,
             "end_date":         end_date.strftime("%d/%m/%Y"),
             "created_at":       datetime.utcnow(),

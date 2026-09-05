@@ -28,6 +28,7 @@ class SelectService {
     String? search,
     double? lat,
     double? lng,
+    double? radiusKm,
   }) async {
     try {
       final params = <String, dynamic>{'sort': sort};
@@ -36,6 +37,9 @@ class SelectService {
       if (lat != null && lng != null) {
         params['lat'] = lat;
         params['lng'] = lng;
+        // Limit to the selected radius rather than the backend's wide
+        // default, so this page shows the same area as the search screen.
+        if (radiusKm != null) params['radius_km'] = radiusKm;
       }
       final resp = await _api.get(AppConstants.selectProfessionals, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
