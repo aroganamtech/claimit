@@ -152,13 +152,17 @@ def _is_expired(doc: dict) -> bool:
     slipping through.
     """
     now = _now()
-    for field in ("expires_at", "end_date", "valid_till"):
+    for field in ("expires_at", "ends_at", "end_date", "valid_till"):
         d = _parse_date(doc.get(field))
         if d is not None and d < now:
             return True
-    start = _parse_date(doc.get("start_date"))
-    if start is not None and start > now:
-        return True     # campaign hasn't begun yet
+    # Not started yet. `publish_at` is the weekly ad cycle's real start
+    # datetime, so a deal booked on Tuesday stays out of search results until
+    # its Friday, exactly as it stays out of the feature pages.
+    for field in ("publish_at", "publish_date", "start_date"):
+        start = _parse_date(doc.get(field))
+        if start is not None and start > now:
+            return True     # campaign hasn't begun yet
     return False
 
 

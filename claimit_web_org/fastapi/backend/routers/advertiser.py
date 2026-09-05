@@ -8,6 +8,7 @@ from database import (
 from utils.dependencies import get_current_user
 from utils.cashfree import get_payment_link_status
 from utils.pincode_geo import resolve_point_for_ad
+from utils.ad_cycle import next_cycle, cycle_info, is_live
 from utils.s3 import (
     generate_presigned_upload_url,
     generate_presigned_url_sync as _presign,
@@ -184,6 +185,17 @@ class CreateAdRequest(BaseModel):
     title: Optional[str] = None
 
 
+@router.get("/ad-cycle")
+async def get_ad_cycle(current_user=Depends(get_current_user)):
+    """The dates the ad being booked right now will run.
+
+    The form calls this BEFORE taking payment and shows `message` verbatim, so
+    an advertiser booking on a Tuesday knows their ad goes live on Friday
+    rather than discovering it after they have paid.
+    """
+    return await cycle_info()
+
+
 @router.post("/ads/create")
 async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
@@ -230,15 +242,20 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
                 ),
             )
 
-    if publish_today := body.publish_today:
-        pub_date = datetime.utcnow()
-    else:
-        try:
-            pub_date = datetime.strptime(body.scheduled_date, "%Y-%m-%d") if body.scheduled_date else datetime.utcnow()
-        except ValueError:
-            pub_date = datetime.utcnow()
-    end_date  = pub_date + timedelta(days=7)
-    ad_status = "active" if body.publish_today else "scheduled"
+    # ── Weekly ad cycle: every ad runs Friday 00:00 → Thursday 23:59 ─────────
+    # The advertiser no longer picks a start date. They buy the next slot: pay
+    # on a Friday and it is live that day, pay any other day and it goes live
+    # the coming Friday. The dates were shown on the form before payment
+    # (GET /advertiser/ad-cycle), so nobody pays expecting to be live today.
+    #
+    # This is what makes the Premium slot caps meaningful — every ad in a slot
+    # competes over the same window instead of starting on arbitrary days.
+    cycle_start, cycle_end = await next_cycle()
+    pub_date  = cycle_start
+    end_date  = cycle_end
+    # Live immediately only when the cycle has already begun today; otherwise
+    # it waits, and the read-side activation flips it on when Friday arrives.
+    ad_status = "active" if is_live(cycle_start) else "scheduled"
 
     # Resolve S3 keys to presigned URLs
     creative_s3_key  = body.creative_key or ""
@@ -266,6 +283,13 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         "pincode":    body.pincode,
         "publish_date": pub_date.strftime("%d/%m/%Y"),
         "end_date":   end_date.strftime("%d/%m/%Y"),
+        # Real datetimes alongside the display strings. Comparing a
+        # "dd/mm/yyyy" STRING against a date in MongoDB does not fail — BSON
+        # orders Date before String, so every string looks "greater than" every
+        # date and an expiry filter silently matches everything. These two
+        # fields are what any date comparison must use.
+        "publish_at": pub_date,
+        "ends_at":    end_date,
         "amount":     amount,
         "status":     ad_status,
         "payment_link_id": body.payment_link_id,
@@ -359,6 +383,9 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "geo":          ad_geo,
             "status":       ad_status,
             "end_date":     end_date.strftime("%d/%m/%Y"),
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at":   pub_date,
+            "ends_at":      end_date,
             "created_at":   datetime.utcnow(),
         })
 
@@ -391,6 +418,9 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "geo":        ad_geo,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at": pub_date,
+            "ends_at":    end_date,
             "created_at": datetime.utcnow(),
         })
 
@@ -416,6 +446,9 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "geo":              ad_geo,
             "status":           ad_status,
             "end_date":         end_date.strftime("%d/%m/%Y"),
+            "publish_date":     pub_date.strftime("%d/%m/%Y"),
+            "publish_at":       pub_date,
+            "ends_at":          end_date,
             "created_at":       datetime.utcnow(),
         })
 

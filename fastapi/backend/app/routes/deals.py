@@ -9,6 +9,7 @@ from ..utils.auth import get_current_user
 from ..utils.helpers import serialize_doc, prioritize_by_location, sort_by_tier
 from ..utils.s3 import public_url
 from ..utils.geo_filter import nearby_docs, attach_distance
+from ..utils.ad_window import filter_live
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
 
@@ -42,6 +43,10 @@ async def get_nearby_deals(
     deals = await nearby_docs(db, "deals", lat, lng, radius_km, query, 100)
     if deals is None:
         deals = await db.deals.find(query).sort("name", 1).to_list(length=100)
+    # Only ads inside their paid Friday→Thursday week. This is what makes a
+    # deal booked on Tuesday stay hidden until Friday, and stop showing after
+    # its Thursday — no cron job required.
+    deals = filter_live(deals)
     result = [attach_distance(_fix_image_url(serialize_doc(d))) for d in deals]
     # Premium-first WITHIN each location group: tier-sort first (stable), then
     # partition by location — prioritize_by_location's partition is itself
@@ -73,6 +78,10 @@ async def get_brand_deals(
     deals = await nearby_docs(db, "deals", lat, lng, radius_km, query, 100)
     if deals is None:
         deals = await db.deals.find(query).sort("name", 1).to_list(length=100)
+    # Only ads inside their paid Friday→Thursday week. This is what makes a
+    # deal booked on Tuesday stay hidden until Friday, and stop showing after
+    # its Thursday — no cron job required.
+    deals = filter_live(deals)
     result = [attach_distance(_fix_image_url(serialize_doc(d))) for d in deals]
     # Premium ads still rank first within whatever is in range.
     result = sort_by_tier(result)

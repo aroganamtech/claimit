@@ -44,6 +44,10 @@ from utils.auth import create_access_token
 from utils.dependencies import get_current_admin
 from utils.notify import notify_user
 from utils.pincode_geo import resolve_point_for_ad
+from utils.ad_cycle import (
+    next_cycle, cycle_for, cycle_info, is_live, get_start_weekday,
+    IST, WEEKDAY_NAMES,
+)
 
 router = APIRouter()
 
@@ -1810,6 +1814,48 @@ async def admin_presign_upload(body: AdminPresignRequest, _admin=Depends(get_cur
     )
 
 
+# ─── Ad cycle (weekly Friday → Thursday window) ───────────────────────────
+# All four ad types — Nearby Deals, Brand Deals, Home Banner and Promo Reelz —
+# run in the same weekly slot. Admin owns which weekday that slot starts on.
+
+class AdCyclePatch(BaseModel):
+    start_weekday: int      # 0 = Monday … 4 = Friday … 6 = Sunday
+
+
+@router.get("/ad-cycle")
+async def admin_get_ad_cycle(_admin=Depends(get_current_admin)):
+    """The configured cycle plus the exact window an ad booked now would run
+    in, so admin can see the effect of the setting rather than infer it."""
+    info = await cycle_info()
+    return {
+        **info,
+        "weekday_options": [
+            {"value": i, "label": name} for i, name in enumerate(WEEKDAY_NAMES)
+        ],
+    }
+
+
+@router.put("/ad-cycle")
+async def admin_set_ad_cycle(body: AdCyclePatch, _admin=Depends(get_current_admin)):
+    """Move the cycle to a different weekday.
+
+    Ads already booked keep the window they were sold, because their dates are
+    stored on the document. Only ads created after this change use the new day.
+    """
+    if not (0 <= body.start_weekday <= 6):
+        raise HTTPException(
+            status_code=400,
+            detail="start_weekday must be 0 (Monday) to 6 (Sunday).",
+        )
+    await app_db["app_config"].update_one(
+        {"key": "ad_cycle"},
+        {"$set": {"start_weekday": body.start_weekday,
+                  "updated_at": datetime.utcnow()}},
+        upsert=True,
+    )
+    return {"ok": True, **(await cycle_info())}
+
+
 class AdminCreateAdRequest(BaseModel):
     ad_type: str
     tier: str = "standard"          # premium | standard (ignored for home_banner)
@@ -1853,15 +1899,19 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         tier = "standard"
     amount = await _admin_ad_price(ad_type, tier)
 
-    if body.publish_today:
-        pub_date = datetime.utcnow()
-    else:
+    # Same weekly Friday → Thursday cycle as the advertiser path, so an
+    # admin-created ad competes for the same slot as a paid one. Admin keeps
+    # the ability to override with an explicit scheduled_date; that date is
+    # snapped onto the cycle it falls in so the windows never overlap.
+    if body.scheduled_date:
         try:
-            pub_date = datetime.strptime(body.scheduled_date, "%Y-%m-%d") if body.scheduled_date else datetime.utcnow()
+            requested = datetime.strptime(body.scheduled_date, "%Y-%m-%d").replace(tzinfo=IST)
         except ValueError:
-            pub_date = datetime.utcnow()
-    end_date  = pub_date + timedelta(days=7)
-    ad_status = "active" if body.publish_today else "scheduled"
+            requested = datetime.now(IST)
+        pub_date, end_date = cycle_for(requested, await get_start_weekday())
+    else:
+        pub_date, end_date = await next_cycle()
+    ad_status = "active" if is_live(pub_date) else "scheduled"
 
     creative_s3_key  = body.creative_key or ""
     thumbnail_s3_key = body.thumbnail_key or ""
@@ -1887,6 +1937,10 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         "pincode":      body.pincode,
         "publish_date": pub_date.strftime("%d/%m/%Y"),
         "end_date":     end_date.strftime("%d/%m/%Y"),
+        # Real datetimes beside the display strings — a "dd/mm/yyyy" string
+        # compared against a date in MongoDB silently matches everything.
+        "publish_at":   pub_date,
+        "ends_at":      end_date,
         "amount":       amount,
         "status":       ad_status,
         "payment_link_id": "ADMIN_FREE",
@@ -1972,6 +2026,9 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "pincode":      body.pincode,
             "status":       ad_status,
             "end_date":     end_date.strftime("%d/%m/%Y"),
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at":   pub_date,
+            "ends_at":      end_date,
             "created_at":   datetime.utcnow(),
         })
     elif ad_type in ("brand_deals", "nearby_deals"):
@@ -2001,6 +2058,9 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "geo":        ad_geo,
             "status":     ad_status,
             "end_date":   end_date.strftime("%d/%m/%Y"),
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at": pub_date,
+            "ends_at":    end_date,
             "created_at": datetime.utcnow(),
         })
     elif ad_type == "promo_reelz":
@@ -2025,6 +2085,9 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "geo":              ad_geo,
             "status":           ad_status,
             "end_date":         end_date.strftime("%d/%m/%Y"),
+            "publish_date":     pub_date.strftime("%d/%m/%Y"),
+            "publish_at":       pub_date,
+            "ends_at":          end_date,
             "created_at":       datetime.utcnow(),
         })
 

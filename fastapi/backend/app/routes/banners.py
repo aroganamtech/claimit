@@ -11,22 +11,21 @@ from datetime import datetime
 
 from ..database import get_db
 from ..utils.helpers import serialize_doc, prioritize_by_location
+from ..utils.ad_window import is_live
 from ..utils.s3 import public_url, generate_video_url_sync
 
 router = APIRouter(prefix="/banners", tags=["Banners"])
 
 
 def _is_active(banner: dict) -> bool:
-    status = banner.get("status", "active")
-    if status == "active":
-        return True
-    if status == "scheduled":
-        pub = banner.get("publish_date", "")
-        try:
-            return datetime.utcnow() >= datetime.strptime(pub, "%d/%m/%Y")
-        except Exception:
-            return True
-    return False
+    """Inside its paid Friday→Thursday week.
+
+    Replaces a check that only ever looked at the START date, which meant a
+    finished banner campaign kept showing forever. ad_window.is_live checks
+    both ends and understands the real `publish_at` / `ends_at` datetimes as
+    well as the older "dd/mm/yyyy" strings.
+    """
+    return is_live(banner)
 
 
 @router.get("")

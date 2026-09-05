@@ -80,6 +80,9 @@ async def list_reels(
     docs = await nearby_docs(db, "reels", lat, lng, radius_km, {}, limit)
     if docs is None:
         docs = await db["reels"].find({}).limit(limit).to_list(length=limit)
+    # Only reels inside their paid Friday→Thursday week.
+    from ..utils.ad_window import filter_live
+    docs = filter_live(docs)
     user_id: str = current_user["_id"]
     reels = [_serialize(d, user_id) for d in docs]
     # Location-aware ordering: promo reels from the user's area first
