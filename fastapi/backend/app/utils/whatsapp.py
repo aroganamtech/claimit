@@ -30,6 +30,7 @@ rejected template or a user with no phone number must never fail a login, a
 registration or a payment.
 """
 import json
+import os
 from typing import Optional
 
 from ..config import get_settings
@@ -134,10 +135,49 @@ async def send_template(
         return False
 
 
+async def _new_user_bonus() -> dict:
+    """The joining bonus this user has actually been credited.
+
+    Reads the SAME app_config document the wallet is credited from (key
+    "new_user_bonus", written by the admin panel), so when admin changes the
+    free amount the WhatsApp welcome changes with it. Falls back to the env
+    vars then the defaults, exactly as bill.py and the welcome email do — the
+    message must never quote a figure the wallet didn't give.
+    """
+    default_pts = int(os.getenv("NEW_USER_REWARD_POINTS", "1000"))
+    default_cb = float(os.getenv("NEW_USER_CASHBACK", "10.0"))
+    try:
+        from ..database import get_db
+        cfg = await get_db().app_config.find_one({"key": "new_user_bonus"})
+        if cfg:
+            return {
+                "reward_points": int(cfg.get("reward_points", default_pts)),
+                "cashback": float(cfg.get("cashback", default_cb)),
+            }
+    except Exception:
+        pass
+    return {"reward_points": default_pts, "cashback": default_cb}
+
+
+def _money(value: float) -> str:
+    """10 rather than 10.0, but 10.50 keeps its paise. The rupee sign lives in
+    the template text, not in the variable — Twilio is happier that way."""
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 async def send_welcome(phone: str, name: str = "") -> bool:
-    """The first-login welcome. Template takes one variable: {{1}} = name."""
+    """The first-login welcome.
+
+    Template claimit_welcome_bonus takes three variables:
+      {{1}} = name, {{2}} = cashback amount, {{3}} = reward points.
+    """
     sid = getattr(settings, "twilio_welcome_template_sid", "").strip()
-    return await send_template(phone, sid, {"1": name or "there"})
+    bonus = await _new_user_bonus()
+    return await send_template(phone, sid, {
+        "1": name or "there",
+        "2": _money(float(bonus.get("cashback", 0))),
+        "3": str(int(bonus.get("reward_points", 0))),
+    })
 
 
 async def send_notification(phone: str, title: str, message: str) -> bool:

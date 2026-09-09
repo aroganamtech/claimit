@@ -133,6 +133,7 @@ class AppConstants {
   static const String selectBookings      = '/select/bookings';
   static const String selectBookingsIn    = '/select/bookings/received';
   static const String selectConversations = '/select/conversations';
+  static const String selectCoverage      = '/select/coverage';
 
   // ── Classifieds ───────────────────────────────────────────────────────────
   static const String classifieds    = '/classifieds';

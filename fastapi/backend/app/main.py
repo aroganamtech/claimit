@@ -15,7 +15,7 @@ from .routes import (
     auth, users, claims, notifications, dashboard,
     policies, locations, deals, shops, rewards,
     redeem, reels, classifieds, admin, bill, banners, advertiser,
-    feedback, payments, learn, select, search,
+    feedback, payments, learn, select, search, campaign,
 )
 
 
@@ -93,6 +93,9 @@ app.include_router(advertiser.router)
 app.include_router(feedback.router)
 app.include_router(payments.router)
 app.include_router(learn.router)
+# Bulk WhatsApp campaign. Called by the web admin panel over localhost with the
+# shared X-Admin-Key — keeps the Twilio credentials in this backend only.
+app.include_router(campaign.router)
 app.include_router(select.router)
 # One geo-search API across all nine features (the client's location brief).
 app.include_router(search.router)

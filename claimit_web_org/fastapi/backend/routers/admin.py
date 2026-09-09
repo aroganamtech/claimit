@@ -1177,6 +1177,36 @@ async def classifieds_bulk_upload(
             "title": title,
         }
         existing = await _classifieds_collection.find_one(match)
+        # ── Coordinates for the app's 5 km search ────────────────────────────
+        # latitude/longitude in the sheet are not enough on their own:
+        # $geoNear only sees a GeoJSON `geo` field. Without this, every Local
+        # Find and Classified uploaded here was stored with a position it could
+        # never be found by — present in the database, invisible in the app.
+        #
+        # Falls back to the PIN code centre, which most sheets have even when
+        # the latitude column is empty.
+        _glat, _glng = lat, lng
+        if _glat is None or _glng is None:
+            _pin = "".join(ch for ch in str(doc.get("pincode") or "") if ch.isdigit())
+            if len(_pin) == 6:
+                try:
+                    centre = await app_db["pincode_centres"].find_one({"_id": _pin})
+                    if centre:
+                        _glat = float(centre.get("lat"))
+                        _glng = float(centre.get("lng"))
+                except Exception:
+                    pass
+        try:
+            if _glat is not None and _glng is not None:
+                _la, _lo = float(_glat), float(_glng)
+                if -90 <= _la <= 90 and -180 <= _lo <= 180 and not (_la == 0 and _lo == 0):
+                    doc["lat"] = _la
+                    doc["lng"] = _lo
+                    # [lng, lat] — reversed puts Indian listings in the ocean.
+                    doc["geo"] = {"type": "Point", "coordinates": [_lo, _la]}
+        except (TypeError, ValueError):
+            pass    # unlocated is survivable; failing the whole upload is not
+
         if existing:
             await _classifieds_collection.update_one({"_id": existing["_id"]}, {"$set": doc})
             updated += 1
@@ -1640,6 +1670,60 @@ async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_adm
     return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}
 
 
+# ── App config: bill scan reward rates ────────────────────────────────────────
+# What a user earns for scanning a bill. These were hard-coded in the app
+# backend (1 % cashback, 10 % points), so changing the offer meant editing code
+# and redeploying. They now live in app_config {"key": "bill_rates"}, which
+# routes/bill.py reads on every scan — a change here applies to the next scan
+# with no restart.
+
+class _BillRatesBody(_BM2):
+    cashback_percent: float
+    points_percent:   float
+
+
+@router.get("/bill-rates")
+async def get_bill_rates(_admin=Depends(get_current_admin)):
+    """Current bill-scan reward rates, with the launch defaults as fallback."""
+    cfg = await app_db["app_config"].find_one({"key": "bill_rates"})
+    return {
+        "cashback_percent": float((cfg or {}).get("cashback_percent", 1.0)),
+        "points_percent":   float((cfg or {}).get("points_percent", 10.0)),
+    }
+
+
+@router.put("/bill-rates")
+async def update_bill_rates(body: _BillRatesBody, _admin=Depends(get_current_admin)):
+    """Set the reward rates. Applies to every scan from the moment it saves.
+
+    Zero is allowed — that is how an offer gets switched off. Negative is not:
+    it would debit the user for shopping. The upper bound is a guard against a
+    typo like 1000 turning a ₹500 bill into ₹5,000 of cashback.
+    """
+    for name, value in (("Cashback", body.cashback_percent),
+                        ("Points", body.points_percent)):
+        if value < 0:
+            raise HTTPException(status_code=400, detail=f"{name} % cannot be negative")
+        if value > 100:
+            raise HTTPException(status_code=400, detail=f"{name} % cannot exceed 100")
+
+    await app_db["app_config"].update_one(
+        {"key": "bill_rates"},
+        {"$set": {
+            "key":              "bill_rates",
+            "cashback_percent": float(body.cashback_percent),
+            "points_percent":   float(body.points_percent),
+            "updated_at":       datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+    return {
+        "ok": True,
+        "cashback_percent": body.cashback_percent,
+        "points_percent":   body.points_percent,
+    }
+
+
 # ── App config: Premium ad slot caps (Nearby Deals + Brand Deals) ─────────────
 
 class _AdSettingsBody(_BM2):
@@ -1814,6 +1898,148 @@ async def admin_presign_upload(body: AdminPresignRequest, _admin=Depends(get_cur
     )
 
 
+# ─── WhatsApp claim campaign ──────────────────────────────────────────────
+# Admin uploads a sheet of shop numbers and sends them the approved
+# "claim your business" template.
+#
+# The sending itself happens in the APP backend, because that is where the
+# Twilio credentials live. Copying them here would double the number of places
+# a secret can leak from, so this proxies over localhost with the shared admin
+# key instead.
+
+_APP_BACKEND = _os.getenv("APP_BACKEND_URL", "http://127.0.0.1:8001")
+_APP_ADMIN_KEY = _os.getenv("ADMIN_SECRET", "claimit-admin-2024")
+_CLAIM_TEMPLATE_SID = _os.getenv("TWILIO_CLAIM_TEMPLATE_SID", "")
+
+
+@router.post("/whatsapp-campaign/preview")
+async def whatsapp_campaign_preview(
+    body: BulkUploadBody,
+    _admin=Depends(get_current_admin),
+):
+    """Read the uploaded sheet and report what WOULD be sent.
+
+    Takes an S3 key, not a file. CloudFront sits in front of this API and
+    blocks multipart file POSTs with a 403 — so the browser PUTs the .xlsx
+    straight to S3 with a presigned URL and sends only the key, the same way
+    every other bulk upload here works.
+
+    Nothing is sent from this endpoint. The admin sees the valid count, every
+    rejected row with its reason, and the real message before any money is
+    spent.
+    """
+    from utils.campaign_bulk import parse_campaign_sheet
+    from utils.s3 import download_bytes
+
+    if not body.key:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    try:
+        data = download_bytes(body.key)
+    except Exception as e:
+        raise HTTPException(status_code=400,
+                            detail=f"Could not read the uploaded file: {e}")
+    try:
+        recipients, rejected, summary = parse_campaign_sheet(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400,
+                            detail=f"Could not read that file: {e}")
+
+    # Who has already been messaged, so the admin knows the real cost of
+    # pressing send rather than the row count of the sheet.
+    already = 0
+    try:
+        phones = {"+91" + r["phone"] for r in recipients}
+        already = await app_db["whatsapp_campaign_log"].count_documents(
+            {"campaign": "claim_business", "status": "sent",
+             "phone": {"$in": list(phones)}})
+    except Exception:
+        pass
+
+    return {
+        **summary,
+        "already_sent": already,
+        "will_send": max(0, summary["valid"] - already),
+        "template_sid": _CLAIM_TEMPLATE_SID,
+        "template_configured": bool(_CLAIM_TEMPLATE_SID),
+        "recipients": recipients[:200],   # enough to eyeball, not a huge payload
+        # NOT capped. These are the rows that will not be messaged, each with
+        # the reason — the admin has to see every one to fix the sheet, so
+        # truncating them would hide exactly the information that matters.
+        "rejected": rejected,
+    }
+
+
+class _CampaignSendBody(BaseModel):
+    recipients: list          # [{phone, shop_name}, …] as returned by preview
+    confirm: bool = False
+
+
+@router.post("/whatsapp-campaign/send")
+async def whatsapp_campaign_send(
+    body: _CampaignSendBody,
+    _admin=Depends(get_current_admin),
+):
+    """Actually send. Requires confirm=true so a stray click can't spend money."""
+    if not body.confirm:
+        raise HTTPException(status_code=400,
+                            detail="confirm must be true to send")
+    if not _CLAIM_TEMPLATE_SID:
+        raise HTTPException(
+            status_code=400,
+            detail="TWILIO_CLAIM_TEMPLATE_SID is not set on the server.")
+    if not body.recipients:
+        raise HTTPException(status_code=400, detail="No recipients")
+
+    import httpx
+    payload = {
+        "template_sid": _CLAIM_TEMPLATE_SID,
+        "campaign": "claim_business",
+        "dry_run": False,
+        "recipients": [
+            {"phone": str(r.get("phone", "")),
+             "shop_name": str(r.get("shop_name", ""))}
+            for r in body.recipients
+        ],
+    }
+    # Long timeout on purpose: sends are paced to avoid rate limits, so a few
+    # hundred recipients legitimately takes minutes.
+    try:
+        async with httpx.AsyncClient(timeout=900) as c:
+            r = await c.post(f"{_APP_BACKEND}/campaign/whatsapp",
+                             json=payload,
+                             headers={"X-Admin-Key": _APP_ADMIN_KEY})
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502,
+                            detail=f"App backend refused: {e.response.text[:300]}")
+    except Exception as e:
+        raise HTTPException(status_code=502,
+                            detail=f"Could not reach the app backend: {e}")
+
+
+@router.get("/whatsapp-campaign/log")
+async def whatsapp_campaign_log(_admin=Depends(get_current_admin)):
+    """How many have been messaged so far, and the most recent ones."""
+    try:
+        sent = await app_db["whatsapp_campaign_log"].count_documents(
+            {"campaign": "claim_business", "status": "sent"})
+        failed = await app_db["whatsapp_campaign_log"].count_documents(
+            {"campaign": "claim_business", "status": "failed"})
+        recent = await (app_db["whatsapp_campaign_log"]
+                        .find({"campaign": "claim_business"})
+                        .sort("sent_at", -1).limit(50).to_list(50))
+        for d in recent:
+            d["_id"] = str(d["_id"])
+            if isinstance(d.get("sent_at"), datetime):
+                d["sent_at"] = d["sent_at"].isoformat()
+        return {"sent": sent, "failed": failed, "recent": recent}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Ad cycle (weekly Friday → Thursday window) ───────────────────────────
 # All four ad types — Nearby Deals, Brand Deals, Home Banner and Promo Reelz —
 # run in the same weekly slot. Admin owns which weekday that slot starts on.
@@ -1862,6 +2088,12 @@ class AdminCreateAdRequest(BaseModel):
     pincode: str = "000000"
     publish_today: bool = True
     scheduled_date: Optional[str] = None
+    # How long an admin-created ad runs. Advertisers always get "cycle" (the
+    # paid Friday → Thursday week); only admin gets the other two.
+    #   "cycle"  — next weekly cycle, exactly like a paid ad (default)
+    #   "now"    — live this second, ends when the current cycle ends
+    #   "always" — live this second, no end date, runs until admin stops it
+    duration: str = "cycle"
     creative_key: Optional[str] = None
     thumbnail_key: Optional[str] = None
     # Home banner
@@ -1899,19 +2131,48 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         tier = "standard"
     amount = await _admin_ad_price(ad_type, tier)
 
-    # Same weekly Friday → Thursday cycle as the advertiser path, so an
-    # admin-created ad competes for the same slot as a paid one. Admin keeps
-    # the ability to override with an explicit scheduled_date; that date is
-    # snapped onto the cycle it falls in so the windows never overlap.
+    # An advertiser always buys the weekly Friday → Thursday cycle. Admin is
+    # not selling anything, so admin gets three choices; `duration` says which.
+    #
+    #   "now"    — live this second. Waiting until Friday to show house content
+    #              or a correction makes no sense, so this skips the cycle and
+    #              still stops at the end of the current week.
+    #   "always" — live this second with NO end date. `ad_window.is_live` in the
+    #              app treats a missing end as "no limit", so this runs until an
+    #              admin pauses it. Used for evergreen content.
+    #   "cycle"  — unchanged default: the next paid week, so an admin ad
+    #              competes for the same slot as a paid one.
+    #
+    # scheduled_date still wins when given, snapped onto the cycle it falls in
+    # so the windows never overlap.
+    mode = (body.duration or "cycle").strip().lower()
+    if mode not in ("cycle", "now", "always"):
+        mode = "cycle"
+
+    now_ist = datetime.now(IST)
     if body.scheduled_date:
         try:
             requested = datetime.strptime(body.scheduled_date, "%Y-%m-%d").replace(tzinfo=IST)
         except ValueError:
-            requested = datetime.now(IST)
+            requested = now_ist
         pub_date, end_date = cycle_for(requested, await get_start_weekday())
+    elif mode == "always":
+        pub_date, end_date = now_ist, None
+    elif mode == "now":
+        # End of the week this moment falls in — not next Friday's week.
+        _, end_date = cycle_for(now_ist, await get_start_weekday())
+        pub_date = now_ist
     else:
         pub_date, end_date = await next_cycle()
+
+    # "now" and "always" start in the past-tense sense of *right now*, so they
+    # are active immediately; only a future cycle start is "scheduled".
     ad_status = "active" if is_live(pub_date) else "scheduled"
+
+    # end_date is None only for "always". Every document below stores the
+    # display string AND the real datetime; an empty string and a None both
+    # read as "no end" to the app's is_live(), so nothing expires by accident.
+    end_date_str = end_date.strftime("%d/%m/%Y") if end_date else ""
 
     creative_s3_key  = body.creative_key or ""
     thumbnail_s3_key = body.thumbnail_key or ""
@@ -1936,11 +2197,13 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         "tier":         tier,
         "pincode":      body.pincode,
         "publish_date": pub_date.strftime("%d/%m/%Y"),
-        "end_date":     end_date.strftime("%d/%m/%Y"),
+        "end_date":     end_date_str,
         # Real datetimes beside the display strings — a "dd/mm/yyyy" string
         # compared against a date in MongoDB silently matches everything.
         "publish_at":   pub_date,
         "ends_at":      end_date,
+        "duration":     mode,
+        "never_expires": end_date is None,
         "amount":       amount,
         "status":       ad_status,
         "payment_link_id": "ADMIN_FREE",
@@ -2025,10 +2288,11 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "video_url":    ad_doc.get("video_url", ""),
             "pincode":      body.pincode,
             "status":       ad_status,
-            "end_date":     end_date.strftime("%d/%m/%Y"),
+            "end_date":     end_date_str,
             "publish_date": pub_date.strftime("%d/%m/%Y"),
             "publish_at":   pub_date,
             "ends_at":      end_date,
+            "never_expires": end_date is None,
             "created_at":   datetime.utcnow(),
         })
     elif ad_type in ("brand_deals", "nearby_deals"):
@@ -2057,10 +2321,11 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "lng":        ad_lng,
             "geo":        ad_geo,
             "status":     ad_status,
-            "end_date":   end_date.strftime("%d/%m/%Y"),
+            "end_date":   end_date_str,
             "publish_date": pub_date.strftime("%d/%m/%Y"),
             "publish_at": pub_date,
             "ends_at":    end_date,
+            "never_expires": end_date is None,
             "created_at": datetime.utcnow(),
         })
     elif ad_type == "promo_reelz":
@@ -2084,10 +2349,11 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "lng":              ad_lng,
             "geo":              ad_geo,
             "status":           ad_status,
-            "end_date":         end_date.strftime("%d/%m/%Y"),
+            "end_date":         end_date_str,
             "publish_date":     pub_date.strftime("%d/%m/%Y"),
             "publish_at":       pub_date,
             "ends_at":          end_date,
+            "never_expires":    end_date is None,
             "created_at":       datetime.utcnow(),
         })
 
@@ -2099,4 +2365,6 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         "amount":       amount,
         "status":       ad_status,
         "created_by":   "admin",
+        "duration":     mode,
+        "never_expires": end_date is None,
     }

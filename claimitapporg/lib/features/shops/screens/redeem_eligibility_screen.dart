@@ -360,6 +360,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../bill_reader/providers/bill_reward_provider.dart';
+import '../../bill_reader/services/bill_service.dart';
 import 'shop_list_screen.dart';
 
 class RedeemEligibilityScreen extends StatefulWidget {
@@ -404,6 +405,11 @@ class _RedeemEligibilityScreenState extends State<RedeemEligibilityScreen>
   void initState() {
     super.initState();
     _initAnimations();
+    // This screen leads with the cashback % in large type, so it must be the
+    // admin's current rate. Cached app-wide after the first call.
+    BillService.instance.ensureRates().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _initAnimations() {
@@ -629,11 +635,14 @@ class _RedeemEligibilityScreenState extends State<RedeemEligibilityScreen>
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              const FittedBox(
+                              FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
-                                  '1% CASHBACK',
-                                  style: TextStyle(
+                                  // Live rate, not a fixed 1% — this is the
+                                  // headline number on the screen, so it is
+                                  // the worst one to leave stale.
+                                  BillService.cashbackLabel.toUpperCase(),
+                                  style: const TextStyle(
                                     fontSize: 26,          // reduced from 32
                                     fontWeight: FontWeight.w900,
                                     color: Color(0xFF059669),
@@ -837,7 +846,7 @@ class _ShopCard extends StatelessWidget {
                       fg: const Color(0xFFC2410C),
                     ),
                     _OfferTag(
-                      label: '+ 1% Cashback',
+                      label: '+ ${BillService.cashbackLabel}',
                       bg: const Color(0xFFECFDF5),
                       border: const Color(0xFF6EE7B7),
                       fg: const Color(0xFF065F46),

@@ -171,7 +171,7 @@ export function AdminAds() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={th}>Title</th><th style={th}>Type</th><th style={th}>Pincode</th>
-            <th style={th}>Publish</th><th style={th}>Views</th><th style={th}>Likes</th>
+            <th style={th}>Publish</th><th style={th}>Ends</th><th style={th}>Views</th><th style={th}>Likes</th>
             <th style={th}>Amount</th><th style={th}>Status</th><th style={th}></th>
           </tr></thead>
           <tbody>
@@ -184,6 +184,13 @@ export function AdminAds() {
                   <td style={td}>{a.ad_type}</td>
                   <td style={td}>{a.pincode}</td>
                   <td style={td}>{a.publish_date}</td>
+                  {/* An admin "never stop" ad has no end date. Without this
+                      column it looked identical to a weekly ad in this table. */}
+                  <td style={td}>
+                    {a.end_date
+                      ? a.end_date
+                      : <span style={{ color: '#1b7a3d', fontWeight: 600 }}>Never</span>}
+                  </td>
                   <td style={td}>{views >= 1000 ? (views / 1000).toFixed(1) + 'k' : views}</td>
                   <td style={td}>{likes > 0 ? (likes >= 1000 ? (likes / 1000).toFixed(1) + 'k' : likes) : '—'}</td>
                   <td style={td}>₹{a.amount}</td>
@@ -1087,6 +1094,162 @@ export function AdminBonusSettings() {
               When a new user scans their first bill, the app creates a wallet for them.
               The wallet starts with the reward points and cashback you set here.
               Existing users are not affected — only new wallets created after saving.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Bill Scan Reward Rates ────────────────────────────────────
+// What a user earns for scanning a bill. These were hard-coded in the app
+// backend as 1 % cashback and 10 % points; changing the offer meant a code
+// change and a redeploy. The app backend now reads these values on every
+// scan, so saving here changes the very next bill scanned.
+export function AdminBillRates() {
+  const [cbPct, setCbPct]   = useState('')
+  const [ptPct, setPtPct]   = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.admin.getBillRates()
+      .then(cfg => {
+        setCbPct(String(cfg.cashback_percent ?? 1))
+        setPtPct(String(cfg.points_percent ?? 10))
+      })
+      .catch(() => { setCbPct('1'); setPtPct('10') })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setError('')
+    const c = parseFloat(cbPct)
+    const p = parseFloat(ptPct)
+    // Mirrors the backend's own validation, so a bad value is caught before
+    // the round trip. 0 is allowed — that is how an offer is switched off.
+    if (isNaN(c) || c < 0 || c > 100) { setError('Cashback % must be between 0 and 100'); return }
+    if (isNaN(p) || p < 0 || p > 100) { setError('Reward points % must be between 0 and 100'); return }
+    setSaving(true)
+    try {
+      await api.admin.updateBillRates({ cashback_percent: c, points_percent: p })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #ddd',
+    borderRadius: 8, fontSize: 15, fontFamily: 'Poppins', outline: 'none',
+    boxSizing: 'border-box',
+  }
+
+  // A worked example on a round number — far easier to sanity-check than
+  // two percentages in isolation.
+  const sample = 1000
+  const sampleCb = (sample * (parseFloat(cbPct) || 0) / 100).toFixed(2)
+  const samplePt = (sample * (parseFloat(ptPct) || 0) / 100).toFixed(1)
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Bill Scan Rewards</h1>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 28 }}>
+        What a user earns every time they scan a bill. Saving applies to the next
+        scan immediately — no app update and no server restart needed.
+      </p>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading current rates…</div>
+      ) : (
+        <div style={{ maxWidth: 520 }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1a237e 0%, #1565C0 100%)',
+            borderRadius: 14, padding: 24, marginBottom: 28, color: '#fff',
+          }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, fontWeight: 600, letterSpacing: 0.5 }}>
+              ON A ₹1,000 BILL, A USER GETS
+            </div>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>₹{sampleCb}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Cashback ({cbPct || 0}%)</div>
+              </div>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>{samplePt}</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>Reward Points ({ptPct || 0}%)</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0e0', padding: 28 }}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Cashback %
+              </label>
+              <input
+                type="number" min="0" max="100" step="0.1" value={cbPct}
+                onChange={e => { setCbPct(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 1"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Percentage of the bill total credited as cashback. Currently 1% at launch.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                Reward Points %
+              </label>
+              <input
+                type="number" min="0" max="100" step="0.1" value={ptPct}
+                onChange={e => { setPtPct(e.target.value); setSaved(false) }}
+                style={inputStyle}
+                placeholder="e.g. 10"
+              />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Percentage of the bill total credited as reward points. Currently 10% at launch.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ background: '#FFEBEE', color: '#C62828', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+            {saved && (
+              <div style={{ background: '#E8F5E9', color: '#2E7D32', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 600 }}>
+                ✓ Rates saved — the next bill scanned uses them.
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', background: saving ? '#90A4AE' : '#1a237e',
+                color: '#fff', border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer',
+                fontFamily: 'Poppins',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Rates'}
+            </button>
+          </div>
+
+          <div style={{ background: '#FFF8E1', borderRadius: 10, padding: '14px 18px', marginTop: 20, border: '1px solid #FFE082' }}>
+            <div style={{ fontSize: 13, color: '#5D4037', fontWeight: 600, marginBottom: 4 }}>ℹ️ How this works</div>
+            <div style={{ fontSize: 12, color: '#6D4C41', lineHeight: 1.6 }}>
+              Both Reward Bills and Redeem Bills earn at these rates. Already-scanned
+              bills keep whatever they earned at the time — this only changes future
+              scans. Set a value to 0 to switch that reward off entirely.
             </div>
           </div>
         </div>

@@ -164,7 +164,11 @@ def main():
     print("\n4. Templates configured for each message type")
     checks = [
         ("OTP",           tmpl_sid,    1, "TWILIO_OTP_TEMPLATE_SID",     "{{1}} = the code"),
-        ("Welcome",       welcome_sid, 1, "TWILIO_WELCOME_TEMPLATE_SID", "{{1}} = name"),
+        # 3 since claimit_welcome_bonus replaced the old 1-variable template:
+        # the welcome now quotes the joining bonus, read live from the admin
+        # config so it always matches what the wallet was credited.
+        ("Welcome",       welcome_sid, 3, "TWILIO_WELCOME_TEMPLATE_SID",
+         "{{1}} = name, {{2}} = cashback, {{3}} = reward points"),
         ("Notifications", notify_sid,  2, "TWILIO_NOTIFY_TEMPLATE_SID",  "{{1}} = title, {{2}} = message"),
     ]
     for label, s, want_vars, env_key, shape in checks:
@@ -235,9 +239,59 @@ def _summary(problems):
     print("=" * 68 + "\n")
 
 
+def approval(sid: str) -> None:
+    """Why WhatsApp hasn't approved a template yet — and if it was rejected, why.
+
+    The Twilio console's template list only shows a grey/green dot. The real
+    status and the rejection reason live on the approval-request endpoint,
+    which is the only way to tell "still queued at Meta" apart from "rejected
+    days ago and nobody noticed".
+    """
+    import requests
+    env = load_env()
+    account = env.get("TWILIO_ACCOUNT_SID", "")
+    token = env.get("TWILIO_AUTH_TOKEN", "")
+    url = f"https://content.twilio.com/v1/Content/{sid}/ApprovalRequests"
+    try:
+        r = requests.get(url, auth=(account, token), timeout=15)
+    except Exception as e:
+        print(f"\n  Could not reach Twilio: {e}\n")
+        return
+    if r.status_code != 200:
+        print(f"\n  Twilio returned HTTP {r.status_code}: {r.text[:300]}\n")
+        return
+
+    data = r.json()
+    print(f"\n  Template   : {data.get('name') or sid}")
+    ws = (data.get("whatsapp") or {})
+    if not ws:
+        print("  WhatsApp   : no approval request has been submitted yet.")
+        print("               In the console, open the template and click")
+        print("               'Submit for WhatsApp approval'. Creating a")
+        print("               template does NOT submit it.\n")
+        return
+    status = str(ws.get("status", "unknown"))
+    print(f"  Status     : {status}")
+    print(f"  Category   : {ws.get('category') or '-'}")
+    if ws.get("rejection_reason"):
+        print(f"  Rejected   : {ws['rejection_reason']}")
+    print()
+    if status.lower() in ("received", "pending"):
+        print("  Still with Meta. Usually minutes, but can take up to 24h.")
+        print("  Nothing to do — signups are unaffected while you wait.\n")
+    elif status.lower() == "approved":
+        print("  Approved. Business-initiated sends will work now.\n")
+    elif status.lower() == "rejected":
+        print("  Fix the body per the reason above, then submit again.\n")
+
+
 if __name__ == "__main__":
+    # --approval <SID> : is WhatsApp done reviewing this template, and if it
+    # was rejected, why? The console only shows a coloured dot.
+    if len(sys.argv) > 2 and sys.argv[1] == "--approval":
+        approval(sys.argv[2])
     # --status <SID> : look up what happened to a message you already sent
-    if len(sys.argv) > 2 and sys.argv[1] == "--status":
+    elif len(sys.argv) > 2 and sys.argv[1] == "--status":
         env = load_env()
         from twilio.rest import Client
         c = Client(env.get("TWILIO_ACCOUNT_SID", ""), env.get("TWILIO_AUTH_TOKEN", ""))

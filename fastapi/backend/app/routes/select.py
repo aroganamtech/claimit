@@ -27,6 +27,7 @@ routes/learn.py and routes/reels.py use.
 Endpoints
 ─────────
 GET  /select/categories            → the 12 fixed categories
+GET  /select/coverage              → per-city professional counts + nearby cities
 GET  /select/plans                 → live listing-plan prices
 GET  /select/professionals         → list (category / sort / search / geo)
 GET  /select/professionals/{id}    → one professional
@@ -160,6 +161,135 @@ async def list_categories(current_user: dict = Depends(get_current_user)):
     return {"categories": SELECT_CATEGORIES}
 
 
+@router.get("/coverage")
+async def select_coverage(
+    city: str = Query("", description="City name, e.g. 'Chennai'. Prefix match."),
+    lat: Optional[float] = Query(None, description="Centre point, if the app already has one"),
+    lng: Optional[float] = Query(None),
+    radius_km: float = Query(50.0, ge=1, le=300, description="How far out 'nearby cities' reaches"),
+    current_user: dict = Depends(get_current_user),
+):
+    """How many Select professionals are in a city, category by category —
+    plus the nearby cities and their counts.
+
+    This answers a question the category grid cannot: "is it worth me looking
+    here at all?" A user in a thin city currently taps twelve categories to
+    discover eleven are empty. One screen showing 'Doctors 24, Lawyers 0,
+    ... and 8 more in Avadi, 18 km away' replaces all of that tapping.
+
+    The city is matched by PREFIX, case-insensitively, so the screen works as
+    a type-ahead: "chen" finds Chennai. The term is regex-escaped, so a user
+    typing "(" or ".*" cannot break or widen the query.
+
+    Counts use the SAME base filter as GET /select/professionals
+    (status != disabled). If they didn't, this screen would promise a number
+    the list then failed to deliver — worse than not showing a number at all.
+    """
+    import re
+    db = get_db()
+
+    base = {"status": {"$ne": "disabled"}}
+    term = re.escape((city or "").strip())
+    city_rx = {"$regex": f"^{term}", "$options": "i"} if term else None
+
+    in_city = dict(base)
+    if city_rx:
+        in_city["city"] = city_rx
+
+    # ── Category-wise counts for the city ────────────────────────────────────
+    counts: dict = {}
+    try:
+        async for row in db.select_professionals.aggregate([
+            {"$match": in_city},
+            {"$group": {"_id": "$category", "n": {"$sum": 1}}},
+        ]):
+            counts[str(row.get("_id") or "")] = int(row.get("n") or 0)
+    except Exception as e:
+        print(f"[select/coverage] category counts failed: {e}")
+
+    # Every category is returned, including the empty ones — a zero is the
+    # most useful number on this screen, so it must not be missing.
+    categories = [
+        {"id": c["id"], "label": c["label"], "count": counts.get(c["id"], 0)}
+        for c in SELECT_CATEGORIES
+    ]
+    # Deliberately the sum of the twelve KNOWN categories, not of every row.
+    # A professional stored with a blank or legacy category cannot be browsed
+    # to, so counting them would print a headline number the rows below don't
+    # add up to — the fastest way to make the whole screen look wrong.
+    total = sum(c["count"] for c in categories)
+
+    # ── Centre point, for "nearby cities" ────────────────────────────────────
+    # Prefer what the app already resolved. Otherwise borrow a point from our
+    # own data: a professional in that city, then a shop. No external
+    # geocoder, so this cannot hang on a third-party service.
+    centre_lat, centre_lng = lat, lng
+    if (centre_lat is None or centre_lng is None) and city_rx:
+        for coll, q in (
+            ("select_professionals", {**in_city, "geo": {"$nin": [None, {}]}}),
+            ("shops", {"city": city_rx, "geo": {"$nin": [None, {}]}}),
+        ):
+            try:
+                doc = await db[coll].find_one(q, {"geo": 1})
+                coords = ((doc or {}).get("geo") or {}).get("coordinates") or []
+                if len(coords) == 2:
+                    centre_lng, centre_lat = float(coords[0]), float(coords[1])
+                    break
+            except Exception:
+                continue
+
+    # ── Nearby cities ────────────────────────────────────────────────────────
+    nearby: List[dict] = []
+    if centre_lat is not None and centre_lng is not None:
+        try:
+            other = dict(base)
+            if city_rx:
+                # Everything that is NOT the city we just counted, so a city
+                # never appears in both halves of the screen.
+                other["city"] = {"$not": re.compile(f"^{term}", re.I)}
+            pipeline = [
+                {"$geoNear": {
+                    "near": {"type": "Point",
+                             "coordinates": [float(centre_lng), float(centre_lat)]},
+                    "distanceField": "_dist_m",
+                    "maxDistance": radius_km * 1000,
+                    "spherical": True,
+                    "query": other,
+                }},
+                {"$group": {
+                    "_id": {"$toLower": {"$ifNull": ["$city", ""]}},
+                    "city": {"$first": "$city"},
+                    "n": {"$sum": 1},
+                    "dist": {"$min": "$_dist_m"},
+                }},
+                {"$match": {"_id": {"$ne": ""}}},
+                {"$sort": {"dist": 1}},
+                {"$limit": 25},
+            ]
+            async for row in db.select_professionals.aggregate(pipeline):
+                nearby.append({
+                    "city": (row.get("city") or "").strip(),
+                    "count": int(row.get("n") or 0),
+                    "distance_km": round(float(row.get("dist") or 0) / 1000, 1),
+                })
+        except Exception as e:
+            # No 2dsphere index or a malformed point somewhere — the city
+            # counts above are still a useful answer on their own.
+            print(f"[select/coverage] nearby cities failed: {e}")
+
+    return {
+        "city": (city or "").strip(),
+        "total": total,
+        "categories": categories,
+        "nearby": nearby,
+        "nearby_total": sum(n["count"] for n in nearby),
+        "radius_km": radius_km,
+        # False means we had no point to measure from, so the app should say
+        # "couldn't check nearby" rather than imply there is nothing around.
+        "located": centre_lat is not None and centre_lng is not None,
+    }
+
+
 @router.get("/plans")
 async def get_select_plans(current_user: dict = Depends(get_current_user)):
     """Live listing-plan prices for the registration plan picker. `custom`
@@ -253,9 +383,34 @@ async def list_professionals(
         async for doc in db.select_professionals.aggregate(pipeline):
             dist_km = doc.pop("_dist_m", 0) / 1000
             results.append(_serialize(doc, distance_km=dist_km))
+
+        # Never show an empty screen: nobody in range means widen to the
+        # nearest professionals anywhere rather than render a blank list,
+        # which reads as a broken app instead of a quiet area. Only runs when
+        # the result would otherwise be empty, so working cases are untouched.
+        showing_nearest = False
+        if not results:
+            widened = [
+                {"$geoNear": {
+                    "near": {"type": "Point", "coordinates": [lng, lat]},
+                    "distanceField": "_dist_m",
+                    "spherical": True,      # no maxDistance = nearest anywhere
+                    "query": query,
+                }},
+                {"$skip": skip},
+                {"$limit": limit},
+            ]
+            try:
+                async for doc in db.select_professionals.aggregate(widened):
+                    dist_km = doc.pop("_dist_m", 0) / 1000
+                    results.append(_serialize(doc, distance_km=dist_km))
+                showing_nearest = bool(results)
+            except Exception as e:
+                print(f"[select] nearest-anywhere fallback failed: {e}")
+
         # Premium first, then by distance (geoNear already ordered by distance).
         results.sort(key=lambda p: _PLAN_RANK.get(p["plan"], 2))
-        return {"professionals": results}
+        return {"professionals": results, "showing_nearest": showing_nearest}
 
     # Everything else is a plain find with an explicit sort.
     if sort == "top_rated":

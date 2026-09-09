@@ -84,6 +84,60 @@ class BillService {
     throw Exception('Unable to load wallet. Please try again.');
   }
 
+  // ── Live reward rates ──────────────────────────────────────────────────────
+  // The percentages an admin has set for cashback and reward points, held as
+  // statics so ANY screen can render the right number synchronously.
+  //
+  // These are printed all over the app — shop cards ("Free Reward + 1%
+  // Cashback"), the shop detail chips, the redeem screen, the bill preview.
+  // Every one of those used to be a hard-coded string, so changing the offer
+  // to 2% left the whole app advertising a number it no longer paid. One
+  // fetch, one cached value, every label agrees.
+  //
+  // Seeded with the launch rates so the first frame is sensible before the
+  // fetch returns, and never throws — a failure just keeps the last value,
+  // which is exactly what the server falls back to as well.
+  static double cashbackPercent = 1.0;
+  static double pointsPercent   = 10.0;
+  static bool   _ratesLoaded    = false;
+
+  /// "1" not "1.0", but "1.5" stays "1.5" — reads naturally whether the admin
+  /// sets a whole number or a fraction.
+  static String fmtPct(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  /// Ready-made labels, so no screen has to build the string itself and get
+  /// it subtly different from its neighbour.
+  static String get cashbackLabel => '${fmtPct(cashbackPercent)}% Cashback';
+  static String get pointsLabel   => '${fmtPct(pointsPercent)}% Reward Points';
+
+  /// Fetch the rates once per app run and cache them. Safe to call from any
+  /// screen's initState — after the first call it is a no-op, so a screen that
+  /// needs the number can just ask without worrying about duplicate requests.
+  ///
+  /// Pass force: true to re-read (e.g. pull-to-refresh) if an admin has
+  /// changed the offer while the app was open.
+  Future<void> ensureRates({bool force = false}) async {
+    if (_ratesLoaded && !force) return;
+    try {
+      final response = await _client.get('/bill/rates');
+      if (response.statusCode == 200 && response.data is Map) {
+        final d = response.data as Map;
+        cashbackPercent = (d['cashback_percent'] as num?)?.toDouble() ?? cashbackPercent;
+        pointsPercent   = (d['points_percent']   as num?)?.toDouble() ?? pointsPercent;
+        _ratesLoaded = true;
+      }
+    } catch (_) {
+      // Offline or a blip — labels stay on the last known rates.
+    }
+  }
+
+  /// Same fetch, but returns the values for a caller that wants them directly.
+  Future<({double cashbackPercent, double pointsPercent})> fetchRates() async {
+    await ensureRates(force: true);
+    return (cashbackPercent: cashbackPercent, pointsPercent: pointsPercent);
+  }
+
   // ── Fetch scan history ─────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> fetchHistory() async {
     final response = await _client.get('/bill/history');

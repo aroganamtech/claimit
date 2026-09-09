@@ -11,8 +11,11 @@ Routes:
   POST /bill/manual-reviews/{id}/action  — admin: approve/reject → credit wallet + notify
 
 Business rules (must stay in sync with BillRewardProvider in Flutter):
-  • 1 % cashback  (earned_cashback  = total * 0.01)
-  • 10 % points   (earned_points    = total * 0.10, rounded)
+  • Cashback and reward points are a PERCENTAGE of the bill total, and both
+    percentages are admin-configurable — app_config {"key": "bill_rates"},
+    edited from the web admin panel. Defaults: 1 % cashback, 10 % points.
+    The app reads GET /bill/rates so its pre-submit preview matches what is
+    actually credited.
   • New users get a welcome bonus on wallet creation — configurable by admin:
       new_user_reward_points (default 1000 pts) + new_user_cashback (default ₹10)
   • Config is stored in app_config collection; falls back to env vars / hard defaults.
@@ -61,6 +64,54 @@ async def _get_new_user_config(db) -> dict:
     except Exception:
         pass
     return {"reward_points": default_pts, "cashback": default_cb}
+
+
+# Launch rules. These are only the fallback — the live values come from the
+# app_config document below, which the web admin panel edits.
+DEFAULT_CASHBACK_PERCENT = 1.0    # ₹1 back per ₹100 spent
+DEFAULT_POINTS_PERCENT   = 10.0   # 10 points per ₹100 spent
+
+
+async def _get_bill_rates(db) -> dict:
+    """The cashback % and reward-point % awarded on a scanned bill.
+
+    These used to be hard-coded as `total * 0.01` and `total / 10`, so
+    changing the offer meant a code change and a redeploy. They now live in
+    app_config {"key": "bill_rates"}, which the web admin panel edits — the
+    same mechanism new_user_bonus and pricing already use.
+
+    Read once per request rather than cached, so an admin's change applies to
+    the very next scan with no restart and no stale-cache window.
+
+    A missing or unreadable config falls back to the launch rates, so a bad
+    config document can never stop users earning.
+    """
+    cb, pts = DEFAULT_CASHBACK_PERCENT, DEFAULT_POINTS_PERCENT
+    try:
+        cfg = await db.app_config.find_one({"key": "bill_rates"})
+        if cfg:
+            cb = float(cfg.get("cashback_percent", cb))
+            pts = float(cfg.get("points_percent", pts))
+    except Exception:
+        pass
+    # A negative rate would silently debit the user; 0 is legitimate (offer
+    # switched off), so only negatives are corrected.
+    return {
+        "cashback_percent": max(0.0, cb),
+        "points_percent":   max(0.0, pts),
+    }
+
+
+def _earned(total: float, rates: dict) -> tuple:
+    """(cashback, points) for a bill total, at the given rates.
+
+    One place, so /bill/scan and the manual-review approval can never drift
+    apart — they used to hold two separate copies of the same arithmetic.
+    Points keep one decimal (₹1,564 → 156.4 pts), matching the existing rule.
+    """
+    cb = round(total * rates["cashback_percent"] / 100, 2)
+    pts = round(total * rates["points_percent"] / 100, 1)
+    return cb, pts
 
 
 # ── Optional auth ─────────────────────────────────────────────────────────────
@@ -248,10 +299,11 @@ async def scan_bill(data: BillScanRequest, request: Request):
     # A Redeem Bill ADDITIONALLY spends existing points against the shop's
     # discount (below) — i.e. a redeem shop acts as redeem AND reward:
     # the user gets the discount from their points, then still earns
-    # 1% cashback + 10% points on the bill amount, exactly like a reward shop.
-    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-    earned_cb  = round(total * 0.01, 2)
-    earned_pts = round(total / 10, 1)
+    # cashback + points on the bill amount, exactly like a reward shop.
+    # Rates are admin-configurable (default 1% cashback / 10% points); points
+    # keep one decimal, e.g. ₹1,564 → 156.4 pts, NOT rounded to an int.
+    _rates = await _get_bill_rates(db)
+    earned_cb, earned_pts = _earned(total, _rates)
 
     # ── Redeem Bill: deduct existing points based on the shop's discount %. ──
     # Reward Bill: never deducts — discount_pct is 0 above so this is skipped.
@@ -343,6 +395,19 @@ async def scan_bill(data: BillScanRequest, request: Request):
 
 
 # ── GET /bill/wallet ──────────────────────────────────────────────────────────
+@router.get("/rates")
+async def get_bill_rates(current_user: dict = Depends(get_current_user)):
+    """The live cashback / reward-point percentages.
+
+    The app shows the user what a bill will earn BEFORE it is submitted. That
+    preview was computing 1% and 10% locally, so the moment an admin changed
+    the offer the app would promise one figure and the wallet would credit
+    another — with the user watching. This endpoint is what keeps the two
+    honest: same config document, same numbers.
+    """
+    return await _get_bill_rates(get_db())
+
+
 @router.get("/wallet")
 async def get_wallet(current_user: dict = Depends(get_current_user)):
     db     = get_db()
@@ -508,11 +573,14 @@ async def admin_action_review(
     shop_id   = review.get("shop_id")
     scan_type = _resolve_scan_type(review.get("scan_type"), shop_id)
 
-    # BOTH scan types earn cashback + points (same rule as /bill/scan) —
-    # a Redeem Bill additionally spends points against the shop's discount.
-    # 1:10 rule — e.g. ₹1,564 bill → 156.4 pts (decimal preserved, NOT rounded to int)
-    pts = data.reward_points if data.reward_points is not None else round(amount / 10, 1)
-    cb  = data.cashback      if data.cashback      is not None else round(amount * 0.01, 2)
+    # BOTH scan types earn cashback + points (same rule and the same
+    # admin-configurable rates as /bill/scan) — a Redeem Bill additionally
+    # spends points against the shop's discount. An admin reviewing the bill
+    # may override either figure by hand; only the automatic path uses rates.
+    _rates = await _get_bill_rates(db)
+    _auto_cb, _auto_pts = _earned(amount, _rates)
+    pts = data.reward_points if data.reward_points is not None else _auto_pts
+    cb  = data.cashback      if data.cashback      is not None else _auto_cb
 
     # ── Redeem Bill: look up merchant's registered discount % (if any) ───────
     discount_pct = 0

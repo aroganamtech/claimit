@@ -4,6 +4,7 @@ import '../../../core/constants/app_constants.dart';
 import '../models/select_professional.dart';
 import '../models/select_booking.dart';
 import '../models/select_chat.dart';
+import '../models/select_coverage.dart';
 
 /// Listing-plan price returned by GET /select/plans.
 typedef SelectPlanPrices = ({int premium, int standard});
@@ -52,6 +53,41 @@ class SelectService {
       debugPrint('SelectService.fetchProfessionals error: $e');
     }
     return [];
+  }
+
+  /// GET /select/coverage — how many professionals are in a city, category by
+  /// category, plus the nearby cities and their counts.
+  ///
+  /// [city] is matched by prefix, so this doubles as a type-ahead. Passing
+  /// [lat]/[lng] lets the backend skip resolving the city to a point, which is
+  /// what the app already has when a location is selected.
+  ///
+  /// Returns [SelectCoverage.empty] rather than throwing, so the screen can
+  /// render an honest "nothing here" instead of crashing on a network blip.
+  Future<SelectCoverage> fetchCoverage({
+    required String city,
+    double? lat,
+    double? lng,
+    double? radiusKm,
+  }) async {
+    try {
+      final params = <String, dynamic>{'city': city.trim()};
+      if (lat != null && lng != null) {
+        params['lat'] = lat;
+        params['lng'] = lng;
+      }
+      if (radiusKm != null) params['radius_km'] = radiusKm;
+
+      final resp = await _api.get(AppConstants.selectCoverage, queryParams: params);
+      if (resp.statusCode == 200 && resp.data is Map) {
+        return SelectCoverage.fromJson(
+          Map<String, dynamic>.from(resp.data as Map),
+        );
+      }
+    } catch (e) {
+      debugPrint('SelectService.fetchCoverage error: $e');
+    }
+    return SelectCoverage.empty;
   }
 
   /// GET /select/professionals/{id}

@@ -32,10 +32,23 @@ def _is_active(banner: dict) -> bool:
 async def get_banners(
     area: Optional[str] = Query(None, description="User's area — local banners float to top"),
     pincode: Optional[str] = Query(None, description="User's pincode — local banners float to top"),
+    lat: Optional[float] = Query(None, description="Latitude of the SELECTED location"),
+    lng: Optional[float] = Query(None, description="Longitude of the selected location"),
 ):
-    """Return all active home-banner ads for the Flutter home screen."""
+    """Return all active home-banner ads for the Flutter home screen.
+
+    Banners are RANKED by distance, not filtered by it — the same rule as
+    Reels. The banner for a shop down the road shows first, then the next
+    nearest, and a national brand's banner still appears further down instead
+    of vanishing. A radius here would leave the carousel empty in a quiet area,
+    which is worse than showing a slightly distant ad.
+    """
     db = get_db()
-    banners = await db.banners.find({}).sort("created_at", -1).to_list(50)
+    from ..utils.geo_filter import docs_by_distance
+    banners = await docs_by_distance(db, "banners", lat, lng, {}, 50)
+    ranked_by_distance = banners is not None
+    if banners is None:
+        banners = await db.banners.find({}).sort("created_at", -1).to_list(50)
     active = []
     for b in banners:
         if not _is_active(b):
@@ -54,6 +67,12 @@ async def get_banners(
         else:
             doc.setdefault("video_url", "")
         active.append(doc)
-    # Location-aware ordering: banners for the user's pincode/area first
-    active = prioritize_by_location(active, area or "", pincode or "")
+    # The old area/pincode ordering is a FALLBACK, not an extra pass.
+    #
+    # Running it on top of a distance-sorted list would undo the sort: it
+    # partitions by area NAME, so a banner 30 km away in the same area would be
+    # pushed above one 2 km away next door. Real distance is better
+    # information, so it wins whenever the app sent coordinates.
+    if not ranked_by_distance:
+        active = prioritize_by_location(active, area or "", pincode or "")
     return {"success": True, "banners": active}

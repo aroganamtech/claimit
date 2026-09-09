@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from models.schemas import GeoLookupRequest
+from database import app_db
 import httpx
 
 router = APIRouter()
@@ -21,6 +22,66 @@ INDIA_STATES = [
     "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir",
     "Ladakh", "Lakshadweep", "Puducherry",
 ]
+
+
+@router.get("/pincodes")
+async def list_pincodes(q: str = Query("", description="filter by pincode, area or city")):
+    """Every PIN code Claimit actually has content in, for a dropdown.
+
+    Typing a PIN code by hand is where the location data goes wrong: a typo,
+    a blank, or the "000000" placeholder all produce a listing with no
+    position, which then never appears in the 5 km search. Nobody notices
+    until a shop asks why they are invisible.
+
+    A dropdown built from real data removes that failure entirely — an
+    advertiser can only choose a PIN code we can already place on the map.
+
+    Sources, merged:
+      • pincode_centres — every PIN code we have resolved coordinates for
+      • shops           — gives each one a human label (area, city)
+    """
+    out: dict = {}
+
+    try:
+        async for d in app_db["pincode_centres"].find({}, {"_id": 1}):
+            pin = str(d.get("_id", "")).strip()
+            if len(pin) == 6 and pin.isdigit():
+                out[pin] = {"pincode": pin, "label": pin, "has_coords": True}
+    except Exception:
+        pass
+
+    # Label them from the shop data, and include PIN codes that have shops but
+    # no cached centre yet — those still resolve on first use.
+    try:
+        pipeline = [
+            {"$match": {"pincode": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$pincode",
+                        "city": {"$first": "$city"},
+                        "area": {"$first": "$area"},
+                        "n": {"$sum": 1}}},
+            {"$sort": {"n": -1}},
+            {"$limit": 3000},
+        ]
+        async for d in app_db["shops"].aggregate(pipeline):
+            pin = str(d.get("_id", "")).strip()
+            if not (len(pin) == 6 and pin.isdigit()):
+                continue
+            bits = [str(d.get(k) or "").strip() for k in ("area", "city")]
+            name = ", ".join(b for b in bits if b and b.lower() not in ("none", "nan"))
+            entry = out.setdefault(pin, {"pincode": pin, "label": pin,
+                                         "has_coords": False})
+            entry["label"] = f"{pin} — {name}" if name else pin
+            entry["shops"] = int(d.get("n") or 0)
+    except Exception:
+        pass
+
+    items = sorted(out.values(), key=lambda x: (-x.get("shops", 0), x["pincode"]))
+
+    needle = (q or "").strip().lower()
+    if needle:
+        items = [i for i in items if needle in i["label"].lower()]
+
+    return {"pincodes": items[:500], "total": len(out)}
 
 
 @router.get("/countries")

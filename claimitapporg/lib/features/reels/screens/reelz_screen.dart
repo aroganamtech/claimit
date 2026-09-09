@@ -189,12 +189,19 @@ class _ReelzScreenState extends State<ReelzScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Matches the home bar exactly. The second slot used to be a
+                  // Reels tab marked selected — a tab that did nothing on the
+                  // screen it pointed at, drawn in a different icon style from
+                  // its neighbours. Learn goes here instead, as on every other
+                  // screen; you are already in Reelz, so nothing is lost.
+                  // Identical to the home bar — same four tabs, same four
+                  // icons, same size (see _BarItem.build).
                   _BarItem(icon: Icons.home_rounded, label: 'Home',
-                      assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                      assetIcon: 'assets/images/nav_home.png',
                       onTap: () => context.go('/home')),
-                  _BarItem(icon: Icons.play_circle_rounded, label: 'Reels',
-                      selected: true,
-                      onTap: () {}),
+                  _BarItem(icon: Icons.school_rounded, label: 'Learn',
+                      assetIcon: 'assets/images/nav_learn.png',
+                      onTap: () => context.go('/learn')),
                 ],
               ),
             ),
@@ -205,12 +212,10 @@ class _ReelzScreenState extends State<ReelzScreen> {
                 children: [
                   _BarItem(icon: Icons.qr_code_scanner_rounded,
                       label: 'Scan Bill',
-                      assetIcon: 'assets/icons/home_page_icons/icon5.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_scan.png',
                       onTap: () => context.push('/bill-reader')),
                   _BarItem(icon: Icons.person_rounded, label: 'Profile',
-                      assetIcon: 'assets/icons/home_page_icons/icon7.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_profile.png',
                       onTap: () => context.go('/profile')),
                 ],
               ),
@@ -221,15 +226,59 @@ class _ReelzScreenState extends State<ReelzScreen> {
     );
   }
 
+  // ── Paged feed ────────────────────────────────────────────────────────────
+  // The feed is loaded 10 at a time instead of all at once. Reels are the
+  // heaviest thing the app fetches — every row carries a video URL and a
+  // thumbnail — so pulling the whole table to show the first three was the
+  // single biggest avoidable load on the backend.
+  //
+  // The next page is requested while the user is still _kPrefetchAhead videos
+  // from the end, so it has already arrived by the time they swipe into it and
+  // the feed never visibly stalls.
+  static const int _kPrefetchAhead = 3;
+
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
   Future<void> _load() async {
-    final reels = await ReelService.instance.fetchReels();
+    final page = await ReelService.instance.fetchReelsPage(skip: 0);
     if (mounted) {
       setState(() {
-        _reels = reels;
-        _filtered = reels;
+        _reels = page.reels;
+        _filtered = page.reels;
+        _hasMore = page.hasMore;
         _loading = false;
       });
       _prefetchNext(_currentPage);
+    }
+  }
+
+  /// Fetch the next page and append it. Called on every swipe; it exits
+  /// immediately unless another page is actually needed, so it is cheap to
+  /// call often.
+  Future<void> _loadMoreReels() async {
+    if (_loadingMore || !_hasMore) return;
+    _loadingMore = true;
+    try {
+      // skip counts what has been LOADED, not what is displayed — the search
+      // filter can hide some, and paging must not shift when it does.
+      final page = await ReelService.instance.fetchReelsPage(skip: _reels.length);
+      if (!mounted) return;
+      if (page.reels.isEmpty) {
+        setState(() => _hasMore = false);
+        return;
+      }
+      // Guard against a duplicate arriving if two loads ever overlap: appending
+      // a reel that is already in the list would break the PageView's keys.
+      final existing = _reels.map((r) => r.id).toSet();
+      final fresh = page.reels.where((r) => !existing.contains(r.id)).toList();
+      setState(() {
+        _reels = [..._reels, ...fresh];
+        _filtered = [..._filtered, ...fresh];
+        _hasMore = page.hasMore;
+      });
+    } finally {
+      _loadingMore = false;
     }
   }
 
@@ -292,6 +341,13 @@ class _ReelzScreenState extends State<ReelzScreen> {
                           onPageChanged: (i) {
                             setState(() => _currentPage = i);
                             _prefetchNext(i);
+                            // Queue the next page while there are still a few
+                            // videos left to watch, so it has landed before
+                            // the user swipes into it. Not awaited —
+                            // playback must never wait on the network.
+                            if (i >= _filtered.length - _kPrefetchAhead) {
+                              _loadMoreReels();
+                            }
                           },
                           itemBuilder: (context, index) => _ReelPage(
                             reel: _filtered[index],
@@ -879,14 +935,12 @@ class _BarItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool selected;
   final String? assetIcon;
-  final bool isScanProfile;
   const _BarItem({
     required this.icon,
     required this.label,
     required this.onTap,
     this.selected = false,
     this.assetIcon,
-    this.isScanProfile = false,
   });
 
   @override
@@ -895,9 +949,12 @@ class _BarItem extends StatelessWidget {
         ? const Color.fromARGB(255, 238, 255, 0)
         : Colors.white;
     final screenW = MediaQuery.of(context).size.width;
-    final iconSize = isScanProfile
-        ? (screenW * 0.095).clamp(30.0, 38.0)
-        : (screenW * 0.075).clamp(24.0, 28.0);
+    // Exactly the home bar's numbers. There used to be a second, larger scale
+    // (0.095 / clamp 30-38) selected by an isScanProfile flag, because the old
+    // icon2 was drawn to a different spec than icon5/icon7 and needed to be
+    // smaller to look equal. The new nav_*.png set is one 92x92 spec, so the
+    // second scale has been removed rather than left unused — same as on Home.
+    final iconSize = (screenW * 0.075).clamp(24.0, 28.0);
     final fontSize = (screenW * 0.025).clamp(9.0, 11.0);
 
     return GestureDetector(
@@ -911,9 +968,12 @@ class _BarItem extends StatelessWidget {
             SizedBox(
               width: iconSize,
               height: iconSize,
+              // Zero padding for all four, like Home. The old 4dp inset made
+              // whichever icon got it render smaller than its neighbours at
+              // the same iconSize; the new set carries its own padding.
               child: assetIcon != null
                   ? Padding(
-                      padding: isScanProfile ? EdgeInsets.zero : const EdgeInsets.all(4),
+                      padding: EdgeInsets.zero,
                       child: Image.asset(assetIcon!, fit: BoxFit.contain,
                           color: color, colorBlendMode: BlendMode.srcIn,
                           errorBuilder: (_, __, ___) =>

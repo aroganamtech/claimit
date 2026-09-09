@@ -307,7 +307,11 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                                       color: Colors.white70, size: 16),
                                   SizedBox(width: 6),
                                   Flexible(
-                                    child: Text('Cashback (1%)',
+                                    // No percentage here on purpose: this screen
+                                    // shows what was actually credited, and the
+                                    // rate is admin-configurable — a hard-coded
+                                    // "(1%)" beside a 2% figure reads as a bug.
+                                    child: Text('Cashback',
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                             color: Colors.white70, fontSize: 14)),
@@ -338,7 +342,7 @@ class _BillRewardSuccessScreenState extends State<BillRewardSuccessScreen>
                                       color: Colors.white70, size: 16),
                                   SizedBox(width: 6),
                                   Flexible(
-                                    child: Text('Reward Points (10%)',
+                                    child: Text('Reward Points',
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                             color: Colors.white70, fontSize: 14)),

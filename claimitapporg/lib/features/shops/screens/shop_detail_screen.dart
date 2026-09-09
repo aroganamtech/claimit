@@ -7,6 +7,7 @@ import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../bill_reader/providers/bill_reward_provider.dart';
+import '../../bill_reader/services/bill_service.dart';
 import '../services/shop_service.dart';
 import 'shop_list_screen.dart';
 
@@ -82,6 +83,12 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
     _loadReviews();
     _loadNearbyShops();
     _fetchFullShop();
+    // The offer chips print the cashback % — make sure it is the admin's
+    // current value, not the launch default. Cached app-wide after the first
+    // call, so this is at most one request per app run.
+    BillService.instance.ensureRates().then((_) {
+      if (mounted) setState(() {});
+    });
     // Auto-scroll images every 4 seconds (only when more than one image)
     if (_images.length > 1) {
       _imgTimer = Timer.periodic(const Duration(seconds: 4), (_) {
@@ -503,7 +510,8 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
 
                 // ── Offer chips — one row per mode the shop supports ───────
                 if (s.hasRedeem && s.discount > 0)
-                  // Redeem shop: owner accepts points → user gets X% off + 1% cashback
+                  // Redeem shop: owner accepts points → user gets X% off plus
+                  // cashback at the admin-set rate (no longer a fixed 1%).
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                     child: Row(
@@ -515,34 +523,37 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                           fg: const Color(0xFFC2410C),
                         ),
                         const SizedBox(width: 8),
-                        const _OfferChip(
-                          label: '+ 1% Cashback',
-                          bg: Color(0xFFECFDF5),
-                          border: Color(0xFF6EE7B7),
-                          fg: Color(0xFF065F46),
+                        _OfferChip(
+                          label: '+ ${BillService.cashbackLabel}',
+                          bg: const Color(0xFFECFDF5),
+                          border: const Color(0xFF6EE7B7),
+                          fg: const Color(0xFF065F46),
                         ),
                       ],
                     ),
                   ),
                 if (s.hasRewards)
-                  // Reward shop: user scans bill → earns reward points + 1% cashback
+                  // Reward shop: user scans bill → earns reward points plus
+                  // cashback at the admin-set rate (no longer a fixed 1%).
                   Padding(
                     padding: EdgeInsets.fromLTRB(
                         20, (s.hasRedeem && s.discount > 0) ? 8 : 14, 20, 0),
+                    // No longer a const list — the cashback chip's label is
+                    // built from the live rate.
                     child: Row(
-                      children: const [
-                        _OfferChip(
+                      children: [
+                        const _OfferChip(
                           label: 'Free Reward Points',
                           bg: Color(0xFFEFF6FF),
                           border: Color(0xFF93C5FD),
                           fg: Color(0xFF1D4ED8),
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         _OfferChip(
-                          label: '+ 1% Cashback',
-                          bg: Color(0xFFECFDF5),
-                          border: Color(0xFF6EE7B7),
-                          fg: Color(0xFF065F46),
+                          label: '+ ${BillService.cashbackLabel}',
+                          bg: const Color(0xFFECFDF5),
+                          border: const Color(0xFF6EE7B7),
+                          fg: const Color(0xFF065F46),
                         ),
                       ],
                     ),

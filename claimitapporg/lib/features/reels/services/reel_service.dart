@@ -7,39 +7,57 @@ import '../models/reel_model.dart';
 /// Returned by [ReelService.likeReel] — server-confirmed state.
 typedef LikeResult = ({int likeCount, bool likedByMe});
 
+/// One page of the reel feed. [hasMore] is the server's word for whether
+/// another page exists, so the app stops asking instead of guessing from a
+/// short page — a page can be short simply because expired reels were
+/// filtered out of it.
+typedef ReelPage = ({List<ReelItem> reels, bool hasMore});
+
 class ReelService {
   ReelService._();
   static final ReelService instance = ReelService._();
 
   final _api = ApiClient();
 
-  /// GET /reels — includes liked_by_me per authenticated user.
-  Future<List<ReelItem>> fetchReels() async {
+  /// How many reels are fetched per page. Matches the shop list, which has
+  /// been running at 10 in production.
+  static const int pageSize = 10;
+
+  /// GET /reels — one page, nearest first. [skip] is how many are already
+  /// loaded; the server continues the same distance-ordered sequence, so
+  /// pages never repeat or skip a reel.
+  Future<ReelPage> fetchReelsPage({int skip = 0, int limit = pageSize}) async {
     try {
       // Send the user's detected area/pincode so local promo reels come first
-      final params = <String, dynamic>{};
+      final params = <String, dynamic>{'skip': skip, 'limit': limit};
       if (LocationService.lastArea.isNotEmpty) {
         params['area'] = LocationService.lastArea;
       }
       if (LocationService.lastPincode.isNotEmpty) {
         params['pincode'] = LocationService.lastPincode;
       }
-      // Limit to the selected radius, so Promo Reelz matches what the search
-      // screen shows. Empty until a location is chosen, and the backend then
-      // returns the full list exactly as before.
+      // The selected point. Reels are RANKED by distance rather than cut off
+      // by the radius, so the feed keeps going — nearest first.
       params.addAll(LocationService.geoParams);
       final resp = await _api.get(AppConstants.reels, queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['reels'] as List? ?? [];
-        return list
-            .map((j) => ReelItem.fromJson(j as Map<String, dynamic>))
-            .toList();
+        return (
+          reels: list
+              .map((j) => ReelItem.fromJson(j as Map<String, dynamic>))
+              .toList(),
+          hasMore: resp.data['has_more'] as bool? ?? false,
+        );
       }
     } catch (e) {
-      debugPrint('ReelService.fetchReels error: $e');
+      debugPrint('ReelService.fetchReelsPage error: $e');
     }
-    return [];
+    return (reels: <ReelItem>[], hasMore: false);
   }
+
+  /// First page only. Kept so any existing caller compiles unchanged.
+  Future<List<ReelItem>> fetchReels() async =>
+      (await fetchReelsPage()).reels;
 
   /// POST /reels/{id}/like
   /// [liked] = true to like, false to unlike.

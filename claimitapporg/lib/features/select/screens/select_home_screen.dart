@@ -167,12 +167,17 @@ class _SelectHomeScreenState extends State<SelectHomeScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
-            // Tappable — opens the app's shared location picker and reflects
-            // the user's saved area, same as the dashboard header. Not a const
+            // Tappable — opens "Who's here?", which shows how many
+            // professionals this city has category by category, plus the
+            // nearby cities that have more. Changing the location itself is
+            // still one tap away, from that screen's own action. Not a const
             // Row: ConstrainedBox has no const constructor (it asserts on its
             // constraints), so the children are marked const individually.
             child: GestureDetector(
-              onTap: () => context.push('/location'),
+              onTap: () => context.push(
+                '/select/coverage',
+                extra: context.read<AuthProvider>().user?.location ?? '',
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../shops/models/shop_category.dart';
+import '../services/bill_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BillReaderIntroScreen
@@ -93,7 +94,8 @@ class BillReaderIntroScreen extends StatelessWidget {
                 icon: Icons.redeem_rounded,
                 title: 'Redeem Bill',
                 subtitle: 'Use your existing points to claim a discount at a '
-                    'Redeem Zone shop. Plus additional Rewards points And 1% Cashback',
+                    'Redeem Zone shop. Plus additional Rewards points and '
+                    '${BillService.cashbackLabel}',
                 buttonLabel: 'Select Redeem Shop',
                 onTap: () => context.push(
                   '/shops',

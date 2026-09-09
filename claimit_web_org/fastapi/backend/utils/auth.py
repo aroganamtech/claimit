@@ -12,8 +12,15 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440))
 OTP_TTL_MINUTES = 5
 
-# Universal dev OTP — works in addition to whatever was generated.
-UNIVERSAL_OTP = os.getenv("UNIVERSAL_OTP", "123456")
+# The universal OTP that used to live here has been REMOVED.
+#
+# It accepted one fixed code for every account, with no environment check and
+# no rate limit, which meant anyone who knew it could sign in as any customer,
+# merchant or admin. Real OTP delivery works, so nothing needs it any more.
+#
+# Kept as an empty string only so any leftover import doesn't break; it can
+# never match a submitted OTP because verify_otp rejects blank input.
+UNIVERSAL_OTP = ""
 
 
 def generate_otp() -> str:
@@ -33,8 +40,12 @@ async def store_otp(role: str, phone: str, otp: str):
 
 
 async def verify_otp(role: str, phone: str, otp: str) -> bool:
-    if otp == UNIVERSAL_OTP:
-        return True
+    # Only the code we actually generated and sent is accepted. A blank or
+    # missing submission is rejected outright rather than falling through to
+    # a comparison that an empty stored value could satisfy.
+    otp = (otp or "").strip()
+    if not otp:
+        return False
     rec = await otps_collection.find_one({"role": role, "phone": phone})
     if not rec:
         return False

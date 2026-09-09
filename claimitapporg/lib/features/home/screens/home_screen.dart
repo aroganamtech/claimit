@@ -1493,6 +1493,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../shops/models/shop_category.dart';
+import '../../bill_reader/services/bill_service.dart';
 import '../../../core/router/app_router.dart' show appRouteObserver, homeShellCovered;
 
 /// The persistent shell that wraps every main tab.
@@ -1505,6 +1506,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with RouteAware {
+  /// Lifts a nav item off the bottom edge of the bar. Applied as bottom
+  /// padding, so the item centres itself in the reduced height and rises by
+  /// half this value.
+  ///
+  /// Now that all four icons are the same size and from the same set, this is
+  /// 0 — every item is identically centred, so they line up exactly. Raise it
+  /// if the whole row should sit higher.
+  static const double _kNavLift = 0.0;
+
   PageRoute? _subscribedRoute;
 
   @override
@@ -1515,6 +1525,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       context.read<ProfileProvider>().fetchLikedDealIds();
       _maybeShowAccountLinkPopup();
     });
+    // Warm the cashback/points rates once, here, because every logged-in user
+    // passes through Home. Shop cards, offer chips, the redeem screen and the
+    // bill preview all print that percentage; priming it here means none of
+    // them ever renders the launch default when an admin has changed it.
+    // Cached app-wide, so the per-screen calls after this are no-ops.
+    BillService.instance.ensureRates();
   }
 
   @override
@@ -1665,7 +1681,10 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     // ── Responsive Scale Calculations ────────────────────────────────────────
     // Scales dynamically using screen width percentages, bounded safely by clamps.
     final dynamicHomeReelsSize = (screenW * 0.075).clamp(24.0, 28.0);
-    final dynamicScanProfileSize = (screenW * 0.095).clamp(30.0, 38.0);
+    // Scan Bill and Profile no longer have a size of their own — all four nav
+    // items use dynamicHomeReelsSize now, which is what makes the whole row
+    // line up. The separate 0.095 scale that used to make them larger has been
+    // removed rather than left unused.
     final dynamicFontSize = (screenW * 0.025).clamp(9.0, 11.0);
 
     return Scaffold(
@@ -1697,7 +1716,11 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         color: const Color.fromARGB(255, 20, 143, 208), 
         elevation: 8,
         padding: EdgeInsets.zero,
-        height: kBottomNavigationBarHeight + 6, // Fixed safe 62dp high row
+        // Material's standard 56dp, down from 62. The row holds an icon
+        // (max 28) + 1 + a label (max ~13) = 42, so there is still ~14dp of
+        // slack at the largest icon and font this bar allows — it cannot
+        // overflow, and the content simply sits lower on the screen.
+        height: kBottomNavigationBarHeight,
         child: Row(
           children: [
             // Left half
@@ -1711,11 +1734,18 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     label: 'Home',
                     isSelected: sel == 0,
                     onTap: () => context.go('/home'),
-                    assetIcon: 'assets/icons/home_page_icons/icon2.png',
-                    assetActiveIcon: 'assets/icons/home_page_icons/icon1.png',
-                    iconSize: dynamicHomeReelsSize, 
+                    // New nav icon set — all four drawn to one spec (92x92,
+                    // same stroke, same rounded caps) so they sit identically.
+                    // _NavItem tints them via BlendMode.srcIn, so the same
+                    // file serves both the normal and selected state.
+                    assetIcon: 'assets/images/nav_home.png',
+                    assetActiveIcon: 'assets/images/nav_home.png',
+                    iconSize: dynamicHomeReelsSize,
                     fontSize: dynamicFontSize,
-                    assetPadding: const EdgeInsets.all(4.0),
+                    // Zero, like the other three. The old 4dp inset made this
+                    // icon render smaller than its neighbours even at the same
+                    // iconSize — the new set is drawn with its own padding.
+                    assetPadding: EdgeInsets.zero,
                   ),
                   // Learn Claimit, in the slot that used to hold Reels.
                   // Reels is still reachable as "Promo Reelz" in the Explore
@@ -1730,8 +1760,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     label: 'Learn',
                     isSelected: sel == 1,
                     onTap: () => context.go('/learn'),
-                    assetIcon: 'assets/images/zone_learn.png',
-                    assetActiveIcon: 'assets/images/zone_learn.png',
+                    // Bottom-nav only. 92x92 like icon5/icon7 beside it — the
+                    // old zone_learn.png is 139x158 and a different shape, so
+                    // it never matched its neighbours. The Explore Claimit
+                    // tile still uses zone_learn.png, unchanged.
+                    assetIcon: 'assets/images/nav_learn.png',
+                    assetActiveIcon: 'assets/images/nav_learn.png',
                     iconSize: dynamicHomeReelsSize,
                     fontSize: dynamicFontSize,
                     assetPadding: EdgeInsets.zero,
@@ -1748,29 +1782,41 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _NavItem(
-                    icon: Icons.qr_code_scanner_rounded,
-                    activeIcon: Icons.qr_code_scanner_rounded,
-                    label: 'Scan Bill',
-                    isSelected: false, 
-                    onTap: () => context.push('/bill-reader'),
-                    assetIcon: 'assets/icons/home_page_icons/icon5.png',
-                    assetActiveIcon: 'assets/icons/home_page_icons/icon6.png',
-                    iconSize: dynamicScanProfileSize, // Automatically scales right around 45.0
-                    fontSize: dynamicFontSize,
-                    assetPadding: EdgeInsets.zero,
+                  // Bottom padding lifts these two off the bar's lower edge.
+                  // The _NavItem centres itself in whatever height it is given,
+                  // so removing height from the bottom moves the content up by
+                  // half of it — layout-safe, unlike a Transform, which shifts
+                  // painting without telling the layout and can end up drawn
+                  // outside the bar.
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: _kNavLift),
+                    child: _NavItem(
+                      icon: Icons.qr_code_scanner_rounded,
+                      activeIcon: Icons.qr_code_scanner_rounded,
+                      label: 'Scan Bill',
+                      isSelected: false,
+                      onTap: () => context.push('/bill-reader'),
+                      assetIcon: 'assets/images/nav_scan.png',
+                      assetActiveIcon: 'assets/images/nav_scan.png',
+                      iconSize: dynamicHomeReelsSize,
+                      fontSize: dynamicFontSize,
+                      assetPadding: EdgeInsets.zero,
+                    ),
                   ),
-                  _NavItem(
-                    icon: Icons.person_outline_rounded,
-                    activeIcon: Icons.person_rounded,
-                    label: 'Profile',
-                    isSelected: sel == 3,
-                    onTap: () => context.go('/profile'),
-                    assetIcon: 'assets/icons/home_page_icons/icon7.png',
-                    assetActiveIcon: 'assets/icons/home_page_icons/icon8.png',
-                    iconSize: dynamicScanProfileSize, // Automatically scales right around 45.0
-                    fontSize: dynamicFontSize,
-                    assetPadding: EdgeInsets.zero,
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: _kNavLift),
+                    child: _NavItem(
+                      icon: Icons.person_outline_rounded,
+                      activeIcon: Icons.person_rounded,
+                      label: 'Profile',
+                      isSelected: sel == 3,
+                      onTap: () => context.go('/profile'),
+                      assetIcon: 'assets/images/nav_profile.png',
+                      assetActiveIcon: 'assets/images/nav_profile.png',
+                      iconSize: dynamicHomeReelsSize,
+                      fontSize: dynamicFontSize,
+                      assetPadding: EdgeInsets.zero,
+                    ),
                   ),
                 ],
               ),

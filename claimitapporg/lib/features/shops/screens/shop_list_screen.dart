@@ -9,6 +9,7 @@ import '../services/shop_service.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/services/location_service.dart';
+import '../../bill_reader/services/bill_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ShopItem data model — now driven by real API data from MongoDB.
@@ -230,6 +231,12 @@ class _ShopListScreenState extends State<ShopListScreen> {
     _isRewards = !widget.isTab && widget.category.id >= 0;
     _scrollController.addListener(_onScroll);
     _loadShops();
+    // Cards print the cashback % — make sure it is the admin's current value
+    // and not the launch default. Cached after the first call app-wide, so
+    // this costs one request per app run at most.
+    BillService.instance.ensureRates().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   // Resolves the coordinates to search around:
@@ -782,11 +789,18 @@ class _ShopListScreenState extends State<ShopListScreen> {
               Expanded(child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Identical to the home bar — same four tabs, same four
+                  // icons. This screen used to show Reels here with the old
+                  // icon2/5/7 set, so the navigation changed under the user
+                  // on the way in. Reels stays reachable from Explore Claimit.
+                  // Identical to the home bar — same four tabs, same four
+                  // icons, same size (see _BottomBarItem.build).
                   _BottomBarItem(icon: Icons.home_rounded, label: 'Home',
-                      assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                      assetIcon: 'assets/images/nav_home.png',
                       onTap: () => context.go('/home')),
-                  _BottomBarItem(icon: Icons.play_circle_rounded, label: 'Reels',
-                      onTap: () => context.go('/reelz')),
+                  _BottomBarItem(icon: Icons.school_rounded, label: 'Learn',
+                      assetIcon: 'assets/images/nav_learn.png',
+                      onTap: () => context.go('/learn')),
                 ],
               )),
               const SizedBox(width: 72),
@@ -794,12 +808,10 @@ class _ShopListScreenState extends State<ShopListScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _BottomBarItem(icon: Icons.qr_code_scanner_rounded, label: 'Scan Bill',
-                      assetIcon: 'assets/icons/home_page_icons/icon5.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_scan.png',
                       onTap: () => context.push('/bill-reader')),
                   _BottomBarItem(icon: Icons.person_rounded, label: 'Profile',
-                      assetIcon: 'assets/icons/home_page_icons/icon7.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_profile.png',
                       onTap: () => context.go('/profile')),
                 ],
               )),
@@ -1085,10 +1097,13 @@ class _ShopCard extends StatelessWidget {
                                       ? const Color(0xFFF97316)
                                       : const Color(0xFF2563EB)),
                               const SizedBox(width: 4),
+                              // Cashback % comes from the admin-set rate, not a
+                              // hard-coded "1%". Every card would otherwise keep
+                              // advertising 1% after the offer moved to 2%.
                               Text(
                                 isRedeemMode
-                                    ? '${shop.discount}% Disc + 1% Cashback'
-                                    : 'Free Reward + 1% Cashback',
+                                    ? '${shop.discount}% Disc + ${BillService.cashbackLabel}'
+                                    : 'Free Reward + ${BillService.cashbackLabel}',
                                 style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
@@ -1237,21 +1252,22 @@ class _BottomBarItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final String? assetIcon;
-  final bool isScanProfile;
   const _BottomBarItem({
     required this.icon,
     required this.label,
     required this.onTap,
     this.assetIcon,
-    this.isScanProfile = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
-    final iconSize = isScanProfile
-        ? (screenW * 0.095).clamp(30.0, 38.0)
-        : (screenW * 0.075).clamp(24.0, 28.0);
+    // Exactly the home bar's numbers. There used to be a second, larger scale
+    // (0.095 / clamp 30-38) selected by an isScanProfile flag, because the old
+    // icon2 was drawn to a different spec than icon5/icon7 and needed to be
+    // smaller to look equal. The new nav_*.png set is one 92x92 spec, so the
+    // second scale has been removed rather than left unused — same as on Home.
+    final iconSize = (screenW * 0.075).clamp(24.0, 28.0);
     final fontSize = (screenW * 0.025).clamp(9.0, 11.0);
 
     return GestureDetector(
@@ -1265,14 +1281,14 @@ class _BottomBarItem extends StatelessWidget {
             SizedBox(
               width: iconSize,
               height: iconSize,
+              // Zero padding for all four, like Home. The old 4dp inset made
+              // whichever icon got it render smaller than its neighbours at
+              // the same iconSize; the new set carries its own padding.
               child: assetIcon != null
-                  ? Padding(
-                      padding: isScanProfile ? EdgeInsets.zero : const EdgeInsets.all(4),
-                      child: Image.asset(assetIcon!, fit: BoxFit.contain,
-                          color: Colors.white, colorBlendMode: BlendMode.srcIn,
-                          errorBuilder: (_, __, ___) =>
-                              Icon(icon, color: Colors.white, size: iconSize)),
-                    )
+                  ? Image.asset(assetIcon!, fit: BoxFit.contain,
+                      color: Colors.white, colorBlendMode: BlendMode.srcIn,
+                      errorBuilder: (_, __, ___) =>
+                          Icon(icon, color: Colors.white, size: iconSize))
                   : Icon(icon, color: Colors.white, size: iconSize),
             ),
             const SizedBox(height: 1),

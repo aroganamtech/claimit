@@ -172,6 +172,10 @@ const geo = {
   getCountries: ()               => get('/geo/countries'),
   getStates:    (country='India') => get('/geo/states', { country }),
   lookupPincode:(pincode)        => get(`/geo/pincode/${pincode}`),
+  // Every PIN code Claimit already has content in, for the ad-form dropdown.
+  // Typing one by hand is how listings ended up with "000000" or a typo and
+  // became invisible to the 5 km search — picking from a list prevents that.
+  listPincodes: (q = '')          => get('/geo/pincodes', q ? { q } : undefined),
 }
 
 // ─── Admin ───────────────────────────────────────────────────
@@ -206,6 +210,22 @@ const admin = {
       params: { replace },
     }).then(r => r.data),
 
+  // ── WhatsApp claim campaign ───────────────────────────────────────────
+  // Same two-step upload as every other bulk import: the browser PUTs the
+  // .xlsx straight to S3 (presignUpload), then only the key comes here.
+  // A multipart POST would be blocked by CloudFront with a 403.
+  //
+  // preview NEVER sends anything — it reports what would be sent, which rows
+  // were rejected and why, and how many are already messaged.
+  campaignPreview: (key) =>
+    http.post('/admin/whatsapp-campaign/preview', { key }).then(r => r.data),
+  // confirm:true is required by the API so a stray click cannot spend money.
+  campaignSend: (recipients) =>
+    http.post('/admin/whatsapp-campaign/send',
+      { recipients, confirm: true }).then(r => r.data),
+  campaignLog: () =>
+    http.get('/admin/whatsapp-campaign/log').then(r => r.data),
+
   // ── Bulk upload: Local Finds / Classifieds ────────────────────────────
   // listingType ("local_find" | "classified") picks the template and is
   // stamped on every inserted row — it's what keeps the two products apart.
@@ -234,6 +254,10 @@ const admin = {
   // Premium ad slot caps (Nearby Deals + Brand Deals)
   getAdSettings:     ()       => get('/admin/ad-settings'),
   updateAdSettings:  (payload) => put('/admin/ad-settings', payload),
+  // Bill-scan reward rates — what a user earns per scanned bill. Read by the
+  // app backend on every scan, so a change here applies to the next one.
+  getBillRates:      ()       => get('/admin/bill-rates'),
+  updateBillRates:   (payload) => put('/admin/bill-rates', payload),
   // Central pricing — every amount charged across shop/ads/local finds
   getPricing:        ()       => get('/admin/pricing'),
   updatePricing:     (payload) => put('/admin/pricing', payload),

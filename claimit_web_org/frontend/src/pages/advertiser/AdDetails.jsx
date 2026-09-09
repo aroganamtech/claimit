@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AdvertiserSidebar from './AdvertiserSidebar'
 import api from '../../utils/api'
+import PincodeSelect from '../../components/PincodeSelect'
 
 const AD_LABELS = {
   home_banner: 'Home Page Banner Ad',
@@ -401,7 +402,11 @@ export default function AdDetails() {
       }
     }
 
-    if (!pincode) { setError('Pincode is required'); return }
+    // A missing or placeholder pincode leaves the ad with no position, so the
+    // app's 5 km search can never return it — paid for and invisible.
+    if (!/^\d{6}$/.test(String(pincode || '')) || pincode === '000000') {
+      setError('Please choose a pincode from the list'); return
+    }
 
     const draft = {
       adType,
@@ -493,8 +498,8 @@ export default function AdDetails() {
             <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: 24, marginBottom: 20 }}>
               <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Location &amp; Targeting</h3>
               <label style={labelStyle}>Pincode <span style={{ color: '#e53935' }}>*</span></label>
-              <input className="input-field" placeholder="Enter target pincode" value={pincode} onChange={e => setPincode(e.target.value)} />
-              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>Your ad will be shown to users in this area.</p>
+              <PincodeSelect value={pincode} onChange={setPincode} />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>Your ad will be shown to users within 5 km of this area.</p>
             </div>
 
             {/* Price summary */}

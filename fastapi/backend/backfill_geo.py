@@ -52,7 +52,8 @@ MONGO_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DATABASE_NAME", "claimit_db")
 
 # Collections that need a geo point for the radius search to see them.
-TARGETS = ["deals", "reels", "shops", "classifieds", "select_professionals"]
+TARGETS = ["deals", "reels", "shops", "classifieds", "select_professionals",
+           "banners"]
 
 # Shared PIN-code → coordinates cache, also written by the web backend when a
 # new ad is published (utils/pincode_geo.py). One table, two writers.

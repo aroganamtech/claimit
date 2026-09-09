@@ -8,7 +8,7 @@ from ..database import get_db
 from ..utils.auth import get_current_user
 from ..utils.helpers import serialize_doc, prioritize_by_location, sort_by_tier
 from ..utils.s3 import public_url
-from ..utils.geo_filter import nearby_docs, attach_distance
+from ..utils.geo_filter import attach_distance, nearby_or_nearest
 from ..utils.ad_window import filter_live
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
@@ -37,16 +37,20 @@ async def get_nearby_deals(
     if category and category.lower() not in ("all", ""):
         query["category"] = {"$regex": category, "$options": "i"}
 
-    # Radius filter when the app sends the selected point, so this page agrees
-    # with the search screen about what "nearby" means. Without coordinates it
-    # behaves exactly as it always has — an older app build keeps working.
-    deals = await nearby_docs(db, "deals", lat, lng, radius_km, query, 100)
+    # Radius first, then widen rather than show nothing: 5 km, then 10 km,
+    # then the nearest deals anywhere. An empty screen reads as a broken app,
+    # so a quiet area gets the closest deals instead — labelled as such by
+    # `showing_nearest` below, never passed off as local.
+    #
+    # filter_live goes IN as the post-filter: without it a step could return
+    # three expired ads, count as "found", and still render blank.
+    deals, geo_info = await nearby_or_nearest(
+        db, "deals", lat, lng, radius_km, query, 100, post_filter=filter_live,
+    )
     if deals is None:
-        deals = await db.deals.find(query).sort("name", 1).to_list(length=100)
-    # Only ads inside their paid Friday→Thursday week. This is what makes a
-    # deal booked on Tuesday stay hidden until Friday, and stop showing after
-    # its Thursday — no cron job required.
-    deals = filter_live(deals)
+        deals = filter_live(
+            await db.deals.find(query).sort("name", 1).to_list(length=100)
+        )
     result = [attach_distance(_fix_image_url(serialize_doc(d))) for d in deals]
     # Premium-first WITHIN each location group: tier-sort first (stable), then
     # partition by location — prioritize_by_location's partition is itself
@@ -55,7 +59,7 @@ async def get_nearby_deals(
     # area's own Premium deals float to the top instead.
     result = sort_by_tier(result)
     result = prioritize_by_location(result, area or location or "", pincode or "")
-    return {"success": True, "deals": result, "total": len(result)}
+    return {"success": True, "deals": result, "total": len(result), **geo_info}
 
 
 @router.get("/brand")
@@ -75,17 +79,19 @@ async def get_brand_deals(
     # carries a pincode and is shown within the radius like every other
     # feature. A brand deal with no coordinates simply won't appear until its
     # pincode is filled in.
-    deals = await nearby_docs(db, "deals", lat, lng, radius_km, query, 100)
+    # Same widening rule as Nearby Deals — 5 km, 10 km, then nearest anywhere —
+    # so a user in a quiet pincode sees brand offers rather than a blank page.
+    deals, geo_info = await nearby_or_nearest(
+        db, "deals", lat, lng, radius_km, query, 100, post_filter=filter_live,
+    )
     if deals is None:
-        deals = await db.deals.find(query).sort("name", 1).to_list(length=100)
-    # Only ads inside their paid Friday→Thursday week. This is what makes a
-    # deal booked on Tuesday stay hidden until Friday, and stop showing after
-    # its Thursday — no cron job required.
-    deals = filter_live(deals)
+        deals = filter_live(
+            await db.deals.find(query).sort("name", 1).to_list(length=100)
+        )
     result = [attach_distance(_fix_image_url(serialize_doc(d))) for d in deals]
     # Premium ads still rank first within whatever is in range.
     result = sort_by_tier(result)
-    return {"success": True, "deals": result, "total": len(result)}
+    return {"success": True, "deals": result, "total": len(result), **geo_info}
 
 
 @router.get("/{deal_id}")

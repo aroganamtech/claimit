@@ -54,10 +54,17 @@ async def store_otp(phone: str, otp: str, expires_in_minutes: int = 10) -> bool:
 
 
 async def verify_otp(phone: str, otp: str) -> bool:
-    """Verify OTP from database. Uses static OTP for demo."""
-    # Static OTP for demo/development
-    if otp == settings.static_otp:
-        return True
+    """Verify the OTP that was actually generated and sent to this number.
+
+    The static/demo OTP that used to short-circuit this function has been
+    REMOVED. It accepted one fixed code for every account, was not gated by any
+    environment or debug flag, and bypassed the expiry and attempt limits below
+    — so anyone who knew it could sign in as any customer, merchant or admin.
+    WhatsApp and email delivery both work, so nothing depends on it.
+    """
+    otp = (otp or "").strip()
+    if not otp:
+        return False
 
     db = get_db()
     record = await db.otp_store.find_one({"phone": phone})

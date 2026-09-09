@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../models/learn_item.dart';
 import '../services/learn_service.dart';
@@ -37,6 +38,15 @@ class _LearnListScreenState extends State<LearnListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // Explicit back button. Learn Claimit is a bottom-nav tab, so its
+        // navigator has nothing to pop and AppBar's automatic back arrow never
+        // appears — leaving the user with no way out but the nav bar. Pops
+        // when there IS somewhere to go back to, otherwise returns home.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/home'),
+        ),
         title: const Text('Learn Claimit'),
         elevation: 0,
       ),

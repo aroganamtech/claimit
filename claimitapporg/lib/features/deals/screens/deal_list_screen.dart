@@ -380,11 +380,19 @@ class _DealListScreenState extends State<DealListScreen> {
               Expanded(child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Same four tabs, same four icons as the home bar. This bar
+                  // used to show Reels here and the old icon2/5/7 set, so
+                  // walking from Home into a deal changed the navigation
+                  // under the user. Reels is still reachable from the Explore
+                  // Claimit strip and the centre button, exactly as on Home.
+                  // Identical to the home bar — same four tabs, same four
+                  // icons, same size (see _DealBottomBarItem.build).
                   _DealBottomBarItem(icon: Icons.home_rounded, label: 'Home',
-                      assetIcon: 'assets/icons/home_page_icons/icon2.png',
+                      assetIcon: 'assets/images/nav_home.png',
                       onTap: () => context.go('/home')),
-                  _DealBottomBarItem(icon: Icons.play_circle_rounded, label: 'Reels',
-                      onTap: () => context.go('/reelz')),
+                  _DealBottomBarItem(icon: Icons.school_rounded, label: 'Learn',
+                      assetIcon: 'assets/images/nav_learn.png',
+                      onTap: () => context.go('/learn')),
                 ],
               )),
               const SizedBox(width: 72),
@@ -393,12 +401,10 @@ class _DealListScreenState extends State<DealListScreen> {
                 children: [
                   _DealBottomBarItem(icon: Icons.qr_code_scanner_rounded,
                       label: 'Scan Bill',
-                      assetIcon: 'assets/icons/home_page_icons/icon5.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_scan.png',
                       onTap: () => context.push('/bill-reader')),
                   _DealBottomBarItem(icon: Icons.person_rounded, label: 'Profile',
-                      assetIcon: 'assets/icons/home_page_icons/icon7.png',
-                      isScanProfile: true,
+                      assetIcon: 'assets/images/nav_profile.png',
                       onTap: () => context.go('/profile')),
                 ],
               )),
@@ -824,21 +830,22 @@ class _DealBottomBarItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final String? assetIcon;
-  final bool isScanProfile;
   const _DealBottomBarItem({
     required this.icon,
     required this.label,
     required this.onTap,
     this.assetIcon,
-    this.isScanProfile = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
-    final iconSize = isScanProfile
-        ? (screenW * 0.095).clamp(30.0, 38.0)
-        : (screenW * 0.075).clamp(24.0, 28.0);
+    // Exactly the home bar's numbers. There used to be a second, larger scale
+    // (0.095 / clamp 30-38) selected by an isScanProfile flag, because the old
+    // icon2 was drawn to a different spec than icon5/icon7 and needed to be
+    // smaller to look equal. The new nav_*.png set is one 92x92 spec, so the
+    // second scale has been removed rather than left unused — same as on Home.
+    final iconSize = (screenW * 0.075).clamp(24.0, 28.0);
     final fontSize = (screenW * 0.025).clamp(9.0, 11.0);
 
     return GestureDetector(
@@ -852,9 +859,12 @@ class _DealBottomBarItem extends StatelessWidget {
             SizedBox(
               width: iconSize,
               height: iconSize,
+              // Zero padding for all four, like Home. The old 4dp inset made
+              // whichever icon got it render smaller than its neighbours at
+              // the same iconSize; the new set carries its own padding.
               child: assetIcon != null
                   ? Padding(
-                      padding: isScanProfile ? EdgeInsets.zero : const EdgeInsets.all(4),
+                      padding: EdgeInsets.zero,
                       child: Image.asset(assetIcon!, fit: BoxFit.contain,
                           color: Colors.white, colorBlendMode: BlendMode.srcIn,
                           errorBuilder: (_, __, ___) =>

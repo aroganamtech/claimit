@@ -86,6 +86,19 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     if (_issue != null) {
       _manualMode = true;
     }
+    _loadRates();
+  }
+
+  /// The reward percentages an admin has set — read from the same app-wide
+  /// cache the shop cards and offer chips use, so this preview can never
+  /// disagree with the number the user was shown on the way in.
+  double get _cashbackPct => BillService.cashbackPercent;
+  double get _pointsPct   => BillService.pointsPercent;
+
+  Future<void> _loadRates() async {
+    await BillService.instance.ensureRates();
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
@@ -292,8 +305,15 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
   }
 
   double get _billAmount => double.tryParse(_amtCtrl.text.trim()) ?? 0;
-  double get _estimatedPoints  => _billAmount / 10;
-  String get _cashbackPreview  => (_billAmount * 0.01).toStringAsFixed(0);
+  // Formatting lives on BillService so every screen renders the percentage
+  // identically ("1" not "1.0", but "1.5" kept as "1.5").
+  static String _fmtPct(double v) => BillService.fmtPct(v);
+
+  // Both use the admin-set rates rather than a hard-coded 1% / 10%, so this
+  // preview always matches what the server credits.
+  double get _estimatedPoints  => _billAmount * _pointsPct / 100;
+  String get _cashbackPreview  =>
+      (_billAmount * _cashbackPct / 100).toStringAsFixed(0);
 
   // ── Build ────────────────────────────────────────────────────────────────────
 
@@ -719,7 +739,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                     _RewardRow(
                       icon: Icons.account_balance_rounded,
                       iconColor: const Color(0xFF2563EB),
-                      label: 'Cashback (1%)',
+                      label: 'Cashback (${_fmtPct(_cashbackPct)}%)',
                       value: '₹$_cashbackPreview',
                       valueColor: const Color(0xFF2563EB),
                     ),
@@ -727,7 +747,7 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                     _RewardRow(
                       icon: Icons.stars_rounded,
                       iconColor: const Color(0xFFD97706),
-                      label: 'Reward Points (10%)',
+                      label: 'Reward Points (${_fmtPct(_pointsPct)}%)',
                       value: '${BillRewardEntry.fmtPoints(_estimatedPoints)} pts',
                       valueColor: const Color(0xFFD97706),
                     ),

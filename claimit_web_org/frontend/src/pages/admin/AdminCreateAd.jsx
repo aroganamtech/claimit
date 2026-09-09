@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { useState } from 'react'
 import api from '../../utils/api'
+import PincodeSelect from '../../components/PincodeSelect'
 
 const AD_TYPES = [
   { key: 'home_banner',  label: 'Home Page Hero Ad',  note: 'Video (15–20s) or Static Image — home page', price: '₹700/week' },
@@ -13,14 +14,25 @@ const AD_TYPES = [
   { key: 'promo_reelz',  label: 'Promo Reelz Ad',     note: 'Video / static thumbnail',                   price: '₹700/week' },
 ]
 
+// Admin-only run lengths. An advertiser always buys the weekly cycle; admin
+// is not selling anything, so admin can also start immediately or never stop.
+const DURATIONS = [
+  { key: 'now',    label: 'Start now',           note: 'Live immediately, ends when this week ends.' },
+  { key: 'always', label: 'Never stop',          note: 'Live immediately with no end date. Runs until you pause it.' },
+  { key: 'cycle',  label: 'Next weekly cycle',   note: 'Same as a paid ad — starts on the next cycle day and runs 7 days.' },
+  { key: 'date',   label: 'Schedule for a date', note: 'Starts on the cycle containing the date you pick.' },
+]
+
 const input = { width: '100%', padding: '10px 12px', margin: '4px 0 14px', border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }
 const label = { fontSize: 13, fontWeight: 600, color: '#333' }
 
 export default function AdminCreateAd() {
   const [adType, setAdType] = useState('home_banner')
   const [tier, setTier] = useState('standard')
-  const [pincode, setPincode] = useState('000000')
-  const [publishToday, setPublishToday] = useState(true)
+  // Empty, not '000000'. The old placeholder was a real value that sailed
+  // through and left the ad unplaceable on the map — now the admin must pick.
+  const [pincode, setPincode] = useState('')
+  const [duration, setDuration] = useState('now')
   const [scheduledDate, setScheduledDate] = useState('')
   const [form, setForm] = useState({})
   const [creative, setCreative] = useState(null)
@@ -41,6 +53,14 @@ export default function AdminCreateAd() {
   const submit = async () => {
     setMsg(null)
     if (!creative) { setMsg({ ok: false, text: 'Please attach the creative (image/video).' }); return }
+    // Without a real pincode the ad has no position, so the 5 km search can
+    // never return it — the ad would be paid for and invisible.
+    if (!/^\d{6}$/.test(String(pincode || '')) || pincode === '000000') {
+      setMsg({ ok: false, text: 'Please choose a pincode — it is what makes the ad appear in the app.' }); return
+    }
+    if (duration === 'date' && !scheduledDate) {
+      setMsg({ ok: false, text: 'Please pick a start date, or choose a different option.' }); return
+    }
     const isVideo = adType === 'promo_reelz' || (creative.type && creative.type.startsWith('video/'))
     try {
       setBusy(isVideo ? 'Uploading video…' : 'Uploading image…')
@@ -52,15 +72,24 @@ export default function AdminCreateAd() {
       const payload = {
         ad_type: adType,
         tier,
-        pincode: pincode || '000000',
-        publish_today: publishToday,
-        scheduled_date: publishToday ? undefined : scheduledDate,
+        pincode,
+        // 'date' is not a backend duration — it is the cycle mode plus an
+        // explicit date, which the backend snaps onto the cycle it falls in.
+        duration: duration === 'date' ? 'cycle' : duration,
+        publish_today: duration === 'now' || duration === 'always',
+        scheduled_date: duration === 'date' ? scheduledDate : undefined,
         creative_key: creativeKey,
         thumbnail_key: thumbnailKey,
         ...form,
       }
       const res = await api.admin.createAd(payload)
-      setMsg({ ok: true, text: `✅ Ad created and ${res.status === 'active' ? 'live now' : 'scheduled'} (id ${res.id}). It will appear in the app.` })
+      // Say exactly when it runs, so nobody has to guess whether it is live.
+      const when = res.never_expires
+        ? 'live now and will not expire'
+        : res.status === 'active'
+          ? `live now until ${res.end_date}`
+          : `scheduled for ${res.publish_date} – ${res.end_date}`
+      setMsg({ ok: true, text: `✅ Ad created — ${when} (id ${res.id}).` })
       // Reset the form for the next ad
       setForm({}); setCreative(null); setThumbnail(null)
     } catch (e) {
@@ -135,9 +164,11 @@ export default function AdminCreateAd() {
           </select>
         </>)}
 
-        {/* Pincode — relevant for nearby deals especially */}
+        {/* Pincode — this is what places the ad on the map for the 5 km search */}
         <div style={label}>Pincode</div>
-        <input style={input} value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="000000" />
+        <div style={{ margin: '4px 0 14px' }}>
+          <PincodeSelect value={pincode} onChange={setPincode} />
+        </div>
 
         {/* Media */}
         <div style={label}>{adType === 'promo_reelz' ? 'Video creative' : adType === 'home_banner' ? 'Image or video creative' : 'Image creative'}</div>
@@ -150,16 +181,39 @@ export default function AdminCreateAd() {
           <input style={input} type="file" accept="image/*" onChange={(e) => setThumbnail(e.target.files?.[0] || null)} />
         </>)}
 
-        {/* Schedule */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', margin: '4px 0 14px' }}>
-          <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input type="radio" checked={publishToday} onChange={() => setPublishToday(true)} /> Publish today
-          </label>
-          <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input type="radio" checked={!publishToday} onChange={() => setPublishToday(false)} /> Schedule
-          </label>
-          {!publishToday && (
-            <input type="date" style={{ ...input, width: 'auto', margin: 0 }} value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+        {/* How long it runs. The old "Publish today" radio did not publish
+            today — it sent no date, which the backend read as the NEXT weekly
+            cycle, so an ad made on Monday sat invisible until Friday. These
+            four options say plainly what each one does. Admin only; a paying
+            advertiser still gets the weekly cycle. */}
+        <div style={label}>When it runs</div>
+        <div style={{ margin: '6px 0 14px', display: 'grid', gap: 8 }}>
+          {DURATIONS.map((d) => (
+            <label key={d.key} style={{
+              display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 13.5,
+              border: '1px solid', borderColor: duration === d.key ? '#1a237e' : '#e0e0e0',
+              background: duration === d.key ? '#f4f5fc' : '#fff',
+              borderRadius: 8, padding: '9px 11px', cursor: 'pointer',
+            }}>
+              <input type="radio" name="duration" checked={duration === d.key}
+                onChange={() => setDuration(d.key)} style={{ marginTop: 2 }} />
+              <span>
+                <span style={{ fontWeight: 600 }}>{d.label}</span>
+                <span style={{ display: 'block', color: '#777', fontSize: 12.5, marginTop: 1 }}>{d.note}</span>
+              </span>
+            </label>
+          ))}
+          {duration === 'date' && (
+            <input type="date" style={{ ...input, margin: '2px 0 0' }} value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)} />
+          )}
+          {duration === 'always' && tier === 'premium' && isDeal && (
+            <div style={{ fontSize: 12.5, color: '#8a6d00', background: '#fff8e1',
+              border: '1px solid #ffe082', borderRadius: 8, padding: '9px 11px' }}>
+              Heads up: a Premium ad that never stops holds one of the limited
+              Premium slots for this pincode permanently, so advertisers cannot
+              buy it. Use Standard for evergreen house ads.
+            </div>
           )}
         </div>
 

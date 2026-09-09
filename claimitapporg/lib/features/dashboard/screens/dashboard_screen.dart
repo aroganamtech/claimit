@@ -1105,7 +1105,7 @@ import 'dart:convert';
 //   }
 // }
 import 'dart:async';
-import 'dart:math' show Random;
+import 'dart:math' show Random, min;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -1547,6 +1547,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (LocationService.lastPincode.isNotEmpty) {
         params['pincode'] = LocationService.lastPincode;
       }
+      // The selected point. Banners are RANKED by distance, not cut off by the
+      // radius — the nearest shop's banner shows first and a distant one still
+      // appears further down, so the carousel is never empty in a quiet area.
+      // geoParams carries radius_km too, which /banners simply ignores.
+      params.addAll(LocationService.geoParams);
       final resp = await ApiClient().get('/banners', queryParams: params);
       if (resp.statusCode == 200 && resp.data is Map) {
         final list = resp.data['banners'] as List? ?? [];
@@ -2049,9 +2054,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
                   // ── Deal cards (from API) ───────────────────────────────
+                  // Still a plain vertical stack — unchanged. The space above
+                  // was trimmed instead, so more of the second card is on
+                  // screen without touching the card design.
                   if (_loadingDeals)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
@@ -2527,6 +2535,36 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
   ];
   static const int _perPage = 4;
 
+  /// Width of each side arrow. ONE definition, used by both `_arrow` and the
+  /// row-height estimate in build(). They were previously two separate numbers
+  /// (22 and 18) that disagreed, and that 4px-per-side gap was exactly the
+  /// 8px horizontal overflow this row reported on a 360dp phone.
+  static const double _kArrowW = 18.0;
+
+  /// Gap between the zone icons, as a fraction of one tile's width.
+  /// Expressed as a ratio rather than a pixel count so the spacing scales with
+  /// the screen — wider phones get a proportionally wider gap, and a 320px
+  /// phone doesn't lose its icons to fixed padding.
+  static const double _kTileGapRatio = 0.22;
+
+  /// Space above AND below the "Explore Claimit" heading. One constant used in
+  /// both places, so the heading is always centred between the banner above it
+  /// and its icons below — it cannot drift to one side the way it did when the
+  /// two gaps were separate numbers (0 above, 6 below).
+  static const double _kHeadingGap = 6.0;
+
+  /// "Explore Claimit" heading text size, 2% down from the original 15.
+  static const double _kHeadingFont = 15.0 * 0.98;
+
+  /// Side gutters. Narrowed so the first and last icon sit closer to the
+  /// screen edges — that width goes straight into the tiles, making every
+  /// icon bigger. The arrow stays comfortably tappable at 18.
+  static const double _kPagePad = 2.0;
+
+  /// Gap between an icon and its label. Small, so the label sits tight under
+  /// the icon rather than floating below it.
+  static const double _kIconLabelGap = 2.0;
+
   int get _pageCount => (_allZones.length + _perPage - 1) ~/ _perPage;
 
   List<ExploreZone> _itemsFor(int page) =>
@@ -2552,35 +2590,43 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
     final w = MediaQuery.of(context).size.width;
 
     // ── Sizing ───────────────────────────────────────────────────────────
-    // Five tiles have to fit between two arrow gutters, on everything from a
-    // 320px phone to a tablet. The arrows are deliberately narrow (22px) so
-    // nearly all the width goes to the icons — the client wanted them bigger
-    // with less empty space around them.
+    // The tiles have to fit between two arrow gutters, on everything from a
+    // 320px phone to a tablet. The arrows are deliberately narrow so nearly
+    // all the width goes to the icons — the client wanted them bigger with
+    // less empty space around them.
     //
-    // Everything is derived from screen width and clamped at both ends, so
-    // the icons grow on a big screen without ever getting wide enough to
-    // collide on a small one.
-    const gutter = 18.0;                     // arrow column, each side
-    const pagePad = 8.0;                     // padding inside the pager
-    final tileW =
-        ((w - pagePad * 2 - gutter * 2) / _perPage).clamp(62.0, 118.0);
-    // 0.90 rather than filling the tile — the remaining 10% is the gap
-    // between icons the client asked for. Nudged up from 0.86 along with the
-    // caps, since they wanted them a little larger again.
-    final iconSize = (tileW * 0.90).clamp(56.0, 100.0);
+    // NOTHING here decides the tile width. That is measured at paint time by
+    // the LayoutBuilder below, from the space the pager actually has. An
+    // earlier version recomputed it from the screen width using an assumed
+    // arrow width of 18 while _arrow was really _kArrowW — the 4px difference
+    // on each side was exactly the 8px overflow this row used to report.
+    // Measuring instead of assuming means that class of bug cannot come back,
+    // whatever anyone changes about the arrows or the padding.
+    const pagePad = _kPagePad;               // padding inside the pager
 
-    // Icon + small gap + a two-line label box. The row is given 6px more than
-    // the column actually needs, which is the guard against an overflow on an
-    // unusual screen or a large system font.
+    // Only used to reserve a sensible ROW HEIGHT up front. The real icon size
+    // is derived from the measured box and can only ever be smaller than this.
+    final estTileW =
+        ((w - pagePad * 2 - _kArrowW * 2) / _perPage).clamp(62.0, 118.0);
+    final estIcon =
+        (estTileW * (1 - _kTileGapRatio)).clamp(48.0, 100.0);
+
+    // Icon + small gap + a two-line label box, plus a little slack.
+    // The slack is only 2px: the icon is measured against this height at paint
+    // time, so it shrinks to fit rather than needing a guard band.
     const labelH = 24.0;
-    final rowH = iconSize + 4 + labelH + 6;
+    const iconGap = _kIconLabelGap;
+    final rowH = estIcon + iconGap + labelH + 2;
 
     return Padding(
-      // Sits closer to the banner than before (client asked for it a little
-      // higher). Still a real gap, not a negative offset — the heading must
-      // never be painted over the banner image, which is what an earlier
-      // Transform-based version did.
-      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      // The "Explore Claimit" heading sits CENTRED between the banner above
+      // and its icons below — the same _kHeadingGap on each side. It used to
+      // have 0 above and 6 below, which pushed it up against the banner and
+      // read as misaligned rather than centred.
+      //
+      // A real gap, never a negative offset: the heading must not be painted
+      // over the banner image, which is what an earlier Transform version did.
+      padding: const EdgeInsets.only(top: _kHeadingGap, bottom: 2),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2593,7 +2639,7 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
               const Text(
                 'Explore Claimit',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: _kHeadingFont,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF1E293B),
                 ),
@@ -2602,9 +2648,10 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
               Container(width: 16, height: 2, color: const Color(0xFFF4B400)),
             ],
           ),
-          const SizedBox(height: 8),
+          // Same gap as above the heading — that is what centres it.
+          const SizedBox(height: _kHeadingGap),
 
-          // ── The five tiles, with an arrow either side ────────────────
+          // ── The tiles, with an arrow either side ────────────────────
           SizedBox(
             height: rowH,
             child: Row(
@@ -2621,15 +2668,36 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
                     onPageChanged: (i) => setState(() => _page = i),
                     itemBuilder: (_, p) => Padding(
                       padding: const EdgeInsets.symmetric(horizontal: pagePad),
-                      child: Row(
-                        // start, not spaceBetween: the last page holds only
-                        // two zones, and spaceBetween would fling them to
-                        // opposite edges. Fixed-width tiles from the left
-                        // keep every page aligned the same way.
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: _itemsFor(p)
-                            .map((z) => _tile(z, tileW, iconSize))
-                            .toList(),
+                      // Measure, don't assume. `box` is exactly the space the
+                      // tiles have, so tileW * _perPage can never exceed it —
+                      // the row cannot overflow horizontally by construction,
+                      // on any screen width, at any text scale.
+                      child: LayoutBuilder(
+                        builder: (context, box) {
+                          final tileW = box.maxWidth / _perPage;
+                          // Breathing room between icons, as a share of the
+                          // tile rather than a fixed number — so the gap grows
+                          // with the screen and never eats a small one. The
+                          // tile keeps its full width, so the row still cannot
+                          // overflow; only the icon inside it gets smaller.
+                          final gap = tileW * _kTileGapRatio;
+                          // Height is measured too: the icon shrinks to fit
+                          // whatever vertical room is really left after the
+                          // label, so it cannot overflow downwards either.
+                          final roomForIcon =
+                              box.maxHeight - iconGap - labelH;
+                          final iconSize =
+                              min(tileW - gap, roomForIcon).clamp(24.0, 100.0);
+                          return Row(
+                            // Centred, so the last page — which holds fewer
+                            // than a full row of zones — sits under the
+                            // heading instead of hugging the left edge.
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: _itemsFor(p)
+                                .map((z) => _tile(z, tileW, iconSize, labelH))
+                                .toList(),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -2642,7 +2710,7 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
 
           // ── Page dots ────────────────────────────────────────────────
           Row(
@@ -2668,13 +2736,17 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
 
   /// Side arrow. Kept in the layout even when hidden so the tiles don't shift
   /// sideways as you page between them.
+  ///
+  /// Its width comes from _kArrowW, the single source of truth the height
+  /// estimate in build() also reads — the two used to be separate numbers that
+  /// silently disagreed.
   Widget _arrow({
     required IconData icon,
     required bool visible,
     required VoidCallback onTap,
   }) =>
       SizedBox(
-        width: 22,
+        width: _kArrowW,
         child: visible
             ? IconButton(
                 padding: EdgeInsets.zero,
@@ -2685,7 +2757,8 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
             : const SizedBox.shrink(),
       );
 
-  Widget _tile(ExploreZone z, double tileW, double iconSize) => SizedBox(
+  Widget _tile(ExploreZone z, double tileW, double iconSize, double labelH) =>
+      SizedBox(
         width: tileW,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -2710,13 +2783,15 @@ class _ExploreClaimitStripState extends State<_ExploreClaimitStrip> {
                       color: Color(0xFF2563EB), size: 22),
                 ),
               ),
-              const SizedBox(height: 4),
+              // Same constant the row height reserves, so the label sits
+              // exactly where the layout expects it — no drift.
+              const SizedBox(height: _kIconLabelGap),
               // scaleDown keeps a long label ("Claimit Privilege") on two
-              // lines inside a narrow tile instead of overflowing it. The
-              // fixed height is what the row reserves space for, so the two
-              // must stay in step (see labelH in build).
+              // lines inside a narrow tile instead of overflowing it. labelH
+              // is passed in from the same constant the icon size was measured
+              // against, so the two can never drift apart.
               SizedBox(
-                height: 24,
+                height: labelH,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
@@ -2896,6 +2971,16 @@ class _CategoryRowState extends State<_CategoryRow> {
   }
 
   Widget _buildShowAll(BuildContext context, double width) {
+    // Same measured size as every other category tile.
+    //
+    // This used to hardcode 48 while the rest of the row used
+    // _categoryIconSize() — 38 on a 360dp phone. The row reserves
+    // iconSize + 34, so the All tile needed 48 + 6 + 26 = 80 in a 72 box and
+    // overflowed by exactly 8px on every normal phone. Reading the shared
+    // function means it now scales with the screen like its neighbours and
+    // cannot disagree with the row that holds it.
+    final iconSize = _categoryIconSize(context);
+
     return SizedBox(
       width: width,
       child: GestureDetector(
@@ -2908,12 +2993,12 @@ class _CategoryRowState extends State<_CategoryRow> {
             // _buildIcon). Falls back to the original bordered Material
             // icon if the asset is ever missing, so this can never break.
             SizedBox(
-              width: 48,
-              height: 48,
+              width: iconSize,
+              height: iconSize,
               child: Image.asset(
                 'assets/icons/home_category/icon_all.png',
-                width: 48,
-                height: 48,
+                width: iconSize,
+                height: iconSize,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Container(
                   decoration: BoxDecoration(
@@ -2932,17 +3017,26 @@ class _CategoryRowState extends State<_CategoryRow> {
               ),
             ),
             const SizedBox(height: 6),
+            // scaleDown, matching the other category tiles. Without it a large
+            // system font scale would push this label past its 26px box — the
+            // same overflow the icon just had, one line lower.
             const SizedBox(
               height: 26,
-              child: Text(
-                'All',
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  color: Color(0xFF2563EB),
-                  fontWeight: FontWeight.w600,
+              width: double.infinity,
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'All',
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: Color(0xFF2563EB),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),

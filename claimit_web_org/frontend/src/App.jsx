@@ -51,13 +51,14 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminCreateAd from './pages/admin/AdminCreateAd'
 import AdminBulkShops from './pages/admin/AdminBulkShops'
 import AdminBulkSelect from './pages/admin/AdminBulkSelect'
+import AdminWhatsAppCampaign from './pages/admin/AdminWhatsAppCampaign'
 import AdminBulkClassifieds from './pages/admin/AdminBulkClassifieds'
 import AdminFeatureCategoryImages from './pages/admin/AdminFeatureCategoryImages'
 import AdminTransactions from './pages/admin/AdminTransactions'
 import AdminShopDetail from './pages/admin/AdminShopDetail'
 import AdminCategoryImages from './pages/admin/AdminCategoryImages'
 import AdminLearnClaimit from './pages/admin/AdminLearnClaimit'
-import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminPricing, AdminDeletedUsers } from './pages/admin/AdminPages'
+import { AdminUsers, AdminAppUsers, AdminAds, AdminShops, AdminReviews, AdminTickets, AdminFeedback, AdminPDFs, AdminSalesTeam, AdminBillReviews, AdminBonusSettings, AdminAdSettings, AdminBillRates, AdminPricing, AdminDeletedUsers } from './pages/admin/AdminPages'
 
 // Protected route
 function ProtectedRoute({ children, requiredRole }) {
@@ -300,6 +301,7 @@ export default function App() {
             <Route path="/admin/transactions" element={<AdminTransactions />} />
             <Route path="/admin/bulk-shops" element={<AdminBulkShops />} />
             <Route path="/admin/bulk-select" element={<AdminBulkSelect />} />
+            <Route path="/admin/whatsapp-campaign" element={<AdminWhatsAppCampaign />} />
             <Route path="/admin/bulk-classifieds" element={<AdminBulkClassifieds />} />
             <Route path="/admin/feature-category-images" element={<AdminFeatureCategoryImages />} />
             <Route path="/admin/category-images" element={<AdminCategoryImages />} />
@@ -312,6 +314,7 @@ export default function App() {
             <Route path="/admin/bill-reviews"   element={<AdminBillReviews />} />
             <Route path="/admin/bonus-settings" element={<AdminBonusSettings />} />
             <Route path="/admin/ad-settings"    element={<AdminAdSettings />} />
+            <Route path="/admin/bill-rates"     element={<AdminBillRates />} />
             <Route path="/admin/pricing"        element={<AdminPricing />} />
             <Route path="/admin/deleted-users"  element={<AdminDeletedUsers />} />
           </Route>

@@ -162,7 +162,7 @@ async def connect_db():
     #
     # Wrapped individually: a collection that doesn't exist yet, or an index
     # that already exists with different options, must not stop start-up.
-    for _geo_coll in ("deals", "reels", "classifieds"):
+    for _geo_coll in ("deals", "reels", "classifieds", "banners"):
         try:
             await db[_geo_coll].create_index([("geo", "2dsphere")])
         except Exception as e:

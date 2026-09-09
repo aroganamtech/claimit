@@ -134,6 +134,7 @@ async def list_classifieds(
     lng: Optional[float] = Query(None, description="Longitude of the selected location"),
     radius_km: float = Query(5.0, ge=0.5, le=50),
     limit: int = Query(default=20, le=50),
+    skip: int = Query(default=0, ge=0, description="Rows already shown — for infinite scroll"),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -152,16 +153,32 @@ async def list_classifieds(
             {"user_name": {"$regex": search, "$options": "i"}},
         ]
 
-    # Radius filter when the app sends the selected point, so Local Finds and
-    # Local Classifieds agree with the search screen about what is nearby.
-    # No coordinates means unchanged behaviour, so an older app build and the
-    # newest one both keep working against this endpoint.
-    from ..utils.geo_filter import nearby_docs
-    docs = await nearby_docs(db, "classifieds", lat, lng, radius_km, query, limit)
+    # Radius first, then widen rather than show nothing: 5 km, then 10 km, then
+    # the nearest listings anywhere. Local Finds in a quiet pincode used to be
+    # a blank page, which reads as a broken app rather than a quiet area.
+    # No coordinates at all means unchanged behaviour, so an older app build
+    # and the newest one both keep working against this endpoint.
+    #
+    # One extra row is fetched to answer "is there another page?" without a
+    # second count query — the same trick the reels feed uses.
+    from ..utils.geo_filter import nearby_or_nearest
+    probe = limit + 1
+    docs, geo_info = await nearby_or_nearest(
+        db, "classifieds", lat, lng, radius_km, query, probe, skip=skip,
+    )
     if docs is None:
         docs = await (db["classifieds"].find(query)
-                      .sort("created_at", -1).limit(limit).to_list(length=limit))
-    return {"classifieds": [_serialize(d) for d in docs], "total": len(docs)}
+                      .sort("created_at", -1).skip(skip).limit(probe)
+                      .to_list(length=probe))
+    has_more = len(docs) > limit
+    docs = docs[:limit]
+    return {
+        "classifieds": [_serialize(d) for d in docs],
+        "total": len(docs),
+        "has_more": has_more,
+        "skip": skip,
+        **geo_info,
+    }
 
 
 # ── Mine ──────────────────────────────────────────────────────────────────────
@@ -289,6 +306,39 @@ async def create_classified(
         "is_available": True,
         "created_at": datetime.now(timezone.utc),
     }
+
+    # ── Coordinates for the 5 km search ──────────────────────────────────────
+    # latitude/longitude alone are NOT enough: $geoNear only sees a GeoJSON
+    # `geo` field with a 2dsphere index. Without this, every Local Find and
+    # Classified posted from the app was stored with a position it could never
+    # be found by — invisible to the radius search from the moment it was
+    # created.
+    #
+    # Falls back to the PIN code the user typed when the phone gave no fix,
+    # which is the common case indoors.
+    _lat, _lng = body.latitude, body.longitude
+    if _lat is None or _lng is None:
+        from ..utils.geo_filter import nearby_docs   # noqa: F401  (same module)
+        _pin = "".join(ch for ch in str(body.pincode or "") if ch.isdigit())
+        if len(_pin) == 6:
+            try:
+                centre = await db["pincode_centres"].find_one({"_id": _pin})
+                if centre:
+                    _lat = float(centre.get("lat"))
+                    _lng = float(centre.get("lng"))
+            except Exception:
+                pass
+    try:
+        if _lat is not None and _lng is not None:
+            lat_f, lng_f = float(_lat), float(_lng)
+            if -90 <= lat_f <= 90 and -180 <= lng_f <= 180 and not (lat_f == 0 and lng_f == 0):
+                doc["lat"] = lat_f
+                doc["lng"] = lng_f
+                # [lng, lat] — reversing this puts Indian listings in the sea.
+                doc["geo"] = {"type": "Point", "coordinates": [lng_f, lat_f]}
+    except (TypeError, ValueError):
+        pass    # unlocated is survivable; a crash on posting is not
+
     result = await db["classifieds"].insert_one(doc)
     doc["id"] = str(result.inserted_id)
     doc.pop("_id", None)

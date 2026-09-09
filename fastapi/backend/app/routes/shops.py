@@ -428,6 +428,43 @@ async def get_nearby_shops(
             )
         shops_out.extend(extra_out)
 
+    # ── Never show an empty screen ───────────────────────────────────────────
+    # Nothing within the radius AND nothing matched by address means a blank
+    # list, which users read as "the app is broken" rather than "my area is
+    # quiet". So drop the distance cut-off and return the nearest shops there
+    # are, anywhere — same query, same sort, just no maxDistance.
+    #
+    # This runs only when the screen would otherwise be empty, so every case
+    # that already worked behaves exactly as before. `showing_nearest` tells
+    # the app to say so out loud instead of passing a distant shop off as
+    # local.
+    showing_nearest = False
+    if not shops_out:
+        widened = [
+            {"$geoNear": {
+                "near": {"type": "Point", "coordinates": [lng, lat]},
+                "distanceField": "_dist_m",
+                "spherical": True,          # no maxDistance = nearest anywhere
+                "query": geo_query,
+            }},
+            {"$limit": max(limit or 0, 20)},
+            {"$project": {"cover_photo_b64": 0, "gallery_photos": 0}},
+        ]
+        try:
+            async for shop in db.shops.aggregate(widened):
+                dist_km = shop.pop("_dist_m", 0) / 1000
+                shops_out.append(await _doc_to_response(shop, distance_km=dist_km))
+            showing_nearest = bool(shops_out)
+        except Exception as e:
+            # A widened search failing must not turn an empty list into a 500.
+            print(f"[shops/nearby] nearest-anywhere fallback failed: {e}")
+
+        if showing_nearest and premium_first:
+            shops_out = sorted(
+                shops_out,
+                key=lambda s: 0 if str(s.get("plan", "")).strip().lower() == "premium" else 1,
+            )
+
     total_in_radius = len(shops_out)
     if limit:
         page = shops_out[skip: skip + limit]
@@ -443,6 +480,8 @@ async def get_nearby_shops(
         "returned": len(page),
         "has_more": (skip + len(page)) < total_in_radius,
         "radius_km": radius_km,
+        # True when nothing was in range and these are the nearest instead.
+        "showing_nearest": showing_nearest,
         "user_lat": lat,
         "user_lng": lng,
         # How many of `total` were found by address rather than distance.

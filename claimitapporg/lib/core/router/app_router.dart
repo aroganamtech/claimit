@@ -41,6 +41,7 @@ import '../../features/select/models/select_professional.dart';
 import '../../features/select/models/select_chat.dart';
 import '../../features/select/screens/select_home_screen.dart';
 import '../../features/select/screens/select_list_screen.dart';
+import '../../features/select/screens/select_coverage_screen.dart';
 import '../../features/select/screens/select_profile_screen.dart';
 import '../../features/select/screens/select_booking_screen.dart';
 import '../../features/select/screens/select_bookings_screen.dart';
@@ -233,6 +234,13 @@ class AppRouter {
           // (full-screen, no bottom nav), not inside the ShellRoute's navigator.
           parentNavigatorKey: _rootNavKey,
           path: '/shop-detail',
+          // `extra` is NOT restored when Android kills the app in the
+          // background and the user returns — GoRouter restores the route but
+          // the object is gone, so a bare cast crashed with a red screen at
+          // exactly that moment. This is one of the most common ways a Flutter
+          // app fails in the wild. Sending the user home is the safe answer.
+          redirect: (context, state) =>
+              state.extra is ShopItem ? null : '/home',
           pageBuilder: (context, state) {
             final shop = state.extra as ShopItem;
             // CustomTransitionPage does NOT add a HeroControllerScope, so it
@@ -249,6 +257,10 @@ class AppRouter {
         ),
         GoRoute(
           path: '/deal-detail',
+          // Same guard: no deal object (process death, deep link) -> go home
+          // rather than crash.
+          redirect: (context, state) =>
+              state.extra is DealData ? null : '/home',
           builder: (context, state) {
             final deal = state.extra as DealData;
             return DealDetailScreen(deal: deal);
@@ -288,6 +300,24 @@ class AppRouter {
         GoRoute(
           path: '/select',
           builder: (context, state) => const SelectHomeScreen(),
+        ),
+        GoRoute(
+          // "Who's here?" — professional counts for a city, category by
+          // category, plus nearby cities. `extra` may be a plain city String
+          // or a Map; anything else falls back to an empty field the user can
+          // type into, so a lost `extra` after process death still works.
+          path: '/select/coverage',
+          builder: (context, state) {
+            final extra = state.extra;
+            String city = '';
+            if (extra is String) {
+              city = extra;
+            } else if (extra is Map) {
+              final c = extra['city'];
+              if (c is String) city = c;
+            }
+            return SelectCoverageScreen(initialCity: city);
+          },
         ),
         GoRoute(
           path: '/select/list',
@@ -375,6 +405,9 @@ class AppRouter {
         ),
         GoRoute(
           path: '/classified/zone',
+          // No zone object after process death -> back to Local Finds.
+          redirect: (context, state) =>
+              state.extra is LocalFindZone ? null : '/classified',
           builder: (context, state) {
             final zone = state.extra as LocalFindZone;
             return LocalFindZoneScreen(zone: zone);
@@ -433,6 +466,9 @@ class AppRouter {
         ),
         GoRoute(
           path: '/classified/detail',
+          // No post object after process death -> back to the ads list.
+          redirect: (context, state) =>
+              state.extra is ClassifiedPost ? null : '/classified/ads',
           builder: (context, state) {
             final post = state.extra as ClassifiedPost;
             return ClassifiedDetailScreen(post: post);
@@ -570,6 +606,10 @@ class AppRouter {
         GoRoute(
           parentNavigatorKey: _rootNavKey,
           path: '/redeem-loading',
+          // A redeem in progress cannot be resumed without its shop. Going
+          // home is far better than a red screen mid-payment-flow.
+          redirect: (context, state) =>
+              state.extra is ShopItem ? null : '/home',
           pageBuilder: (context, state) {
             final shop = state.extra as ShopItem;
             return CustomTransitionPage(
@@ -583,6 +623,13 @@ class AppRouter {
         GoRoute(
           parentNavigatorKey: _rootNavKey,
           path: '/redeem-eligibility',
+          // Needs both the map AND a shop inside it — checking only the map
+          // would still crash on the inner cast.
+          redirect: (context, state) {
+            final e = state.extra;
+            final ok = e is Map<String, dynamic> && e['shop'] is ShopItem;
+            return ok ? null : '/home';
+          },
           pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>;
             final shop  = extra['shop'] as ShopItem;

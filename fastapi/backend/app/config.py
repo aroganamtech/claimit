@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
     refresh_token_expire_days: int = 30
-    static_otp: str = "123456"
+    # Kept only so an existing STATIC_OTP line in .env doesn't fail validation.
+    # NOTHING reads this any more — the login bypass it powered was removed
+    # from utils/otp.py. Safe to delete from .env entirely.
+    static_otp: str = ""
     upload_dir: str = "uploads"
     max_file_size_mb: int = 10
 
@@ -26,7 +29,8 @@ class Settings(BaseSettings):
     # WhatsApp forbids free-form business-initiated text, so each message type
     # needs its own approved template. Leave blank to keep that message type
     # off WhatsApp — the in-app notification and FCM push are unaffected.
-    twilio_welcome_template_sid: str = ""   # first login   — {{1}} = name
+    # claimit_welcome_bonus — {{1}} = name, {{2}} = cashback, {{3}} = points
+    twilio_welcome_template_sid: str = ""
     twilio_notify_template_sid: str = ""    # notifications — {{1}} = title, {{2}} = message
     # Default country code prepended to 10-digit numbers (E.164 prefix, e.g. +91 for India)
     twilio_default_country_code: str = "+91"
