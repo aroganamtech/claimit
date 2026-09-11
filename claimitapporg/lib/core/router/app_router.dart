@@ -42,6 +42,16 @@ import '../../features/select/models/select_chat.dart';
 import '../../features/select/screens/select_home_screen.dart';
 import '../../features/select/screens/select_list_screen.dart';
 import '../../features/select/screens/select_coverage_screen.dart';
+// ── Claimit Privilege ───────────────────────────────────────────────────────
+import '../../features/privilege/models/privilege_models.dart';
+import '../../features/privilege/screens/privilege_home_screen.dart';
+import '../../features/privilege/screens/privilege_categories_screen.dart';
+import '../../features/privilege/screens/privilege_list_screen.dart';
+import '../../features/privilege/screens/privilege_detail_screen.dart';
+import '../../features/privilege/screens/privilege_pass_screen.dart';
+import '../../features/privilege/screens/privilege_approved_screen.dart';
+import '../../features/privilege/screens/privilege_history_screen.dart';
+import '../../features/privilege/screens/privilege_add_screen.dart';
 import '../../features/select/screens/select_profile_screen.dart';
 import '../../features/select/screens/select_booking_screen.dart';
 import '../../features/select/screens/select_bookings_screen.dart';
@@ -291,6 +301,72 @@ class AppRouter {
         GoRoute(
           path: '/learn',
           builder: (context, state) => const LearnListScreen(),
+        ),
+
+        // ── Claimit Privilege ────────────────────────────────────────────
+        // Show-and-save discounts approved at the counter. Every builder reads
+        // `state.extra` defensively: after Android kills and restores the
+        // process, `extra` is gone, so a deep link or a restored stack must
+        // fall back to a valid screen instead of crashing on a null cast.
+        GoRoute(
+          path: '/privilege',
+          builder: (context, state) => const PrivilegeHomeScreen(),
+        ),
+        GoRoute(
+          path: '/privilege/categories',
+          builder: (context, state) => const PrivilegeCategoriesScreen(),
+        ),
+        GoRoute(
+          path: '/privilege/history',
+          builder: (context, state) => const PrivilegeHistoryScreen(),
+        ),
+        GoRoute(
+          path: '/privilege/add',
+          builder: (context, state) => const PrivilegeAddScreen(),
+        ),
+        GoRoute(
+          path: '/privilege/list',
+          builder: (context, state) {
+            final extra = state.extra;
+            PrivilegeCategory? category;
+            String? search;
+            if (extra is Map) {
+              final c = extra['category'];
+              if (c is PrivilegeCategory) category = c;
+              final s = extra['search'];
+              if (s is String && s.trim().isNotEmpty) search = s.trim();
+            } else if (extra is PrivilegeCategory) {
+              category = extra;
+            }
+            return PrivilegeListScreen(category: category, searchTerm: search);
+          },
+        ),
+        GoRoute(
+          path: '/privilege/detail',
+          builder: (context, state) {
+            final id = state.extra is String ? state.extra as String : '';
+            if (id.isEmpty) return const PrivilegeHomeScreen();
+            return PrivilegeDetailScreen(partnerId: id);
+          },
+        ),
+        GoRoute(
+          path: '/privilege/pass',
+          builder: (context, state) {
+            // A pass cannot be rebuilt from nothing — it is issued by the
+            // server with a reference and a countdown. Without it, send the
+            // user back to the start rather than showing an empty pass.
+            final extra = state.extra;
+            if (extra is! PrivilegePass) return const PrivilegeHomeScreen();
+            return PrivilegePassScreen(pass: extra);
+          },
+        ),
+        GoRoute(
+          path: '/privilege/approved',
+          builder: (context, state) {
+            final extra = state.extra;
+            if (extra is! PrivilegePass) return const PrivilegeHistoryScreen();
+            return PrivilegeApprovedScreen(pass: extra);
+          },
         ),
 
         // ── Claimit Select ───────────────────────────────────────────────

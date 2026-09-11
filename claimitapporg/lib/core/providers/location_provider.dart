@@ -171,7 +171,11 @@ class LocationProvider extends ChangeNotifier {
     _loading = true;
     if (!silent) notifyListeners();
     try {
-      final pos = await LocationService.getPosition();
+      // The one place allowed to raise the system permission sheet — the user
+      // tapped "Use my current location", so asking is expected rather than an
+      // ambush. A silent background refresh must never prompt, which is why
+      // this is tied to `silent` rather than hard-coded true.
+      final pos = await LocationService.getPosition(promptIfNeeded: !silent);
       if (pos == null) {
         _loading = false;
         notifyListeners();

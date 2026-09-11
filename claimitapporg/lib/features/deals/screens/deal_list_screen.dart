@@ -176,7 +176,8 @@ class _DealListScreenState extends State<DealListScreen> {
                                 color: Color(0xFF1565C0)))),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => context.push('/location'),
+                      // Same app-wide picker as every other location chip.
+                      onTap: () => context.push('/location/pick'),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 140),
                         child: Row(

@@ -23,6 +23,7 @@ const NAV = [
   { label: 'Bonus Settings', icon: '🎁', path: '/admin/bonus-settings' },
   { label: 'Ad Slot Settings', icon: '⭐', path: '/admin/ad-settings' },
   { label: 'Bill Scan Rewards', icon: '🧾', path: '/admin/bill-rates' },
+  { label: 'Claimit Privilege', icon: '🎫', path: '/admin/privilege' },
   { label: 'Pricing',        icon: '💰', path: '/admin/pricing' },
   { label: 'Project PDFs',   icon: '📄', path: '/admin/pdfs' },
   { label: 'Deleted Users',  icon: '🗑', path: '/admin/deleted-users' },

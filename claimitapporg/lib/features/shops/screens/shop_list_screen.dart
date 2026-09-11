@@ -593,7 +593,12 @@ class _ShopListScreenState extends State<ShopListScreen> {
                                 color: Color(0xFF1565C0)))),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => context.push('/location'),
+                      // The app-wide picker (Near Me / Another location /
+                      // radius), not the old standalone location screen. Every
+                      // location chip in the app opens the same one — tapping
+                      // this and getting a different screen from the home
+                      // screen's chip is what made the app feel like two apps.
+                      onTap: () => context.push('/location/pick'),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 140),
                         child: Row(

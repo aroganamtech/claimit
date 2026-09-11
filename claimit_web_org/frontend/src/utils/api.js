@@ -210,6 +210,28 @@ const admin = {
       params: { replace },
     }).then(r => r.data),
 
+  // ── Claimit Privilege ─────────────────────────────────────────────────
+  // Partners are written straight into the collection the APP backend reads,
+  // so a save here is live in the app immediately with no mirroring step.
+  privilegeCategories: () => http.get('/admin/privilege/categories').then(r => r.data),
+  privilegeList: (params = {}) =>
+    http.get('/admin/privilege/partners', { params }).then(r => r.data),
+  privilegeCreate: (payload) =>
+    http.post('/admin/privilege/partners', payload).then(r => r.data),
+  privilegeUpdate: (id, payload) =>
+    http.put(`/admin/privilege/partners/${id}`, payload).then(r => r.data),
+  privilegeDelete: (id) =>
+    http.delete(`/admin/privilege/partners/${id}`).then(r => r.data),
+  privilegeTemplate: () =>
+    http.get('/admin/privilege/bulk-template', { responseType: 'blob' }).then(r => r.data),
+  // Same two-step upload as every other importer: the browser PUTs the .xlsx
+  // to S3 and only the key comes here (CloudFront 403s a multipart POST).
+  privilegeBulkUpload: (payload, replace = false) =>
+    http.post('/admin/privilege/bulk-upload', payload, { params: { replace } })
+        .then(r => r.data),
+  privilegeHistory: (params = {}) =>
+    http.get('/admin/privilege/history', { params }).then(r => r.data),
+
   // ── WhatsApp claim campaign ───────────────────────────────────────────
   // Same two-step upload as every other bulk import: the browser PUTs the
   // .xlsx straight to S3 (presignUpload), then only the key comes here.

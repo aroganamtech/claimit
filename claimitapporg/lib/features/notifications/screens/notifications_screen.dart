@@ -217,7 +217,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ])),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => context.push('/location'),
+                      // Same app-wide picker as every other location chip.
+                      onTap: () => context.push('/location/pick'),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Flexible(child: Text(location, maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black))),

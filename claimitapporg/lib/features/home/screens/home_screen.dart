@@ -1876,7 +1876,9 @@ const _zonesPage1 = [
 const _zonesPage2 = [
    _ZoneItem(label: 'Local\nFinder', icon: "assets/images/zone_3.png", route: '/classified'),
     _ZoneItem(label: 'Claimit\nSelect', icon: "assets/images/zone_10.png", route: '/select'),
-  // _ZoneItem(label: 'Claimit\nDeals', icon: "assets/images/zone_7.png", route: ''),
+  // Sits directly after Claimit Select, matching the Explore Claimit strip so
+  // the two entry points list the zones in the same order.
+  _ZoneItem(label: 'Claimit\nPrivilege', icon: "assets/images/zone_7.png", route: '/privilege'),
   _ZoneItem(label: 'Local\nClassifieds', icon: "assets/images/zone_8.png", route: '/classified/ads'),
   // _ZoneItem(label: 'Classifieds',    icon: "assets/images/zone_9.png", route: '/classified/ads'),
     _ZoneItem(label: 'Learn\nClaimit', icon: "assets/images/zone_learn.png", route: '/learn'),

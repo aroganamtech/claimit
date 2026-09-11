@@ -751,6 +751,30 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
                       value: '${BillRewardEntry.fmtPoints(_estimatedPoints)} pts',
                       valueColor: const Color(0xFFD97706),
                     ),
+                    // How to earn a higher rate. Null on the top tier, so
+                    // nobody is nagged towards something that doesn't exist.
+                    if (BillService.tierProgressLabel != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.trending_up_rounded,
+                              size: 15, color: Color(0xFF059669)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              BillService.tierProgressLabel!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF059669),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

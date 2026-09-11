@@ -188,6 +188,20 @@ async def connect_db():
     await db.select_conversations.create_index("last_message_at")
     await db.select_messages.create_index(
         [("conversation_id", 1), ("created_at", 1)])
+    # Claimit Privilege — partners are geo-searched like every other feature;
+    # passes are looked up by their printed reference at the counter, so that
+    # lookup must be indexed and unique (two passes sharing a reference would
+    # make the shop's records ambiguous).
+    await db.privilege_partners.create_index("category")
+    await db.privilege_partners.create_index("city")
+    await db.privilege_partners.create_index("status")
+    try:
+        await db.privilege_partners.create_index([("geo", "2dsphere")])
+    except Exception as e:
+        print(f"[db] 2dsphere index on privilege_partners skipped: {e}")
+    await db.privilege_passes.create_index("reference", unique=True)
+    await db.privilege_passes.create_index([("user_id", 1), ("approved_at", -1)])
+    await db.privilege_passes.create_index("partner_id")
     # Rewards
     await db.rewards.create_index("shop_id")
     await db.rewards.create_index("is_active")
@@ -205,6 +219,10 @@ async def connect_db():
     # bill_history — permanent record shown to the user in the app; no TTL
     await db.bill_history.create_index("user_id")
     await db.bill_history.create_index("scanned_at")
+    # Compound, for the monthly scan count that decides a user's cashback tier.
+    # That count runs on EVERY scan, so it must be served entirely by an index
+    # rather than by filtering one user's whole history in memory.
+    await db.bill_history.create_index([("user_id", 1), ("scanned_at", 1)])
     # Feedback / complaints ticket system
     await db.feedback.create_index("user_id")
     await db.feedback.create_index("status")

@@ -97,9 +97,20 @@ class BillService {
   // Seeded with the launch rates so the first frame is sensible before the
   // fetch returns, and never throws — a failure just keeps the last value,
   // which is exactly what the server falls back to as well.
+  // cashbackPercent is THIS user's current rate, not a global one: it rises
+  // with how many bills they have scanned this calendar month. So the same
+  // label ("2% Cashback") is correct on every screen for this user, and a
+  // different user may legitimately see a different number.
   static double cashbackPercent = 1.0;
   static double pointsPercent   = 10.0;
   static bool   _ratesLoaded    = false;
+
+  /// Bills scanned this calendar month — what decides the tier.
+  static int scansThisMonth = 0;
+
+  /// The next rung of the ladder, or null when already on the top one.
+  /// `scansNeeded` is how many more scans this month to get there.
+  static ({int minScans, double cashbackPercent, int scansNeeded})? nextTier;
 
   /// "1" not "1.0", but "1.5" stays "1.5" — reads naturally whether the admin
   /// sets a whole number or a fraction.
@@ -110,6 +121,18 @@ class BillService {
   /// it subtly different from its neighbour.
   static String get cashbackLabel => '${fmtPct(cashbackPercent)}% Cashback';
   static String get pointsLabel   => '${fmtPct(pointsPercent)}% Reward Points';
+
+  /// One line telling the user how to earn more, or null when there is
+  /// nothing to chase. Shown under the reward preview — a rate the user can
+  /// improve is worth far more than a rate they can only read.
+  static String? get tierProgressLabel {
+    final t = nextTier;
+    if (t == null || t.scansNeeded <= 0) return null;
+    final n = t.scansNeeded;
+    return n == 1
+        ? '1 more scan this month → ${fmtPct(t.cashbackPercent)}% cashback'
+        : '$n more scans this month → ${fmtPct(t.cashbackPercent)}% cashback';
+  }
 
   /// Fetch the rates once per app run and cache them. Safe to call from any
   /// screen's initState — after the first call it is a no-op, so a screen that
@@ -125,6 +148,16 @@ class BillService {
         final d = response.data as Map;
         cashbackPercent = (d['cashback_percent'] as num?)?.toDouble() ?? cashbackPercent;
         pointsPercent   = (d['points_percent']   as num?)?.toDouble() ?? pointsPercent;
+        scansThisMonth  = (d['scans_this_month'] as num?)?.toInt() ?? 0;
+
+        final nt = d['next_tier'];
+        nextTier = (nt is Map)
+            ? (
+                minScans:        (nt['min_scans'] as num?)?.toInt() ?? 0,
+                cashbackPercent: (nt['cashback_percent'] as num?)?.toDouble() ?? 0,
+                scansNeeded:     (nt['scans_needed'] as num?)?.toInt() ?? 0,
+              )
+            : null;
         _ratesLoaded = true;
       }
     } catch (_) {

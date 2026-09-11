@@ -342,7 +342,8 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => context.push('/location'),
+                      // Same app-wide picker as every other location chip.
+                      onTap: () => context.push('/location/pick'),
                       child: Row(
                         children: [
                           Text(

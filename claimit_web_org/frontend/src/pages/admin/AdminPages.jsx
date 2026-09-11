@@ -1108,9 +1108,14 @@ export function AdminBonusSettings() {
 // backend as 1 % cashback and 10 % points; changing the offer meant a code
 // change and a redeploy. The app backend now reads these values on every
 // scan, so saving here changes the very next bill scanned.
+const MAX_CB = 5   // mirrors MAX_CASHBACK_PERCENT on both backends
+
 export function AdminBillRates() {
   const [cbPct, setCbPct]   = useState('')
   const [ptPct, setPtPct]   = useState('')
+  // The monthly scan-count ladder: [{min_scans, cashback_percent}, ...] as
+  // strings while editing, so a half-typed value doesn't become NaN.
+  const [tiers, setTiers]   = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
   const [saved, setSaved]     = useState(false)
@@ -1121,10 +1126,27 @@ export function AdminBillRates() {
       .then(cfg => {
         setCbPct(String(cfg.cashback_percent ?? 1))
         setPtPct(String(cfg.points_percent ?? 10))
+        setTiers((cfg.tiers ?? []).map(t => ({
+          min_scans: String(t.min_scans ?? 0),
+          cashback_percent: String(t.cashback_percent ?? 0),
+        })))
       })
-      .catch(() => { setCbPct('1'); setPtPct('10') })
+      .catch(() => { setCbPct('1'); setPtPct('10'); setTiers([]) })
       .finally(() => setLoading(false))
   }, [])
+
+  const setTier = (i, key, value) => {
+    setTiers(ts => ts.map((t, n) => (n === i ? { ...t, [key]: value } : t)))
+    setSaved(false)
+  }
+  const addTier = () => {
+    setTiers(ts => [...ts, { min_scans: '', cashback_percent: '' }])
+    setSaved(false)
+  }
+  const removeTier = (i) => {
+    setTiers(ts => ts.filter((_, n) => n !== i))
+    setSaved(false)
+  }
 
   const handleSave = async () => {
     setError('')
@@ -1132,11 +1154,37 @@ export function AdminBillRates() {
     const p = parseFloat(ptPct)
     // Mirrors the backend's own validation, so a bad value is caught before
     // the round trip. 0 is allowed — that is how an offer is switched off.
-    if (isNaN(c) || c < 0 || c > 100) { setError('Cashback % must be between 0 and 100'); return }
-    if (isNaN(p) || p < 0 || p > 100) { setError('Reward points % must be between 0 and 100'); return }
+    if (isNaN(c) || c < 0 || c > MAX_CB) { setError(`Cashback % must be between 0 and ${MAX_CB}`); return }
+    if (isNaN(p) || p < 0 || p > 100)    { setError('Reward points % must be between 0 and 100'); return }
+
+    const parsed = tiers.map(t => ({
+      min_scans: parseInt(t.min_scans, 10),
+      cashback_percent: parseFloat(t.cashback_percent),
+    }))
+    for (const t of parsed) {
+      if (isNaN(t.min_scans) || t.min_scans < 0) { setError('Every tier needs a scan count of 0 or more'); return }
+      if (isNaN(t.cashback_percent) || t.cashback_percent < 0 || t.cashback_percent > MAX_CB) {
+        setError(`Tier cashback % must be between 0 and ${MAX_CB}`); return
+      }
+    }
+    const sorted = [...parsed].sort((a, b) => a.min_scans - b.min_scans)
+    if (sorted.length && sorted[0].min_scans !== 0) {
+      setError('The first tier must start at 0 scans, or a new user earns nothing'); return
+    }
+    if (new Set(sorted.map(t => t.min_scans)).size !== sorted.length) {
+      setError('Two tiers start at the same scan count'); return
+    }
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].cashback_percent < sorted[i - 1].cashback_percent) {
+        setError(`The ${sorted[i].min_scans}-scan tier pays less than the one below it`); return
+      }
+    }
+
     setSaving(true)
     try {
-      await api.admin.updateBillRates({ cashback_percent: c, points_percent: p })
+      await api.admin.updateBillRates({
+        cashback_percent: c, points_percent: p, tiers: sorted,
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
@@ -1194,13 +1242,13 @@ export function AdminBillRates() {
                 Cashback %
               </label>
               <input
-                type="number" min="0" max="100" step="0.1" value={cbPct}
+                type="number" min="0" max={MAX_CB} step="0.1" value={cbPct}
                 onChange={e => { setCbPct(e.target.value); setSaved(false) }}
                 style={inputStyle}
                 placeholder="e.g. 1"
               />
               <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
-                Percentage of the bill total credited as cashback. Currently 1% at launch.
+                Base rate, before the loyalty tiers below. Maximum {MAX_CB}%.
               </p>
             </div>
 
@@ -1215,8 +1263,82 @@ export function AdminBillRates() {
                 placeholder="e.g. 10"
               />
               <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
-                Percentage of the bill total credited as reward points. Currently 10% at launch.
+                Percentage of the bill total credited as reward points. Flat for
+                everyone — the loyalty tiers below change cashback only, because
+                points feed the redeem discount at partner shops.
               </p>
+            </div>
+
+            {/* ── Loyalty tiers ─────────────────────────────────────────── */}
+            <div style={{ borderTop: '1px solid #eee', paddingTop: 20, marginBottom: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 4 }}>
+                Loyalty tiers — cashback by scans this month
+              </div>
+              <p style={{ fontSize: 12, color: '#888', marginBottom: 14, lineHeight: 1.6 }}>
+                The more bills a user scans in a calendar month, the higher their
+                cashback. Counts reset on the 1st, so the rate rewards using the
+                app <em>this</em> month rather than something they did last year.
+                The first tier must start at 0.
+              </p>
+
+              <div style={{ display: 'flex', gap: 10, fontSize: 12, fontWeight: 700,
+                            color: '#666', marginBottom: 6 }}>
+                <div style={{ flex: 1 }}>From this many scans</div>
+                <div style={{ flex: 1 }}>Cashback %</div>
+                <div style={{ width: 34 }} />
+              </div>
+
+              {tiers.map((t, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'center' }}>
+                  <input
+                    type="number" min="0" step="1" value={t.min_scans}
+                    onChange={e => setTier(i, 'min_scans', e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                    placeholder={i === 0 ? '0' : 'e.g. 15'}
+                  />
+                  <input
+                    type="number" min="0" max={MAX_CB} step="0.1" value={t.cashback_percent}
+                    onChange={e => setTier(i, 'cashback_percent', e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                    placeholder="e.g. 2"
+                  />
+                  <button
+                    onClick={() => removeTier(i)}
+                    title="Remove this tier"
+                    style={{ width: 34, height: 38, border: '1px solid #e0e0e0',
+                             background: '#fff', borderRadius: 8, cursor: 'pointer',
+                             color: '#b91c1c', fontSize: 16, lineHeight: 1 }}
+                  >×</button>
+                </div>
+              ))}
+
+              <button
+                onClick={addTier}
+                style={{ marginTop: 4, padding: '8px 14px', border: '1px dashed #bbb',
+                         background: '#fafafa', borderRadius: 8, fontSize: 13,
+                         fontFamily: 'Poppins', cursor: 'pointer', color: '#444' }}
+              >+ Add tier</button>
+
+              {tiers.length > 0 && (
+                <div style={{ marginTop: 14, fontSize: 12.5, color: '#555', lineHeight: 1.7 }}>
+                  {[...tiers]
+                    .map(t => ({ s: parseInt(t.min_scans, 10), p: parseFloat(t.cashback_percent) }))
+                    .filter(t => !isNaN(t.s) && !isNaN(t.p))
+                    .sort((a, b) => a.s - b.s)
+                    .map((t, i, arr) => {
+                      const next = arr[i + 1]
+                      const range = next ? `${t.s}–${next.s - 1}` : `${t.s}+`
+                      return (
+                        <div key={t.s}>
+                          {range} scans this month → <strong>{t.p}%</strong> cashback
+                          {' '}<span style={{ color: '#999' }}>
+                            (₹{(1000 * t.p / 100).toFixed(2)} on a ₹1,000 bill)
+                          </span>
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
             </div>
 
             {error && (
@@ -1250,6 +1372,11 @@ export function AdminBillRates() {
               Both Reward Bills and Redeem Bills earn at these rates. Already-scanned
               bills keep whatever they earned at the time — this only changes future
               scans. Set a value to 0 to switch that reward off entirely.
+              <br /><br />
+              A user's tier is worked out from their scans in the current calendar
+              month, counted in IST, and the scan being made right now counts — so
+              a user on 14 scans earns the 15-scan rate on their 15th bill.
+              Cashback is capped at {MAX_CB}% everywhere, including tiers.
             </div>
           </div>
         </div>

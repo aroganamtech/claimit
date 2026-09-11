@@ -24,7 +24,7 @@ Business rules (must stay in sync with BillRewardProvider in Flutter):
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
@@ -71,6 +71,127 @@ async def _get_new_user_config(db) -> dict:
 DEFAULT_CASHBACK_PERCENT = 1.0    # ₹1 back per ₹100 spent
 DEFAULT_POINTS_PERCENT   = 10.0   # 10 points per ₹100 spent
 
+# Hard ceiling on cashback, enforced here as well as in the admin form.
+# A typo in the panel ("20" for "2") would otherwise pay out ten times the
+# intended amount on every bill until somebody noticed the wallet totals.
+# Points are not capped by this — they run at 10% by design.
+MAX_CASHBACK_PERCENT = 5.0
+
+# IST, because "this month" means the user's month, not UTC's. Scans are
+# stored in UTC, so the month boundary has to be converted (1 Sep 00:00 IST
+# is 31 Aug 18:30 UTC) — comparing against a UTC month start would credit
+# the last 5.5 hours of the previous month to this one.
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _month_start_utc(now: Optional[datetime] = None) -> datetime:
+    """First instant of the current IST calendar month, as UTC."""
+    moment = (now or datetime.now(timezone.utc)).astimezone(_IST)
+    first = moment.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return first.astimezone(timezone.utc)
+
+
+def _default_tiers(base: float) -> list:
+    """The starting ladder, derived from the base rate rather than hard-coded.
+
+    Deriving matters: an admin who has already moved the base rate to 2%
+    would be silently DROPPED to a hard-coded 1% first tier the moment this
+    feature deployed. Building tier 1 from the current base means switching
+    this on never reduces anyone's cashback.
+    """
+    return [
+        {"min_scans": 0,  "cashback_percent": base},
+        {"min_scans": 15, "cashback_percent": min(base + 1, MAX_CASHBACK_PERCENT)},
+        {"min_scans": 50, "cashback_percent": min(base + 2, MAX_CASHBACK_PERCENT)},
+    ]
+
+
+def _clean_tiers(raw, base: float) -> list:
+    """Sanitise stored tiers: valid rows only, sorted, capped, always non-empty.
+
+    A malformed config must never stop users earning, so anything unusable
+    falls back to the derived default ladder.
+    """
+    tiers = []
+    for row in (raw or []):
+        try:
+            mn = int(row.get("min_scans", 0))
+            pc = float(row.get("cashback_percent", base))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if mn < 0:
+            continue
+        tiers.append({"min_scans": mn,
+                      "cashback_percent": min(max(0.0, pc), MAX_CASHBACK_PERCENT)})
+    if not tiers:
+        return _default_tiers(base)
+    tiers.sort(key=lambda t: t["min_scans"])
+    # There must be a tier covering a user's first scan, or someone with 3
+    # scans this month would match nothing and earn zero.
+    if tiers[0]["min_scans"] > 0:
+        tiers.insert(0, {"min_scans": 0, "cashback_percent": base})
+    return tiers
+
+
+def tier_for(scan_number: int, tiers: list) -> dict:
+    """The highest tier this scan qualifies for.
+
+    `scan_number` counts the scan being made right now, so a user on 14 scans
+    making their 15th matches the 15-scan tier — which is what "scan 15 times
+    and your rate goes up" means to the person doing it.
+    """
+    chosen = tiers[0]
+    for t in tiers:
+        if scan_number >= t["min_scans"]:
+            chosen = t
+        else:
+            break
+    return chosen
+
+
+async def _scans_this_month(db, uid: str) -> int:
+    """How many bills this user has already had recorded this IST month.
+
+    Counted from bill_history, which is permanent. bill_scans carries a 24-hour
+    TTL for duplicate detection, so counting that would reset everyone's tier
+    every day.
+    """
+    try:
+        return await db.bill_history.count_documents(
+            {"user_id": uid, "scanned_at": {"$gte": _month_start_utc()}}
+        )
+    except Exception:
+        return 0
+
+
+async def _rates_for_user(db, uid: Optional[str]) -> dict:
+    """Rates with the user's monthly tier applied to cashback.
+
+    Points are deliberately untouched: they feed the redeem discount at
+    partner shops, so raising them would change what shops effectively pay.
+    """
+    rates = await _get_bill_rates(db)
+    tiers = rates["tiers"]
+    if not uid:
+        return {**rates, "scan_number": 0, "tier": tiers[0],
+                "cashback_percent": tiers[0]["cashback_percent"]}
+
+    prior = await _scans_this_month(db, uid)
+    scan_number = prior + 1          # the scan being made now
+    tier = tier_for(scan_number, tiers)
+
+    nxt = next((t for t in tiers if t["min_scans"] > scan_number), None)
+    return {
+        **rates,
+        "cashback_percent": tier["cashback_percent"],
+        "scans_this_month": prior,
+        "scan_number": scan_number,
+        "tier": tier,
+        "next_tier": (
+            {**nxt, "scans_needed": nxt["min_scans"] - scan_number} if nxt else None
+        ),
+    }
+
 
 async def _get_bill_rates(db) -> dict:
     """The cashback % and reward-point % awarded on a scanned bill.
@@ -86,19 +207,24 @@ async def _get_bill_rates(db) -> dict:
     A missing or unreadable config falls back to the launch rates, so a bad
     config document can never stop users earning.
     """
-    cb, pts = DEFAULT_CASHBACK_PERCENT, DEFAULT_POINTS_PERCENT
+    cb, pts, raw_tiers = DEFAULT_CASHBACK_PERCENT, DEFAULT_POINTS_PERCENT, None
     try:
         cfg = await db.app_config.find_one({"key": "bill_rates"})
         if cfg:
             cb = float(cfg.get("cashback_percent", cb))
             pts = float(cfg.get("points_percent", pts))
+            raw_tiers = cfg.get("tiers")
     except Exception:
         pass
     # A negative rate would silently debit the user; 0 is legitimate (offer
-    # switched off), so only negatives are corrected.
+    # switched off), so only negatives are corrected. The cap is applied here
+    # too, so a value written straight into Mongo can't bypass the admin form.
+    cb = min(max(0.0, cb), MAX_CASHBACK_PERCENT)
     return {
-        "cashback_percent": max(0.0, cb),
+        "cashback_percent": cb,
         "points_percent":   max(0.0, pts),
+        # Monthly scan-count ladder. Always non-empty, always sorted.
+        "tiers":            _clean_tiers(raw_tiers, cb),
     }
 
 
@@ -300,9 +426,11 @@ async def scan_bill(data: BillScanRequest, request: Request):
     # discount (below) — i.e. a redeem shop acts as redeem AND reward:
     # the user gets the discount from their points, then still earns
     # cashback + points on the bill amount, exactly like a reward shop.
-    # Rates are admin-configurable (default 1% cashback / 10% points); points
-    # keep one decimal, e.g. ₹1,564 → 156.4 pts, NOT rounded to an int.
-    _rates = await _get_bill_rates(db)
+    # Rates are admin-configurable, and the cashback % additionally depends on
+    # how many bills this user has scanned THIS MONTH — the more they use the
+    # app, the higher their rate. Points keep one decimal, e.g. ₹1,564 →
+    # 156.4 pts, NOT rounded to an int.
+    _rates = await _rates_for_user(db, uid)
     earned_cb, earned_pts = _earned(total, _rates)
 
     # ── Redeem Bill: deduct existing points based on the shop's discount %. ──
@@ -381,6 +509,12 @@ async def scan_bill(data: BillScanRequest, request: Request):
         # Earned this scan (always 0 / 0.0 for a Redeem Bill)
         "earned_cashback":  earned_cb,
         "earned_points":    earned_pts,
+        # Which monthly tier this scan earned at, and what the next one needs.
+        # Lets the success screen say "2% — 3 more scans this month for 3%"
+        # instead of a bare number the user can't act on.
+        "cashback_percent": _rates["cashback_percent"],
+        "scan_number":      _rates.get("scan_number", 0),
+        "next_tier":        _rates.get("next_tier"),
         # Discount audit (always 0 / 0.0 for a Reward Bill)
         "discount_percent": discount_pct,
         "discount_value":   discount_value,
@@ -397,15 +531,31 @@ async def scan_bill(data: BillScanRequest, request: Request):
 # ── GET /bill/wallet ──────────────────────────────────────────────────────────
 @router.get("/rates")
 async def get_bill_rates(current_user: dict = Depends(get_current_user)):
-    """The live cashback / reward-point percentages.
+    """THIS user's live cashback / reward-point percentages.
 
-    The app shows the user what a bill will earn BEFORE it is submitted. That
-    preview was computing 1% and 10% locally, so the moment an admin changed
-    the offer the app would promise one figure and the wallet would credit
-    another — with the user watching. This endpoint is what keeps the two
-    honest: same config document, same numbers.
+    The app shows what a bill will earn BEFORE it is submitted. That preview
+    was computing 1% and 10% locally, so the moment an admin changed the offer
+    the app would promise one figure and the wallet would credit another —
+    with the user watching. This endpoint is what keeps the two honest.
+
+    It is per-user, not global: cashback rises with how many bills the user has
+    scanned this month, so the only correct answer to "what will I earn"
+    depends on who is asking. `next_tier` is what lets the app say "3 more
+    scans this month and you move to 3%" — the whole point of the ladder is
+    that the user can see it coming.
     """
-    return await _get_bill_rates(get_db())
+    db = get_db()
+    uid = str(current_user["_id"])
+    r = await _rates_for_user(db, uid)
+    return {
+        "cashback_percent": r["cashback_percent"],   # this user's rate, now
+        "points_percent":   r["points_percent"],
+        "base_cashback_percent": r["tiers"][0]["cashback_percent"],
+        "scans_this_month": r.get("scans_this_month", 0),
+        "tiers":            r["tiers"],
+        "next_tier":        r.get("next_tier"),
+        "max_cashback_percent": MAX_CASHBACK_PERCENT,
+    }
 
 
 @router.get("/wallet")
@@ -577,7 +727,9 @@ async def admin_action_review(
     # admin-configurable rates as /bill/scan) — a Redeem Bill additionally
     # spends points against the shop's discount. An admin reviewing the bill
     # may override either figure by hand; only the automatic path uses rates.
-    _rates = await _get_bill_rates(db)
+    # The user's own monthly tier applies here too — a bill that needed manual
+    # review must not earn less than the same bill scanned cleanly would.
+    _rates = await _rates_for_user(db, uid)
     _auto_cb, _auto_pts = _earned(amount, _rates)
     pts = data.reward_points if data.reward_points is not None else _auto_pts
     cb  = data.cashback      if data.cashback      is not None else _auto_cb

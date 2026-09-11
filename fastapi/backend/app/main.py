@@ -15,7 +15,7 @@ from .routes import (
     auth, users, claims, notifications, dashboard,
     policies, locations, deals, shops, rewards,
     redeem, reels, classifieds, admin, bill, banners, advertiser,
-    feedback, payments, learn, select, search, campaign,
+    feedback, payments, learn, select, search, campaign, privilege,
 )
 
 
@@ -97,6 +97,8 @@ app.include_router(learn.router)
 # shared X-Admin-Key — keeps the Twilio credentials in this backend only.
 app.include_router(campaign.router)
 app.include_router(select.router)
+# Claimit Privilege — show-and-save discounts, approved at the counter.
+app.include_router(privilege.router)
 # One geo-search API across all nine features (the client's location brief).
 app.include_router(search.router)
 

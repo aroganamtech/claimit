@@ -52,6 +52,7 @@ import AdminCreateAd from './pages/admin/AdminCreateAd'
 import AdminBulkShops from './pages/admin/AdminBulkShops'
 import AdminBulkSelect from './pages/admin/AdminBulkSelect'
 import AdminWhatsAppCampaign from './pages/admin/AdminWhatsAppCampaign'
+import AdminPrivilege from './pages/admin/AdminPrivilege'
 import AdminBulkClassifieds from './pages/admin/AdminBulkClassifieds'
 import AdminFeatureCategoryImages from './pages/admin/AdminFeatureCategoryImages'
 import AdminTransactions from './pages/admin/AdminTransactions'
@@ -315,6 +316,7 @@ export default function App() {
             <Route path="/admin/bonus-settings" element={<AdminBonusSettings />} />
             <Route path="/admin/ad-settings"    element={<AdminAdSettings />} />
             <Route path="/admin/bill-rates"     element={<AdminBillRates />} />
+            <Route path="/admin/privilege"      element={<AdminPrivilege />} />
             <Route path="/admin/pricing"        element={<AdminPricing />} />
             <Route path="/admin/deleted-users"  element={<AdminDeletedUsers />} />
           </Route>

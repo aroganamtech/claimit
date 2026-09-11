@@ -116,7 +116,7 @@ class _SelectCoverageScreenState extends State<SelectCoverageScreen> {
           IconButton(
             tooltip: 'Change location',
             icon: const Icon(Icons.my_location_rounded, size: 20),
-            onPressed: () => context.push('/location'),
+            onPressed: () => context.push('/location/pick'),
           ),
         ],
       ),

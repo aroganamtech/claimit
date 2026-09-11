@@ -66,12 +66,26 @@ class LocationService {
   // ─────────────────────────────────────────────────────────────────────────
   /// Main entry point.
   ///
-  /// [context] — optional. Pass it to show a "Go to Settings" dialog when
-  /// the user has permanently denied location permission.
+  /// [context] — optional, kept for callers that still pass it.
+  ///
+  /// [promptIfNeeded] — whether this call may show the SYSTEM permission
+  /// sheet. Defaults to **false**, which is the important part.
+  ///
+  /// Background callers (the dashboard warming up nearby shops on open, a
+  /// list refreshing itself) must never trigger that sheet: being asked for
+  /// GPS the instant the app opens, before doing anything, is exactly what
+  /// the client asked us to stop. Those callers get whatever permission is
+  /// ALREADY granted, and null otherwise — the app then falls back to the
+  /// location the user picked by hand.
+  ///
+  /// Only a deliberate "Use my current location" tap passes true.
   ///
   /// Returns a [Position] or `null` if unavailable.
   // ─────────────────────────────────────────────────────────────────────────
-  static Future<Position?> getPosition({BuildContext? context}) async {
+  static Future<Position?> getPosition({
+    BuildContext? context,
+    bool promptIfNeeded = false,
+  }) async {
     // If a request is already in flight, piggyback on it instead of making
     // a second concurrent permission request (which Android rejects).
     if (_requesting && _inFlight != null) {
@@ -82,7 +96,8 @@ class LocationService {
     _inFlight = Completer<Position?>();
 
     try {
-      final result = await _doGetPosition(context: context);
+      final result = await _doGetPosition(
+          context: context, promptIfNeeded: promptIfNeeded);
       _inFlight!.complete(result);
       return result;
     } catch (e) {
@@ -105,7 +120,10 @@ class LocationService {
   ///
   /// So every failure path here now returns quietly. The caller gets null, and
   /// the app falls back to the location the user picked by hand.
-  static Future<Position?> _doGetPosition({BuildContext? context}) async {
+  static Future<Position?> _doGetPosition({
+    BuildContext? context,
+    bool promptIfNeeded = false,
+  }) async {
     // 1 ── Are location services turned on at the device level? ──────────────
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -117,12 +135,14 @@ class LocationService {
 
     // 2 ── Check / request permission ────────────────────────────────────────
     //
-    // The system permission sheet is still shown once, because that is the
-    // only way to obtain GPS at all. What's gone is Claimit nagging on top of
-    // it. If the user says no, we accept it and move on.
+    // The system sheet is shown ONLY when the caller asked for it — i.e. the
+    // user tapped "Use my current location". A background caller that finds
+    // permission not yet granted gives up here and returns whatever is
+    // cached, so opening the app never produces a permission prompt.
     LocationPermission perm = await Geolocator.checkPermission();
 
     if (perm == LocationPermission.denied) {
+      if (!promptIfNeeded) return _lastKnown();
       perm = await Geolocator.requestPermission();
     }
 

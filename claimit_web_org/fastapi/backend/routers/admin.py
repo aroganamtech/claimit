@@ -1670,6 +1670,276 @@ async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_adm
     return {"ok": True, "reward_points": body.reward_points, "cashback": body.cashback}
 
 
+# ── Claimit Privilege ─────────────────────────────────────────────────────────
+# Partners live in claimit_db.privilege_partners, which the APP backend reads
+# directly — so anything written here is live in the app immediately, with no
+# mirroring step. Passes (privilege_passes) are written by the app and only
+# read here, which is what makes the approval log trustworthy as an audit
+# trail: admin never writes to it.
+
+from utils.privilege_bulk import (
+    build_template as _priv_template,
+    parse_sheet as _priv_parse,
+    CATEGORY_IDS as _PRIV_CATEGORY_IDS,
+    CATEGORY_LABELS as _PRIV_CATEGORY_LABELS,
+)
+
+
+class _PrivilegePartnerBody(_BM2):
+    name: str
+    category: str
+    discount_percent: float = 0
+    discount_label: str = ""
+    about: str = ""
+    privilege_details: str = ""
+    terms: str = ""
+    area: str = ""
+    city: str = ""
+    state: str = ""
+    pincode: str = ""
+    address: str = ""
+    phone: str = ""
+    status: str = "active"
+    photo_s3_keys: list = []
+
+
+def _priv_serialize(doc: dict) -> dict:
+    return {
+        "id": str(doc.get("_id", "")),
+        "name": doc.get("name", ""),
+        "category": doc.get("category", ""),
+        "category_label": doc.get("category_label")
+                          or _PRIV_CATEGORY_LABELS.get(doc.get("category", ""), ""),
+        "discount_percent": float(doc.get("discount_percent") or 0),
+        "discount_label": doc.get("discount_label", ""),
+        "about": doc.get("about", ""),
+        "privilege_details": doc.get("privilege_details", ""),
+        "terms": doc.get("terms", ""),
+        "area": doc.get("area", ""),
+        "city": doc.get("city", ""),
+        "state": doc.get("state", ""),
+        "pincode": doc.get("pincode", ""),
+        "address": doc.get("address", ""),
+        "phone": doc.get("phone", ""),
+        "status": doc.get("status", "active"),
+        "created_by": doc.get("created_by", ""),
+        "located": bool(doc.get("geo")),
+        "photo_s3_keys": doc.get("photo_s3_keys") or [],
+    }
+
+
+@router.get("/privilege/categories")
+async def privilege_categories(_admin=Depends(get_current_admin)):
+    """The nine fixed ids, for the create/edit dropdown."""
+    return {"categories": [{"id": cid, "label": _PRIV_CATEGORY_LABELS[cid]}
+                           for cid in _PRIV_CATEGORY_IDS]}
+
+
+@router.get("/privilege/partners")
+async def privilege_list(
+    status: Optional[str] = Query(None, description="active | pending | disabled"),
+    category: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    _admin=Depends(get_current_admin),
+):
+    q: dict = {}
+    if status:
+        q["status"] = status
+    if category:
+        q["category"] = category
+    # Local import: this module has no module-level `re`.
+    import re as _re
+    if city:
+        q["city"] = {"$regex": f"^{_re.escape(city)}", "$options": "i"}
+    if search:
+        q["name"] = {"$regex": _re.escape(search), "$options": "i"}
+
+    docs = await (app_db["privilege_partners"].find(q)
+                  .sort("created_at", -1).to_list(1000))
+    items = [_priv_serialize(d) for d in docs]
+    return {
+        "partners": items,
+        "total": len(items),
+        # How many can't be found in the app because they have no position.
+        # Surfaced rather than buried: an unlocated partner is invisible.
+        "unlocated": sum(1 for i in items if not i["located"]),
+    }
+
+
+@router.post("/privilege/partners")
+async def privilege_create(
+    body: _PrivilegePartnerBody,
+    _admin=Depends(get_current_admin),
+):
+    if body.category not in _PRIV_CATEGORY_IDS:
+        raise HTTPException(status_code=400, detail="Unknown category")
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    doc = body.dict()
+    doc["name"] = body.name.strip()
+    doc["category_label"] = _PRIV_CATEGORY_LABELS[body.category]
+    doc["created_at"] = datetime.utcnow()
+    doc["created_by"] = "admin"
+
+    # Coordinates from the pincode, or this partner never appears in the app.
+    lat, lng, geo = await resolve_point_for_ad(app_db, pincode=body.pincode)
+    if geo:
+        doc.update({"lat": lat, "lng": lng, "geo": geo})
+
+    res = await app_db["privilege_partners"].insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return {"partner": _priv_serialize(doc), "located": bool(geo)}
+
+
+@router.put("/privilege/partners/{partner_id}")
+async def privilege_update(
+    partner_id: str,
+    body: _PrivilegePartnerBody,
+    _admin=Depends(get_current_admin),
+):
+    if body.category not in _PRIV_CATEGORY_IDS:
+        raise HTTPException(status_code=400, detail="Unknown category")
+
+    update = body.dict()
+    update["category_label"] = _PRIV_CATEGORY_LABELS[body.category]
+    update["updated_at"] = datetime.utcnow()
+
+    # Re-resolve on every save: correcting a wrong pincode is all an admin
+    # should have to do to make a partner visible again.
+    lat, lng, geo = await resolve_point_for_ad(app_db, pincode=body.pincode)
+    if geo:
+        update.update({"lat": lat, "lng": lng, "geo": geo})
+
+    res = await app_db["privilege_partners"].update_one(
+        {"_id": _id(partner_id)}, {"$set": update})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    return {"ok": True, "located": bool(geo)}
+
+
+@router.delete("/privilege/partners/{partner_id}")
+async def privilege_delete(partner_id: str, _admin=Depends(get_current_admin)):
+    res = await app_db["privilege_partners"].delete_one({"_id": _id(partner_id)})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    return {"ok": True}
+
+
+@router.get("/privilege/bulk-template")
+async def privilege_bulk_template(_admin=Depends(get_current_admin)):
+    # StreamingResponse, not Response — `Response` is not imported in this
+    # module, and every other template download here uses this same shape.
+    return StreamingResponse(
+        io.BytesIO(_priv_template()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition":
+                'attachment; filename="Claimit_Privilege_Template.xlsx"',
+            "Cache-Control": "no-store, must-revalidate",
+        },
+    )
+
+
+@router.post("/privilege/bulk-upload")
+async def privilege_bulk_upload(
+    body: BulkUploadBody,
+    replace: bool = Query(False, description="Wipe all partners before inserting"),
+    _admin=Depends(get_current_admin),
+):
+    """Parse a workbook the browser already PUT to S3 and insert the rows.
+
+    Sent as an S3 key rather than a multipart POST because CloudFront blocks
+    multipart file uploads with a 403 — the same pattern every other importer
+    here uses.
+    """
+    from utils.s3 import download_bytes
+    data = download_bytes(body.key)
+    if not data:
+        raise HTTPException(status_code=400, detail="Could not read the uploaded file")
+
+    try:
+        partners, rejected, summary = _priv_parse(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if replace:
+        await app_db["privilege_partners"].delete_many({})
+
+    inserted, failed = 0, list(rejected)
+    for p in partners:
+        row = p.pop("_row", None)
+        image_name = p.pop("image", "")
+        doc = dict(p)
+        doc["status"] = "active"
+        doc["created_at"] = datetime.utcnow()
+        doc["created_by"] = "admin-bulk"
+
+        if image_name and body.images.get(image_name):
+            doc["photo_s3_keys"] = [body.images[image_name]]
+
+        # Resolve the pincode to a point. The parser already guaranteed six
+        # digits; this can still fail if the pincode isn't a real one, and a
+        # partner with no position is invisible, so it is reported not hidden.
+        try:
+            lat, lng, geo = await resolve_point_for_ad(app_db, pincode=doc.get("pincode", ""))
+            if geo:
+                doc.update({"lat": lat, "lng": lng, "geo": geo})
+        except Exception:
+            geo = None
+
+        try:
+            await app_db["privilege_partners"].insert_one(doc)
+            inserted += 1
+            if not geo:
+                failed.append({
+                    "row": row, "name": doc.get("name", ""),
+                    "reason": "Saved, but the pincode could not be placed on the "
+                              "map — this partner will not appear in the app "
+                              "until it is corrected."})
+        except Exception as e:
+            failed.append({"row": row, "name": doc.get("name", ""),
+                           "reason": f"Could not save: {e}"})
+
+    return {**summary, "inserted": inserted, "issues": failed}
+
+
+@router.get("/privilege/history")
+async def privilege_history(
+    limit: int = Query(200, le=500),
+    skip: int = Query(0, ge=0),
+    _admin=Depends(get_current_admin),
+):
+    """Every approved discount, newest first — the audit trail.
+
+    Read-only on purpose. The value of this log is that admin cannot edit it,
+    so a shop disputing a discount can be checked against what the app
+    actually recorded at the time.
+    """
+    q = {"status": "approved"}
+    docs = await (app_db["privilege_passes"].find(q)
+                  .sort("approved_at", -1)
+                  .skip(skip).limit(limit).to_list(limit))
+    total = await app_db["privilege_passes"].count_documents(q)
+    return {
+        "history": [{
+            "reference":        d.get("reference", ""),
+            "user_name":        d.get("user_name", ""),
+            "user_phone":       d.get("user_phone", ""),
+            "partner_name":     d.get("partner_name", ""),
+            "partner_area":     d.get("partner_area", ""),
+            "partner_city":     d.get("partner_city", ""),
+            "discount_percent": float(d.get("discount_percent") or 0),
+            "discount_label":   d.get("discount_label", ""),
+            "issued_at":        d.get("issued_at").isoformat() if d.get("issued_at") else "",
+            "approved_at":      d.get("approved_at").isoformat() if d.get("approved_at") else "",
+        } for d in docs],
+        "total": total,
+        "skip": skip,
+    }
+
+
 # ── App config: bill scan reward rates ────────────────────────────────────────
 # What a user earns for scanning a bill. These were hard-coded in the app
 # backend (1 % cashback, 10 % points), so changing the offer meant editing code
@@ -1677,51 +1947,124 @@ async def update_app_config(body: _AppConfigBody, _admin=Depends(get_current_adm
 # routes/bill.py reads on every scan — a change here applies to the next scan
 # with no restart.
 
+# Hard ceiling on cashback, mirrored in routes/bill.py. Enforced in both
+# places so a value written straight into Mongo still can't over-pay.
+MAX_CASHBACK_PERCENT = 5.0
+
+
+class _BillTier(_BM2):
+    min_scans:        int
+    cashback_percent: float
+
+
 class _BillRatesBody(_BM2):
     cashback_percent: float
     points_percent:   float
+    # The monthly scan-count ladder. Omitted by an older admin build, in which
+    # case the stored tiers are left exactly as they are rather than wiped.
+    # Built-in generic rather than typing.List, which this module doesn't
+    # import. Keeps per-row validation: pydantic coerces each entry to
+    # _BillTier, so a malformed row is rejected before it reaches Mongo.
+    tiers: Optional[list[_BillTier]] = None
+
+
+def _default_tiers(base: float) -> list:
+    """Starting ladder, derived from the base rate so switching this on can
+    never reduce anyone's cashback (a hard-coded 1% first tier would drop an
+    admin who had already moved the base to 2%)."""
+    return [
+        {"min_scans": 0,  "cashback_percent": base},
+        {"min_scans": 15, "cashback_percent": min(base + 1, MAX_CASHBACK_PERCENT)},
+        {"min_scans": 50, "cashback_percent": min(base + 2, MAX_CASHBACK_PERCENT)},
+    ]
 
 
 @router.get("/bill-rates")
 async def get_bill_rates(_admin=Depends(get_current_admin)):
     """Current bill-scan reward rates, with the launch defaults as fallback."""
-    cfg = await app_db["app_config"].find_one({"key": "bill_rates"})
+    cfg = await app_db["app_config"].find_one({"key": "bill_rates"}) or {}
+    base = float(cfg.get("cashback_percent", 1.0))
+    tiers = cfg.get("tiers") or _default_tiers(base)
     return {
-        "cashback_percent": float((cfg or {}).get("cashback_percent", 1.0)),
-        "points_percent":   float((cfg or {}).get("points_percent", 10.0)),
+        "cashback_percent": base,
+        "points_percent":   float(cfg.get("points_percent", 10.0)),
+        "tiers":            tiers,
+        "max_cashback_percent": MAX_CASHBACK_PERCENT,
     }
 
 
 @router.put("/bill-rates")
 async def update_bill_rates(body: _BillRatesBody, _admin=Depends(get_current_admin)):
-    """Set the reward rates. Applies to every scan from the moment it saves.
+    """Set the reward rates and the monthly tier ladder.
 
-    Zero is allowed — that is how an offer gets switched off. Negative is not:
-    it would debit the user for shopping. The upper bound is a guard against a
-    typo like 1000 turning a ₹500 bill into ₹5,000 of cashback.
+    Applies to every scan from the moment it saves. Zero is allowed — that is
+    how an offer gets switched off. Negative is not: it would debit the user
+    for shopping. Cashback is capped at 5%; a typo like 20 for 2 would
+    otherwise pay ten times the intended amount on every bill until somebody
+    noticed the wallet totals.
     """
-    for name, value in (("Cashback", body.cashback_percent),
-                        ("Points", body.points_percent)):
-        if value < 0:
-            raise HTTPException(status_code=400, detail=f"{name} % cannot be negative")
-        if value > 100:
-            raise HTTPException(status_code=400, detail=f"{name} % cannot exceed 100")
+    if body.cashback_percent < 0:
+        raise HTTPException(status_code=400, detail="Cashback % cannot be negative")
+    if body.cashback_percent > MAX_CASHBACK_PERCENT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cashback % cannot exceed {MAX_CASHBACK_PERCENT:g}%")
+    if body.points_percent < 0:
+        raise HTTPException(status_code=400, detail="Points % cannot be negative")
+    if body.points_percent > 100:
+        raise HTTPException(status_code=400, detail="Points % cannot exceed 100")
+
+    update = {
+        "key":              "bill_rates",
+        "cashback_percent": float(body.cashback_percent),
+        "points_percent":   float(body.points_percent),
+        "updated_at":       datetime.utcnow(),
+    }
+
+    if body.tiers is not None:
+        seen = set()
+        clean = []
+        for t in body.tiers:
+            if t.min_scans < 0:
+                raise HTTPException(status_code=400,
+                                    detail="Tier scan count cannot be negative")
+            if t.cashback_percent < 0:
+                raise HTTPException(status_code=400,
+                                    detail="Tier cashback % cannot be negative")
+            if t.cashback_percent > MAX_CASHBACK_PERCENT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tier cashback % cannot exceed {MAX_CASHBACK_PERCENT:g}%")
+            # Two tiers starting at the same scan count is ambiguous — one of
+            # them would silently never apply.
+            if t.min_scans in seen:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Two tiers both start at {t.min_scans} scans")
+            seen.add(t.min_scans)
+            clean.append({"min_scans": int(t.min_scans),
+                          "cashback_percent": float(t.cashback_percent)})
+
+        clean.sort(key=lambda t: t["min_scans"])
+        if not clean or clean[0]["min_scans"] != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="The first tier must start at 0 scans, otherwise a new "
+                       "user matches no tier and earns nothing.")
+        # A ladder that goes DOWN would cut a loyal user's rate for using the
+        # app more, which is the opposite of the point.
+        for a, b in zip(clean, clean[1:]):
+            if b["cashback_percent"] < a["cashback_percent"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tier at {b['min_scans']} scans pays less than the "
+                           f"tier below it — higher tiers must not pay less.")
+        update["tiers"] = clean
 
     await app_db["app_config"].update_one(
-        {"key": "bill_rates"},
-        {"$set": {
-            "key":              "bill_rates",
-            "cashback_percent": float(body.cashback_percent),
-            "points_percent":   float(body.points_percent),
-            "updated_at":       datetime.utcnow(),
-        }},
-        upsert=True,
+        {"key": "bill_rates"}, {"$set": update}, upsert=True,
     )
-    return {
-        "ok": True,
-        "cashback_percent": body.cashback_percent,
-        "points_percent":   body.points_percent,
-    }
+    return {"ok": True, **{k: v for k, v in update.items() if k != "key"}}
 
 
 # ── App config: Premium ad slot caps (Nearby Deals + Brand Deals) ─────────────

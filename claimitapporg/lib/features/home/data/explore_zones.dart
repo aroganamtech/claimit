@@ -58,10 +58,7 @@ const List<ExploreZone> kExploreZonesPage1 = [
 const List<ExploreZone> kExploreZonesPage2 = [
   ExploreZone(label: 'Local\nFinder',      icon: 'assets/images/zone_3.png',     route: '/classified'),
   ExploreZone(label: 'Claimit\nSelect',    icon: 'assets/images/zone_10.png',    route: '/select'),
-  // In the client's design but with no screen behind it yet, so tapping says
-  // "coming soon" instead of navigating nowhere. Give it a route here the
-  // moment that screen exists.
-  ExploreZone(label: 'Claimit\nPrivilege', icon: 'assets/images/zone_7.png',     route: ''),
+  ExploreZone(label: 'Claimit\nPrivilege', icon: 'assets/images/zone_7.png',     route: '/privilege'),
   ExploreZone(label: 'Local\nClassifieds', icon: 'assets/images/zone_8.png',     route: '/classified/ads'),
   ExploreZone(label: 'Learn\nClaimit',     icon: 'assets/images/zone_learn.png', route: '/learn'),
 ];

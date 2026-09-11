@@ -79,7 +79,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   // so the full location name is always visible.
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => context.push('/location'),
+                      onTap: () => context.push('/location/pick'),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.max,
@@ -302,7 +302,7 @@ class _ProfileCard extends StatelessWidget {
               // receiving maxWidth=Infinity which causes a RenderFlex crash).
               Flexible(
                 child: GestureDetector(
-                  onTap: () => context.push('/location'),
+                  onTap: () => context.push('/location/pick'),
                   child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

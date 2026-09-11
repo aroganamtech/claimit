@@ -135,6 +135,14 @@ class AppConstants {
   static const String selectConversations = '/select/conversations';
   static const String selectCoverage      = '/select/coverage';
 
+  // ── Claimit Privilege (show-and-save discounts) ───────────────────────────
+  static const String privilege           = '/privilege';
+  static const String privilegeCategories = '/privilege/categories';
+  static const String privilegePartners   = '/privilege/partners';
+  static const String privilegeCoverage   = '/privilege/coverage';
+  static const String privilegePass       = '/privilege/pass';
+  static const String privilegeHistory    = '/privilege/history';
+
   // ── Classifieds ───────────────────────────────────────────────────────────
   static const String classifieds    = '/classifieds';
   static const String classifiedDetail = '/classifieds/{id}';
