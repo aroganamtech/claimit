@@ -24,6 +24,14 @@ const Color kPrivBg      = Color(0xFFF4F6FA);  // page background
 const Color kPrivLine    = Color(0xFFE2E8F0);  // hairlines
 const Color kPrivGreen   = Color(0xFF059669);  // approved state
 
+/// How much of home_main_logo.png's width the circular mark takes up.
+///
+/// The asset is [ yellow mark ][ "claimit" in blue ]. The header shows only
+/// the mark and sets the word as white text, so this is where the crop lands.
+/// Measured off the artwork; if a sliver of a blue letter appears at the right
+/// edge of the mark, lower it slightly.
+const double _kMarkFraction = 0.23;
+
 /// The blue "claimit | Privilege" bar every screen shares.
 ///
 /// No drawer and no hamburger — Ramesh asked for both to go. Navigation is the
@@ -60,17 +68,38 @@ class PrivilegeHeader extends StatelessWidget implements PreferredSizeWidget {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Exactly as the home screen draws it — height 30, no tint. The
-          // white-tint experiment is reverted: one wordmark, one size, drawn
-          // the same everywhere.
-          Image.asset(
-            'assets/images/home_main_logo.png',
-            height: 30,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Text(
-              'claimit',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800,
-                  color: Colors.white),
+          // The yellow mark only, cropped out of the full logo, then "claimit"
+          // drawn beside it in white.
+          //
+          // Why not just use the logo image: home_main_logo.png is the mark
+          // PLUS the wordmark in BLUE, which is invisible on this blue bar.
+          // Tinting the whole image white was the obvious fix and the wrong
+          // one — srcIn flattens every pixel, so the yellow mark went white
+          // too. There is no white-wordmark asset in the project, so the mark
+          // is cropped and the word is set as text.
+          //
+          // _kMarkFraction is how much of the image's width the circular mark
+          // occupies. Nudge it if a sliver of blue letter shows.
+          ClipRect(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              widthFactor: _kMarkFraction,
+              child: Image.asset(
+                'assets/images/home_main_logo.png',
+                height: 30,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          const Text(
+            'claimit',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: -0.4,
             ),
           ),
           const SizedBox(width: 9),

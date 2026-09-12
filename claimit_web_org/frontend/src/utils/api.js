@@ -239,14 +239,20 @@ const admin = {
   //
   // preview NEVER sends anything — it reports what would be sent, which rows
   // were rejected and why, and how many are already messaged.
-  campaignPreview: (key) =>
-    http.post('/admin/whatsapp-campaign/preview', { key }).then(r => r.data),
+  // Which campaigns this server can run, and whether each has its template
+  // SID configured.
+  campaignTypes: () =>
+    http.get('/admin/whatsapp-campaign/types').then(r => r.data),
+  campaignPreview: (key, campaign = 'claim_business') =>
+    http.post('/admin/whatsapp-campaign/preview', { key }, { params: { campaign } })
+        .then(r => r.data),
   // confirm:true is required by the API so a stray click cannot spend money.
-  campaignSend: (recipients) =>
+  campaignSend: (recipients, campaign = 'claim_business') =>
     http.post('/admin/whatsapp-campaign/send',
-      { recipients, confirm: true }).then(r => r.data),
-  campaignLog: () =>
-    http.get('/admin/whatsapp-campaign/log').then(r => r.data),
+      { recipients, confirm: true, campaign }).then(r => r.data),
+  campaignLog: (campaign = 'claim_business') =>
+    http.get('/admin/whatsapp-campaign/log', { params: { campaign } })
+        .then(r => r.data),
 
   // ── Bulk upload: Local Finds / Classifieds ────────────────────────────
   // listingType ("local_find" | "classified") picks the template and is

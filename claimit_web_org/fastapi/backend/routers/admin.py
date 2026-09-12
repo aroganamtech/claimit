@@ -106,7 +106,40 @@ async def admin_login(req: AdminLoginRequest):
 # ─── Stats ────────────────────────────────────────────────────
 @router.get("/stats")
 async def stats(_admin=Depends(get_current_admin)):
+    """Overview counts for the admin dashboard.
+
+    IMPORTANT — there are two separate populations, in two databases:
+
+      claimit_web.users  — people who registered on the WEBSITE: advertisers,
+                           sales agents, shop owners. Grows only when somebody
+                           signs up on the web portal.
+
+      claimit_db.users   — the real end-customers who downloaded the FLUTTER
+                           APP. This is the number that grows with the
+                           business, and it is the one people mean by "users".
+
+    This endpoint used to count only the first one, under the label
+    "Total Users". So every app signup was invisible here: the figure looked
+    small and never moved, no matter how many downloads there were. Both are
+    now reported, named for what they actually are.
+    """
+    app_users = 0
+    app_users_today = 0
+    try:
+        app_users = await app_users_collection.count_documents({})
+        # "Joined today" gives the client a live signal — a total alone can't
+        # show whether growth has stopped.
+        _since = datetime.utcnow() - timedelta(days=1)
+        app_users_today = await app_users_collection.count_documents(
+            {"created_at": {"$gte": _since}})
+    except Exception as e:
+        print(f"[stats] app user count failed: {e}")
+
     return {
+        # End-customers in the app — the headline number.
+        "app_users": app_users,
+        "app_users_today": app_users_today,
+        # Web-portal accounts, by role.
         "users": {
             "total": await users_collection.count_documents({}),
             "advertiser": await users_collection.count_documents({"role": "advertiser"}),
@@ -115,7 +148,10 @@ async def stats(_admin=Depends(get_current_admin)):
         },
         "ads_total": await ads_collection.count_documents({}),
         "ads_active": await ads_collection.count_documents({"status": "active"}),
+        # Already the APP database (claimit_db.shops) — every shop, whether it
+        # was bulk-uploaded, registered on the web, or claimed in the app.
         "shops_total": await shops_collection.count_documents({}),
+        "shops_claimed": await shops_collection.count_documents({"is_claimed": True}),
         "reviews_total": await reviews_collection.count_documents({}),
         "tickets_open": await tickets_collection.count_documents({"status": "open"}),
         "tickets_total": await tickets_collection.count_documents({}),
@@ -2253,11 +2289,61 @@ async def admin_presign_upload(body: AdminPresignRequest, _admin=Depends(get_cur
 _APP_BACKEND = _os.getenv("APP_BACKEND_URL", "http://127.0.0.1:8001")
 _APP_ADMIN_KEY = _os.getenv("ADMIN_SECRET", "claimit-admin-2024")
 _CLAIM_TEMPLATE_SID = _os.getenv("TWILIO_CLAIM_TEMPLATE_SID", "")
+# Second campaign: inviting ordinary users to download the app. Different
+# template, different audience, different variables — so it gets its own SID
+# and its own log name rather than sharing the shop-owner one.
+_USER_TEMPLATE_SID = _os.getenv("TWILIO_USER_TEMPLATE_SID", "")
+
+# One place defining each campaign, so the preview and the send can never
+# disagree about which template or which log they are working with.
+#
+#   variables — the shape the app backend fills in:
+#     "shop_name"      {{1}} = shop name
+#     "new_user_bonus" {{1}} = cashback, {{2}} = reward points, both read from
+#                      the SAME admin config the wallet is credited from, so
+#                      the invite can't promise a figure the user won't get.
+CAMPAIGNS = {
+    "claim_business": {
+        "label": "Shop owners — claim your business",
+        "sid_env": "TWILIO_CLAIM_TEMPLATE_SID",
+        "variables": "shop_name",
+    },
+    "user_attraction": {
+        "label": "Users — download Claimit",
+        "sid_env": "TWILIO_USER_TEMPLATE_SID",
+        "variables": "new_user_bonus",
+    },
+}
+
+
+def _campaign_sid(name: str) -> str:
+    """The configured template SID for a campaign, read live from the env."""
+    cfg = CAMPAIGNS.get(name)
+    if not cfg:
+        raise HTTPException(status_code=400, detail=f"Unknown campaign '{name}'")
+    return _os.getenv(cfg["sid_env"], "")
+
+
+@router.get("/whatsapp-campaign/types")
+async def whatsapp_campaign_types(_admin=Depends(get_current_admin)):
+    """The campaigns this server can run, and whether each is configured.
+
+    `configured` false means the template SID env var is missing — the admin
+    page disables Send rather than letting someone upload 600 numbers and hit
+    a wall.
+    """
+    return {"campaigns": [
+        {"id": k, "label": v["label"],
+         "configured": bool(_os.getenv(v["sid_env"], "")),
+         "env_var": v["sid_env"]}
+        for k, v in CAMPAIGNS.items()
+    ]}
 
 
 @router.post("/whatsapp-campaign/preview")
 async def whatsapp_campaign_preview(
     body: BulkUploadBody,
+    campaign: str = Query("claim_business", description="claim_business | user_attraction"),
     _admin=Depends(get_current_admin),
 ):
     """Read the uploaded sheet and report what WOULD be sent.
@@ -2291,21 +2377,26 @@ async def whatsapp_campaign_preview(
 
     # Who has already been messaged, so the admin knows the real cost of
     # pressing send rather than the row count of the sheet.
+    # Scoped to THIS campaign: someone messaged about claiming their shop has
+    # not been invited to download the app, so the two runs must not suppress
+    # each other.
     already = 0
     try:
         phones = {"+91" + r["phone"] for r in recipients}
         already = await app_db["whatsapp_campaign_log"].count_documents(
-            {"campaign": "claim_business", "status": "sent",
+            {"campaign": campaign, "status": "sent",
              "phone": {"$in": list(phones)}})
     except Exception:
         pass
 
+    sid = _campaign_sid(campaign)
     return {
         **summary,
+        "campaign": campaign,
         "already_sent": already,
         "will_send": max(0, summary["valid"] - already),
-        "template_sid": _CLAIM_TEMPLATE_SID,
-        "template_configured": bool(_CLAIM_TEMPLATE_SID),
+        "template_sid": sid,
+        "template_configured": bool(sid),
         "recipients": recipients[:200],   # enough to eyeball, not a huge payload
         # NOT capped. These are the rows that will not be messaged, each with
         # the reason — the admin has to see every one to fix the sheet, so
@@ -2317,6 +2408,7 @@ async def whatsapp_campaign_preview(
 class _CampaignSendBody(BaseModel):
     recipients: list          # [{phone, shop_name}, …] as returned by preview
     confirm: bool = False
+    campaign: str = "claim_business"
 
 
 @router.post("/whatsapp-campaign/send")
@@ -2328,17 +2420,26 @@ async def whatsapp_campaign_send(
     if not body.confirm:
         raise HTTPException(status_code=400,
                             detail="confirm must be true to send")
-    if not _CLAIM_TEMPLATE_SID:
+    cfg = CAMPAIGNS.get(body.campaign)
+    if not cfg:
+        raise HTTPException(status_code=400,
+                            detail=f"Unknown campaign '{body.campaign}'")
+    sid = _campaign_sid(body.campaign)
+    if not sid:
         raise HTTPException(
             status_code=400,
-            detail="TWILIO_CLAIM_TEMPLATE_SID is not set on the server.")
+            detail=f"{cfg['sid_env']} is not set on the server.")
     if not body.recipients:
         raise HTTPException(status_code=400, detail="No recipients")
 
     import httpx
     payload = {
-        "template_sid": _CLAIM_TEMPLATE_SID,
-        "campaign": "claim_business",
+        "template_sid": sid,
+        "campaign": body.campaign,
+        # Tells the app backend what to put in the template's variables. For
+        # the user invite it fills in the joining bonus from admin config;
+        # nothing here comes from the uploaded sheet.
+        "variables": cfg["variables"],
         "dry_run": False,
         "recipients": [
             {"phone": str(r.get("phone", "")),
@@ -2364,15 +2465,22 @@ async def whatsapp_campaign_send(
 
 
 @router.get("/whatsapp-campaign/log")
-async def whatsapp_campaign_log(_admin=Depends(get_current_admin)):
-    """How many have been messaged so far, and the most recent ones."""
+async def whatsapp_campaign_log(
+    campaign: str = Query("claim_business", description="claim_business | user_attraction"),
+    _admin=Depends(get_current_admin),
+):
+    """How many have been messaged so far, and the most recent ones.
+
+    Scoped to one campaign. The two runs have separate audiences, so a shared
+    count would tell an admin nothing useful about either.
+    """
     try:
         sent = await app_db["whatsapp_campaign_log"].count_documents(
-            {"campaign": "claim_business", "status": "sent"})
+            {"campaign": campaign, "status": "sent"})
         failed = await app_db["whatsapp_campaign_log"].count_documents(
-            {"campaign": "claim_business", "status": "failed"})
+            {"campaign": campaign, "status": "failed"})
         recent = await (app_db["whatsapp_campaign_log"]
-                        .find({"campaign": "claim_business"})
+                        .find({"campaign": campaign})
                         .sort("sent_at", -1).limit(50).to_list(50))
         for d in recent:
             d["_id"] = str(d["_id"])

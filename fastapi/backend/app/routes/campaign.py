@@ -31,7 +31,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..utils.whatsapp import send_template, _looks_like_phone, _to_e164
+from ..utils.whatsapp import (
+    send_template, _looks_like_phone, _to_e164, _new_user_bonus, _money,
+)
 
 router = APIRouter(prefix="/campaign", tags=["Campaign"])
 
@@ -70,6 +72,14 @@ class CampaignRequest(BaseModel):
     recipients: List[Recipient]
     # A name for this run, so the log can be read back per campaign.
     campaign: str = "claim_business"
+    # Which template shape this is, i.e. what goes into the variables:
+    #
+    #   "shop_name"      {{1}} = the shop's name          (claimit_claim_business)
+    #   "new_user_bonus" {{1}} = cashback, {{2}} = points (claimit_user_attraction)
+    #
+    # Named by MEANING rather than by template SID, because the SID lives in
+    # an env var that differs between environments while the shape does not.
+    variables: str = "shop_name"
     # True = report what WOULD happen and send nothing. The admin page always
     # calls this first, so nobody spends money on a sheet they haven't seen
     # validated.
@@ -88,7 +98,27 @@ async def send_whatsapp_campaign(
     if not body.recipients:
         raise HTTPException(status_code=400, detail="No recipients")
 
+    if body.variables not in ("shop_name", "new_user_bonus"):
+        raise HTTPException(
+            status_code=400,
+            detail="variables must be 'shop_name' or 'new_user_bonus'")
+
     db = get_db()
+
+    # Read the joining bonus ONCE, not per recipient: it is the same figure for
+    # everyone in the run, and 600 recipients would otherwise mean 600 reads of
+    # the same document. Reading it here also means a run quotes one consistent
+    # figure even if an admin edits the bonus halfway through.
+    #
+    # Same app_config document the wallet is actually credited from, so the
+    # message can never promise an amount the user won't receive.
+    bonus_vars: dict = {}
+    if body.variables == "new_user_bonus":
+        bonus = await _new_user_bonus()
+        bonus_vars = {
+            "1": _money(float(bonus.get("cashback", 0))),
+            "2": str(int(bonus.get("reward_points", 0))),
+        }
 
     # Who has already been messaged for this campaign, so a re-upload of the
     # same sheet doesn't message anyone twice.
@@ -127,8 +157,11 @@ async def send_whatsapp_campaign(
                             "shop_name": name})
             continue
 
-        ok = await send_template(phone, body.template_sid,
-                                 {"1": name or FALLBACK_NAME})
+        ok = await send_template(
+            phone, body.template_sid,
+            bonus_vars if body.variables == "new_user_bonus"
+                       else {"1": name or FALLBACK_NAME},
+        )
         # Written immediately, before the next send. If the process dies here,
         # the next run knows exactly how far this one got.
         try:

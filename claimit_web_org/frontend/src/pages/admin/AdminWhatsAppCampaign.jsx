@@ -24,11 +24,36 @@ export default function AdminWhatsAppCampaign() {
   const [result, setResult] = useState(null)
   const [log, setLog] = useState(null)
 
-  useEffect(() => { refreshLog() }, [])
+  // Which campaign this run is. Two audiences, two templates, two logs — so
+  // switching clears any preview: a sheet validated against one campaign must
+  // never be sent under the other.
+  const [campaign, setCampaign] = useState('claim_business')
+  const [types, setTypes] = useState([])
+
+  useEffect(() => {
+    api.admin.campaignTypes()
+      .then(d => setTypes(d.campaigns || []))
+      .catch(() => setTypes([]))
+  }, [])
+
+  useEffect(() => { refreshLog() }, [campaign])   // eslint-disable-line
 
   const refreshLog = async () => {
-    try { setLog(await api.admin.campaignLog()) } catch { /* not critical */ }
+    try { setLog(await api.admin.campaignLog(campaign)) } catch { /* not critical */ }
   }
+
+  const switchCampaign = (id) => {
+    if (id === campaign) return
+    setCampaign(id)
+    setPreview(null)
+    setResult(null)
+    setError('')
+    setFile(null)
+  }
+
+  const current = types.find(t => t.id === campaign)
+  const isUserCampaign = campaign === 'user_attraction'
+  const audience = isUserCampaign ? 'user' : 'shop'
 
   // ── Step 1: upload + validate (sends nothing) ─────────────────────────────
   const validate = async () => {
@@ -45,7 +70,7 @@ export default function AdminWhatsAppCampaign() {
         method: 'PUT', headers: { 'Content-Type': ct }, body: file,
       })
       if (!put.ok) throw new Error(`Upload failed (${put.status})`)
-      setPreview(await api.admin.campaignPreview(presign.key))
+      setPreview(await api.admin.campaignPreview(presign.key, campaign))
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Could not read that file.')
     } finally {
@@ -58,14 +83,14 @@ export default function AdminWhatsAppCampaign() {
     if (!preview?.recipients?.length) return
     const n = preview.will_send
     if (!window.confirm(
-      `Send the WhatsApp message to ${n} shop${n === 1 ? '' : 's'}?\n\n` +
+      `Send the WhatsApp message to ${n} ${audience}${n === 1 ? '' : 's'}?\n\n` +
       `This costs ${n} WhatsApp message${n === 1 ? '' : 's'} and cannot be undone.`
     )) return
 
-    setBusy(`Sending to ${n} shops… this takes a few minutes, keep this tab open.`)
+    setBusy(`Sending to ${n} ${audience}s… this takes a few minutes, keep this tab open.`)
     setError('')
     try {
-      setResult(await api.admin.campaignSend(preview.recipients))
+      setResult(await api.admin.campaignSend(preview.recipients, campaign))
       await refreshLog()
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Send failed.')
@@ -89,8 +114,55 @@ export default function AdminWhatsAppCampaign() {
     <div style={{ maxWidth: 960 }}>
       <h2 style={{ color: BLUE, marginBottom: 4 }}>WhatsApp Campaign</h2>
       <p style={{ color: '#6b7280', fontSize: 14, marginTop: 0 }}>
-        Invite bulk-uploaded shops to claim their business.
+        {isUserCampaign
+          ? 'Invite people to download Claimit and claim their joining bonus.'
+          : 'Invite bulk-uploaded shops to claim their business.'}
       </p>
+
+      {/* ── Which campaign ──────────────────────────────────────────────── */}
+      {/* Switching clears any preview: a sheet validated against one campaign
+          must never be sent under the other. */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        {types.map(t => (
+          <button
+            key={t.id}
+            onClick={() => switchCampaign(t.id)}
+            style={{
+              padding: '10px 18px', borderRadius: 8, fontSize: 13.5,
+              fontWeight: 700, fontFamily: 'Poppins', cursor: 'pointer',
+              border: campaign === t.id ? 'none' : '1px solid #d1d5db',
+              background: campaign === t.id ? BLUE : '#fff',
+              color: campaign === t.id ? '#fff' : '#374151',
+              opacity: t.configured ? 1 : 0.55,
+            }}
+          >
+            {t.label}
+            {!t.configured && ' — not configured'}
+          </button>
+        ))}
+      </div>
+
+      {current && !current.configured && (
+        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA',
+                      borderRadius: 8, padding: '12px 16px', marginBottom: 18,
+                      fontSize: 13, color: '#b91c1c' }}>
+          <b>{current.env_var}</b> is not set on the server, so this campaign
+          cannot send. Add it to the web backend’s <code>.env</code> and restart
+          the service.
+        </div>
+      )}
+
+      {isUserCampaign && (
+        <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE',
+                      borderRadius: 8, padding: '12px 16px', marginBottom: 18,
+                      fontSize: 13, color: '#1e40af', lineHeight: 1.6 }}>
+          The cashback and reward-point figures in this message are filled in
+          from <b>New User Bonus Settings</b> — the same values the wallet is
+          actually credited with. Change them there and the next send quotes the
+          new figures automatically. Nothing about the amount comes from your
+          sheet.
+        </div>
+      )}
 
       {/* ── Progress so far ─────────────────────────────────────────────── */}
       {log && (
@@ -108,9 +180,20 @@ export default function AdminWhatsAppCampaign() {
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>1. Upload the sheet</h3>
         <p style={{ fontSize: 13, color: '#374151', marginTop: 0 }}>
-          Columns: <b>phone</b> (required) and <b>shop_name</b> (optional —
-          blank shows “your shop in your area”). <b>city</b> and <b>pincode</b>{' '}
-          are ignored, they are only there so you can filter the sheet.
+          {isUserCampaign ? (
+            <>
+              Only <b>phone</b> is used. This message has no name in it — the
+              two figures come from your bonus settings — so any other columns
+              in the sheet are ignored.
+            </>
+          ) : (
+            <>
+              Columns: <b>phone</b> (required) and <b>shop_name</b> (optional —
+              blank shows “your shop in your area”). <b>city</b> and{' '}
+              <b>pincode</b> are ignored, they are only there so you can filter
+              the sheet.
+            </>
+          )}
         </p>
         <input
           type="file"

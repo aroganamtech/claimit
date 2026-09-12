@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # version name + build number (Play Store versionCode). The +N MUST increase
 # on every Play Store upload. Keep in sync with appVersion/appBuildNumber in
 # lib/core/constants/app_constants.dart (shown in Settings).
-version: 1.0.1+53
+version: 1.0.1+54
 environment:
   sdk: ^3.11.5
 
