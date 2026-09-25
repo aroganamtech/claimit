@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../auth/providers/auth_provider.dart';
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
 import '../models/privilege_models.dart';
 import '../services/privilege_service.dart';
 import '../widgets/privilege_common.dart';
@@ -25,7 +26,8 @@ class PrivilegeHomeScreen extends StatefulWidget {
   State<PrivilegeHomeScreen> createState() => _PrivilegeHomeScreenState();
 }
 
-class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen> {
+class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
+    with LocationReloadMixin {
   Map<String, int> _counts = {};
 
   @override
@@ -34,18 +36,21 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen> {
     _loadCounts();
   }
 
+  @override
+  void onLocationChanged() => _loadCounts();
+
   Future<void> _loadCounts() async {
-    final city = _cityOnly(context.read<AuthProvider>().user?.location ?? '');
+    // Read the SELECTED location, not the user's profile location.
+    //
+    // This used to be `context.read<AuthProvider>().user?.location`, which is
+    // the city saved on the account at registration. Nothing the location
+    // picker does touches that field, so Privilege could never respond to the
+    // picker no matter how many times you changed it — the counts were always
+    // for whatever city the account was created in.
+    final city = selectedCity;
     final counts = await PrivilegeService.instance.fetchCoverage(city);
     if (!mounted) return;
     setState(() => _counts = counts);
-  }
-
-  /// "Anna Nagar, Chennai" -> "Chennai". The coverage query matches on city,
-  /// so sending the full label would find nothing.
-  String _cityOnly(String location) {
-    final parts = location.split(',');
-    return parts.isNotEmpty ? parts.last.trim() : location.trim();
   }
 
   void _openCategory(PrivilegeCategory c) {
@@ -54,15 +59,18 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true
-          ? a.user!.location!
-          : 'Select location',
+    // The place the user is actually browsing, from the location picker —
+    // the same source the category counts are now fetched with, so the label
+    // and the numbers under it can never disagree.
+    final location = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
     );
 
     return Scaffold(
       backgroundColor: kPrivBg,
-      appBar: const PrivilegeHeader(),
+      // Back from the Privilege home leaves the feature and returns to the
+      // main app, rather than to itself.
+      appBar: const PrivilegeHeader(fallbackRoute: '/'),
       bottomNavigationBar: const PrivilegeBottomBar(current: 0),
 
       // The + button replaces the removed drawer as the way to add your own

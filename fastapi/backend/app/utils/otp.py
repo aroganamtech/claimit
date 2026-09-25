@@ -185,8 +185,11 @@ async def send_otp_email(email: str, otp: str) -> bool:
         return True
     except Exception as e:
         print(f"❌ SMTP email failed for {email}: {e}")
-        # Don't break the login flow — the OTP is still stored in DB
-        return True
+        # Report the failure. The OTP is still stored, so a retry that DOES
+        # get through will work — but the caller has to know this one didn't,
+        # otherwise the app tells the user "OTP sent" and they wait for a code
+        # that was never delivered.
+        return False
 
 
 async def send_otp_sms(phone: str, otp: str) -> bool:
@@ -236,7 +239,13 @@ async def send_otp_sms(phone: str, otp: str) -> bool:
             )
         print(f"✅ OTP WhatsApp sent to {e164_phone} | Twilio SID: {message.sid}")
     except Exception as e:
-        print(f"❌ Twilio WhatsApp failed for {e164_phone}: {e}")
+        # Returning True here — which this used to do — meant /auth/send-otp
+        # answered "OTP sent" for a message Twilio had rejected outright. On
+        # 2026-09-14 the account hit error 63038 (daily message cap) and every
+        # registration silently broke: the app said the code was on its way and
+        # nothing ever arrived. The caller decides what to tell the user now.
+        code = getattr(e, "code", None)
+        print(f"❌ Twilio WhatsApp failed for {e164_phone} (code {code}): {e}")
+        return False
 
-    # Never breaks the login flow — the OTP is stored in the DB regardless.
     return True

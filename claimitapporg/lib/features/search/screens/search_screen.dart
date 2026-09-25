@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../auth/providers/auth_provider.dart';
 import '../../profile/providers/profile_provider.dart';
+import '../../../core/providers/location_provider.dart';
 import '../../shops/screens/shop_list_screen.dart';
 import '../../shops/services/shop_service.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart';
@@ -303,10 +304,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // ── AppBar — white, same design as home/dashboard ─────────────────────────
   PreferredSizeWidget _buildAppBar(BuildContext context) {
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true
-          ? a.user!.location!
-          : 'Select Area',
+    // The picked location, not the account's saved city.
+    final location = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select Area',
     );
 
     final topPad = MediaQuery.of(context).padding.top;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/providers/location_reload_mixin.dart';
 import '../../../core/services/location_service.dart';
 import '../models/select_category.dart';
 import '../models/select_professional.dart';
@@ -27,7 +28,8 @@ class SelectListScreen extends StatefulWidget {
 
 enum _SelSort { nearby, topRated, offers }
 
-class _SelectListScreenState extends State<SelectListScreen> {
+class _SelectListScreenState extends State<SelectListScreen>
+    with LocationReloadMixin {
   _SelSort _sort = _SelSort.nearby;
   bool _loading = true;
   List<SelectProfessional> _items = const [];
@@ -37,6 +39,13 @@ class _SelectListScreenState extends State<SelectListScreen> {
     super.initState();
     _load();
   }
+
+  /// The user picked a different place in the location sheet, so the list
+  /// under "trusted professionals near you" has to be fetched again. Without
+  /// this the header said Kovilpatti and the cards below stayed on the
+  /// previous city.
+  @override
+  void onLocationChanged() => _load();
 
   String get _sortKey {
     switch (_sort) {

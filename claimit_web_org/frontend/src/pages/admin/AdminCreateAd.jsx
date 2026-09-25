@@ -37,6 +37,10 @@ export default function AdminCreateAd() {
   const [form, setForm] = useState({})
   const [creative, setCreative] = useState(null)
   const [thumbnail, setThumbnail] = useState(null)
+  // Extra photos for the deal landing page carousel. The creative above stays
+  // the card thumbnail; these are the slides behind it. Capped at 3 so a deal
+  // is never more than 4 images, which is what the app's carousel is built for.
+  const [gallery, setGallery] = useState([])
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState(null) // {ok, text}
 
@@ -68,6 +72,17 @@ export default function AdminCreateAd() {
       let thumbnailKey = null
       if (thumbnail) { setBusy('Uploading thumbnail…'); thumbnailKey = await uploadToS3(thumbnail, 'ads-video/thumbnails') }
 
+      // Carousel photos — deals only, and uploaded one at a time so a single
+      // bad file reports its own error instead of failing the whole batch.
+      const galleryKeys = []
+      if (isDeal && gallery.length) {
+        for (let i = 0; i < gallery.length; i++) {
+          setBusy(`Uploading photo ${i + 2} of ${gallery.length + 1}…`)
+          const k = await uploadToS3(gallery[i], 'ads')
+          if (k) galleryKeys.push(k)
+        }
+      }
+
       setBusy('Creating ad…')
       const payload = {
         ad_type: adType,
@@ -80,6 +95,7 @@ export default function AdminCreateAd() {
         scheduled_date: duration === 'date' ? scheduledDate : undefined,
         creative_key: creativeKey,
         thumbnail_key: thumbnailKey,
+        gallery_keys: galleryKeys,
         ...form,
       }
       const res = await api.admin.createAd(payload)
@@ -91,7 +107,7 @@ export default function AdminCreateAd() {
           : `scheduled for ${res.publish_date} – ${res.end_date}`
       setMsg({ ok: true, text: `✅ Ad created — ${when} (id ${res.id}).` })
       // Reset the form for the next ad
-      setForm({}); setCreative(null); setThumbnail(null)
+      setForm({}); setCreative(null); setThumbnail(null); setGallery([])
     } catch (e) {
       setMsg({ ok: false, text: e?.response?.data?.detail || e?.message || 'Failed to create ad.' })
     } finally {
@@ -179,6 +195,21 @@ export default function AdminCreateAd() {
         {adType === 'promo_reelz' && (<>
           <div style={label}>Thumbnail image (optional)</div>
           <input style={input} type="file" accept="image/*" onChange={(e) => setThumbnail(e.target.files?.[0] || null)} />
+        </>)}
+
+        {/* Deal gallery — the image above is the card thumbnail; these are the
+            extra slides on the deal's landing page, exactly like a shop's
+            photo gallery. Sliced to 3 here as well as on the server, so the
+            admin sees the cap rather than silently losing the 4th file. */}
+        {isDeal && (<>
+          <div style={label}>Extra photos for the landing page (optional, up to 3)</div>
+          <input style={input} type="file" accept="image/*" multiple
+            onChange={(e) => setGallery(Array.from(e.target.files || []).slice(0, 3))} />
+          <div style={{ fontSize: 12, color: '#666', margin: '-8px 0 14px' }}>
+            {gallery.length === 0
+              ? 'The image above is shown on the deal card and as the only photo on the landing page.'
+              : `${gallery.length} extra photo${gallery.length > 1 ? 's' : ''} — the landing page will show ${gallery.length + 1} in a swipeable carousel.`}
+          </div>
         </>)}
 
         {/* How long it runs. The old "Publish today" radio did not publish

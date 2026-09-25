@@ -87,35 +87,51 @@ def _looks_like_phone(value: str) -> bool:
     return len(digits) >= 8
 
 
-async def send_template(
+# Twilio error codes that mean "stop the whole batch", not "skip this one".
+#
+# 63038 is the account-wide daily message cap. Once it fires, every remaining
+# send in a run will fail identically, so continuing is pure waste — and worse,
+# a few hundred more rejected attempts make the account's sending pattern look
+# even more like spam to the trust system that applied the cap in the first
+# place. A batch sender must treat this as "stop", not as "next number".
+FATAL_ERROR_CODES = {63038}
+
+
+async def send_template_ex(
     phone: str,
     template_sid: str,
     variables: Optional[dict] = None,
-) -> bool:
-    """Send one approved template. Returns True only if Twilio accepted it.
+) -> tuple:
+    """send_template, but it also reports WHY a send failed.
 
-    `variables` maps the template's placeholders to values, e.g.
-    {"1": "Ramesh"} fills {{1}}. Values are forced to str because Twilio
-    rejects numbers.
+    Returns (accepted, error_code):
+      * (True,  None)   Twilio accepted the message.
+      * (False, None)   skipped before Twilio was ever called — no SID
+                        configured, email-only user, sender messaging itself.
+                        Not an error.
+      * (False, <int>)  Twilio rejected it, and the int is its error code.
+
+    That third case is the point of this function: it lets a caller tell "this
+    one number is bad, skip it" apart from "the whole account is blocked, stop".
     """
     if not template_sid:
-        return False                      # this message type isn't switched on
+        return False, None                # this message type isn't switched on
     if not _looks_like_phone(phone):
-        return False                      # email-only user, or no number
+        return False, None                # email-only user, or no number
 
     client = _twilio()
     sender = getattr(settings, "twilio_whatsapp_number", "").strip()
     if not (client and sender):
-        return False                      # WhatsApp not configured on this server
+        return False, None                # WhatsApp not configured on this server
 
     to = _to_e164(phone)
     if not to:
-        return False
+        return False, None
 
     # A sender can't message itself — Twilio error 63031. Silently skip rather
     # than log a scary error for what is really just a test number.
     if to.lstrip("+") == sender.lstrip("+"):
-        return False
+        return False, None
 
     try:
         msg = client.messages.create(
@@ -127,12 +143,39 @@ async def send_template(
             ),
         )
         print(f"✅ WhatsApp sent to {to} | SID: {msg.sid}")
-        return True
+        return True, None
     except Exception as e:
-        # Swallowed on purpose. Common causes: template not approved (63016),
-        # sender not registered (63007), number not on WhatsApp (21211).
-        print(f"⚠️  WhatsApp to {to} failed: {e}")
-        return False
+        # Common causes: template not approved (63016), sender not registered
+        # (63007), number not on WhatsApp (21211), account capped (63038).
+        #
+        # TwilioRestException carries .code; a plain network error does not, so
+        # the code is normalised to an int or None and never trusted blindly.
+        code = getattr(e, "code", None)
+        try:
+            code = int(code) if code is not None else None
+        except (TypeError, ValueError):
+            code = None
+        print(f"⚠️  WhatsApp to {to} failed (code {code}): {e}")
+        return False, code
+
+
+async def send_template(
+    phone: str,
+    template_sid: str,
+    variables: Optional[dict] = None,
+) -> bool:
+    """Send one approved template. Returns True only if Twilio accepted it.
+
+    `variables` maps the template's placeholders to values, e.g.
+    {"1": "Ramesh"} fills {{1}}. Values are forced to str because Twilio
+    rejects numbers.
+
+    Signature and return type are unchanged, so every existing caller keeps
+    working exactly as before. Reach for send_template_ex() only when you need
+    the error code as well.
+    """
+    ok, _ = await send_template_ex(phone, template_sid, variables)
+    return ok
 
 
 async def _new_user_bonus() -> dict:

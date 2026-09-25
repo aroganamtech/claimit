@@ -253,7 +253,10 @@ def build_template_bytes(listing_type: str) -> bytes:
         ("     b) In the 'image' column here, type that file's name, e.g. greenleaf.jpg", False),
         ("     c) Then upload this sheet — the photo is matched to the row by its filename.", False),
         ("   Matching ignores case and the extension is optional. A blank image still uploads.", False),
-        ("6. lat / lng: optional map coordinates — fill them so the listing shows a real distance.", False),
+        ("6. lat / lng: REQUIRED. A row without both is rejected. The app finds listings by distance,", False),
+        ("   and a listing with no coordinates is never returned by the search — it would upload fine", False),
+        ("   and stay invisible to every user. Get them from Google Maps: right-click the shop, then", False),
+        ("   click the numbers at the top to copy. First number = lat, second = lng.", False),
     ]
     if is_lf:
         common.append(("7. plan: free / standard / premium (photo limit 1 / 5 / 15).", False))

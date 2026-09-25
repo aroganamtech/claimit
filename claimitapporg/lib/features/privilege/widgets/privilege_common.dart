@@ -40,7 +40,21 @@ class PrivilegeHeader extends StatelessWidget implements PreferredSizeWidget {
   final bool showBack;
   final List<Widget>? actions;
 
-  const PrivilegeHeader({super.key, this.showBack = false, this.actions});
+  /// Where back goes when there is nothing on the navigation stack to pop —
+  /// after Android kills and restores the app, for instance. Sub-screens want
+  /// the Privilege home; the Privilege home itself wants out of the feature
+  /// entirely, so it passes '/'.
+  final String fallbackRoute;
+
+  /// Defaults to showing back. Every Privilege screen is somewhere the user
+  /// arrived from somewhere else, and with the drawer removed the bottom bar
+  /// was the only way out — which left no way to leave Privilege at all.
+  const PrivilegeHeader({
+    super.key,
+    this.showBack = true,
+    this.actions,
+    this.fallbackRoute = '/privilege',
+  });
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -60,7 +74,7 @@ class PrivilegeHeader extends StatelessWidget implements PreferredSizeWidget {
                 if (context.canPop()) {
                   context.pop();
                 } else {
-                  context.go('/privilege');
+                  context.go(fallbackRoute);
                 }
               },
             )

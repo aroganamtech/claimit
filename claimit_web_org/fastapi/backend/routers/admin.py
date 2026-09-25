@@ -562,6 +562,65 @@ def _num(v):
         return None
 
 
+# India's rough bounding box. Used only to catch coordinates entered the wrong
+# way round, which is the single most common mistake in these sheets.
+_IN_LAT = (6.0, 38.0)
+_IN_LNG = (68.0, 98.0)
+
+
+def require_point(lat_raw, lng_raw) -> tuple:
+    """Coordinates are mandatory on every bulk row. Returns (lat, lng, geo).
+
+    Why this rejects instead of guessing
+    ------------------------------------
+    A row saved without a usable `geo` is not "a bit worse" — $geoNear does
+    not return it at all. It imports cleanly, appears in the admin panel, and
+    stays invisible to every user forever. On 19 September a check found 100%
+    of Local Finds and 67% of Claimit Select in exactly that state: 174
+    businesses in the database that no customer could ever reach.
+
+    Silently geocoding the pincode instead would hide the problem AND put
+    every business in a pincode on the same point, so "0.3 km away" would be
+    fiction. Failing the row puts the mistake in front of the person who can
+    fix it, at the moment they can fix it — the same way a missing phone
+    number already does.
+
+    Raises ValueError with a message written for the admin's error list.
+    """
+    if lat_raw is None or str(lat_raw).strip() == "" or \
+       lng_raw is None or str(lng_raw).strip() == "":
+        raise ValueError(
+            "Missing lat/lng — coordinates are mandatory. Without them this "
+            "listing cannot appear in the app's 5 km search."
+        )
+
+    try:
+        lat = float(lat_raw)
+        lng = float(lng_raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"lat/lng must be numbers (got '{lat_raw}', '{lng_raw}').")
+
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        raise ValueError(f"lat/lng out of range ({lat}, {lng}).")
+
+    if lat == 0 and lng == 0:
+        raise ValueError(
+            "lat/lng are 0,0 — that is a point in the Atlantic Ocean, not a "
+            "real location. Usually means the cell was left as a default."
+        )
+
+    # Swapped values: a Chennai lat/lng pair reversed lands in the Arabian Sea
+    # and the listing is simply never near anybody.
+    if _IN_LNG[0] <= lat <= _IN_LNG[1] and _IN_LAT[0] <= lng <= _IN_LAT[1]:
+        raise ValueError(
+            f"lat and lng look swapped ({lat}, {lng}). For India lat is about "
+            f"6–38 and lng about 68–98 — check the column order."
+        )
+
+    # GeoJSON is [lng, lat]. Reversed here and every listing is in the sea.
+    return lat, lng, {"type": "Point", "coordinates": [lng, lat]}
+
+
 class BulkUploadBody(BaseModel):
     key: str = ""          # S3 key of the uploaded .xlsx (browser PUTs it first)
     # {original filename: s3 key} for photos the admin uploaded BEFORE the
@@ -690,11 +749,23 @@ async def shops_bulk_upload(
                 "lat":           _num(cell(row, "lat")),
                 "lng":           _num(cell(row, "lng")),
             }
-            # GeoJSON mirror of lat/lng for the app's real $geoNear "nearby
-            # shops" query (2dsphere index). None when lat/lng weren't given
-            # (they're optional in the sheet) — same as the register flow.
-            _lat, _lng = doc["lat"], doc["lng"]
-            doc["geo"] = {"type": "Point", "coordinates": [_lng, _lat]} if (_lat is not None and _lng is not None) else None
+            # lat / lng are MANDATORY, exactly like the phone number above.
+            #
+            # They used to be optional, and a blank pair produced `geo: None`.
+            # $geoNear does not rank such a document last — it does not return
+            # it at all. So the row imported cleanly, appeared in the admin
+            # panel, and was invisible to every user forever. On 18 Sep 2026
+            # that was 67% of Claimit Select and 100% of Local Finds.
+            #
+            # Rejecting the row is the right trade: a rejection is a problem
+            # you can see and fix in the sheet. A silently unfindable record is
+            # one nobody notices for months.
+            try:
+                doc["lat"], doc["lng"], doc["geo"] = require_point(
+                    cell(row, "lat"), cell(row, "lng"))
+            except ValueError as ve:
+                errors.append({"row": r, "name": name, "error": str(ve)})
+                continue
         except (ValueError, TypeError) as e:
             errors.append({"row": r, "name": name, "error": f"Invalid number: {e}"})
             continue
@@ -955,7 +1026,14 @@ async def select_bulk_upload(
         if plan not in PLANS:
             plan = "custom"
 
-        lat, lng = _num(cell(row, "lat")), _num(cell(row, "lng"))
+        # Mandatory, same reasoning as the phone check above: a professional
+        # with no coordinates is not returned by $geoNear at all, so the row
+        # would import cleanly and never be seen by a single user.
+        try:
+            lat, lng, _geo = require_point(cell(row, "lat"), cell(row, "lng"))
+        except ValueError as ve:
+            errors.append({"row": r, "name": name, "error": str(ve)})
+            continue
 
         doc = {
             "name": name,
@@ -988,10 +1066,10 @@ async def select_bulk_upload(
             "source": "bulk",
             "updated_at": datetime.now(timezone.utc),
         }
-        if lat is not None and lng is not None:
-            doc["geo"] = {"type": "Point", "coordinates": [lng, lat]}
-            doc["lat"] = lat
-            doc["lng"] = lng
+        # Built and validated by require_point above — already [lng, lat].
+        doc["geo"] = _geo
+        doc["lat"] = lat
+        doc["lng"] = lng
 
         # Photo, in order of preference:
         #   1. the filename named in the sheet (uploaded beforehand)
@@ -1138,7 +1216,18 @@ async def classifieds_bulk_upload(
                            "error": "Missing phone — it identifies the row on re-upload."})
             continue
 
-        lat, lng = _num(cell(row, "latitude")), _num(cell(row, "longitude"))
+        # Mandatory, same reasoning as the phone check above. On 19 Sep 2026
+        # every single Local Finds listing — 95 of 95 — was invisible in the
+        # app because these two columns were left blank.
+        #
+        # require_point also catches the two mistakes a plain None check
+        # misses: coordinates entered the wrong way round, and a 0,0 default.
+        try:
+            lat, lng, _geo = require_point(
+                cell(row, "latitude"), cell(row, "longitude"))
+        except ValueError as ve:
+            errors.append({"row": r, "name": title, "error": str(ve)})
+            continue
 
         doc = {
             "user_id": f"bulk:{listing_type}:{phone}",
@@ -1214,34 +1303,15 @@ async def classifieds_bulk_upload(
         }
         existing = await _classifieds_collection.find_one(match)
         # ── Coordinates for the app's 5 km search ────────────────────────────
-        # latitude/longitude in the sheet are not enough on their own:
-        # $geoNear only sees a GeoJSON `geo` field. Without this, every Local
-        # Find and Classified uploaded here was stored with a position it could
+        # latitude/longitude on the document are not enough on their own:
+        # $geoNear only ever looks at a GeoJSON `geo` field. Without this line
+        # every Local Find and Classified was stored with a position it could
         # never be found by — present in the database, invisible in the app.
+        # That was 95 out of 95 listings on 19 Sep 2026.
         #
-        # Falls back to the PIN code centre, which most sheets have even when
-        # the latitude column is empty.
-        _glat, _glng = lat, lng
-        if _glat is None or _glng is None:
-            _pin = "".join(ch for ch in str(doc.get("pincode") or "") if ch.isdigit())
-            if len(_pin) == 6:
-                try:
-                    centre = await app_db["pincode_centres"].find_one({"_id": _pin})
-                    if centre:
-                        _glat = float(centre.get("lat"))
-                        _glng = float(centre.get("lng"))
-                except Exception:
-                    pass
-        try:
-            if _glat is not None and _glng is not None:
-                _la, _lo = float(_glat), float(_glng)
-                if -90 <= _la <= 90 and -180 <= _lo <= 180 and not (_la == 0 and _lo == 0):
-                    doc["lat"] = _la
-                    doc["lng"] = _lo
-                    # [lng, lat] — reversed puts Indian listings in the ocean.
-                    doc["geo"] = {"type": "Point", "coordinates": [_lo, _la]}
-        except (TypeError, ValueError):
-            pass    # unlocated is survivable; failing the whole upload is not
+        # lat/lng were validated by require_point at the top of this loop, so
+        # they are real numbers in the right order by the time we get here.
+        doc["geo"] = _geo
 
         if existing:
             await _classifieds_collection.update_one({"_id": existing["_id"]}, {"$set": doc})

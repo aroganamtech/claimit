@@ -112,6 +112,32 @@ class LocationProvider extends ChangeNotifier {
   double? get lat => _selected?.lat;
   double? get lng => _selected?.lng;
 
+  /// A short fingerprint of "what the app is currently searching".
+  ///
+  /// Screens compare this between rebuilds to decide whether to re-run their
+  /// API call. Comparing a string is deliberate: it changes when the point or
+  /// the radius changes and stays identical for every other notification the
+  /// provider sends (a GPS label refresh, a saved-place toggle), so a screen
+  /// does not refetch for things that cannot affect its results.
+  String get locationKey {
+    final la = _selected?.lat.toStringAsFixed(5) ?? '-';
+    final ln = _selected?.lng.toStringAsFixed(5) ?? '-';
+    return '$la|$ln|${_radiusKm.toStringAsFixed(1)}';
+  }
+
+  /// Just the city, for the endpoints that filter by city name rather than by
+  /// coordinates — Privilege coverage is one.
+  ///
+  /// Prefers subLabel ("Chennai, Tamil Nadu" -> "Chennai") because `label` is
+  /// usually the neighbourhood, which no backend indexes by.
+  String get cityLabel {
+    final p = _selected;
+    if (p == null) return '';
+    final sub = p.subLabel.trim();
+    if (sub.isNotEmpty) return sub.split(',').first.trim();
+    return p.label.trim();
+  }
+
   /// "Anna Nagar, Chennai · Within 5 km" — the header the brief asks for.
   String get headerText => _selected == null
       ? 'Select a location'

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claimit — Security Incident &amp; Recovery Plan</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #1a1a1a; line-height: 1.55; font-size: 10.5pt;
+    max-width: 900px; margin: 0 auto; padding: 24px;
+  }
+  h1 { font-size: 22pt; margin: 0 0 4px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 14pt; margin: 30px 0 10px; padding-bottom: 6px;
+    border-bottom: 2px solid #1a237e; color: #1a237e;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 11.5pt; margin: 20px 0 6px; color: #333; page-break-after: avoid; }
+  .sub { color: #666; font-size: 10pt; margin-bottom: 20px; }
+  code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-size: 9pt; }
+  code { background: #f1f3f5; padding: 1px 5px; border-radius: 3px; }
+  pre {
+    background: #1e1e2e; color: #e6e6e6; padding: 12px 14px;
+    border-radius: 6px; overflow-x: auto; white-space: pre-wrap;
+    word-break: break-word; line-height: 1.45; page-break-inside: avoid;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .box { padding: 12px 16px; border-radius: 6px; margin: 14px 0; page-break-inside: avoid; }
+  .danger  { background: #fdecea; border-left: 5px solid #c62828; }
+  .warn    { background: #fff8e1; border-left: 5px solid #f9a825; }
+  .ok      { background: #e8f5e9; border-left: 5px solid #2e7d32; }
+  .info    { background: #e8eaf6; border-left: 5px solid #1a237e; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: 600; }
+  .step {
+    background: #1a237e; color: #fff; display: inline-block;
+    width: 24px; height: 24px; border-radius: 50%; text-align: center;
+    line-height: 24px; font-weight: 700; font-size: 10pt; margin-right: 8px;
+  }
+  .stop { font-weight: 700; color: #c62828; }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+  li { margin: 4px 0; }
+  .pagebreak { page-break-before: always; }
+  .arch { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.5pt;
+          background: #fafafa; border: 1px solid #ddd; padding: 14px;
+          border-radius: 6px; white-space: pre; overflow-x: auto; }
+  footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #ddd;
+           color: #888; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<h1>Claimit — Security Incident &amp; Recovery Plan</h1>
+<div class="sub">
+  Prepared 15 September 2026 &nbsp;·&nbsp; Server <code>16.170.110.232</code> &nbsp;·&nbsp;
+  MongoDB ransomware incident &nbsp;·&nbsp; Status: <strong>live, unresolved</strong>
+</div>
+
+<div class="box danger">
+  <strong>Read this first.</strong> Your production MongoDB was accessed by an
+  attacker, every collection was deleted, and a ransom note was left behind.
+  The application is still running but is serving an empty database.
+  <strong>Do not restore the backup until the security hole is closed</strong> —
+  restoring first means being wiped again within hours. The order of the steps in
+  Part 3 is the whole point of this document.
+</div>
+
+<h2>Part 1 — What actually happened</h2>
+
+<h3>The evidence</h3>
+<table>
+  <tr><th>Finding</th><th>What it means</th></tr>
+  <tr>
+    <td>A database named <code>READ_ME_TO_RECOVER_YOUR_DATA</code> exists</td>
+    <td>Ransom note. Its single document reads: <em>"All your data was backed up
+    by us. You must pay 0.0065 bitcoin to bc1q…"</em></td>
+  </tr>
+  <tr>
+    <td><code>claimit_db</code> is 240&nbsp;KB. <code>users</code> = 1,
+        <code>shops</code> = 0</td>
+    <td>The database was emptied. It is not disconnected or misconfigured —
+        the documents are gone.</td>
+  </tr>
+  <tr>
+    <td>Collections <code>shops</code>, <code>ads</code>, <code>bill_history</code>,
+        <code>reviews</code> no longer exist at all</td>
+    <td>Dropped, not truncated.</td>
+  </tr>
+  <tr>
+    <td>An <code>admin</code> user exists (Compass authenticates as it) — yet
+        <code>mongosh</code> on the server connects with <strong>no username or
+        password at all</strong></td>
+    <td><strong>This is the exact misconfiguration.</strong> Users were created,
+        but <code>security.authorization</code> was never switched on in
+        <code>mongod.conf</code>. MongoDB therefore accepts credentials when
+        offered and ignores their absence when not. The password looks like it is
+        protecting the database. It is protecting nothing.</td>
+  </tr>
+  <tr>
+    <td>MongoDB Compass reaches
+        <code>16.170.110.232:27017</code> from your laptop over the internet</td>
+    <td><strong>Port 27017 is open to the world in the security group.</strong>
+        Combined with the row above: any person on the internet could connect as
+        administrator without a password. This is the entry point.</td>
+  </tr>
+  <tr>
+    <td><code>admin.tempusers</code> and <code>admin.temproles</code> present</td>
+    <td>Artifacts of <code>mongodump</code>/<code>mongorestore</code>. Suggests the
+        attacker ran a dump — so data may genuinely have been copied before
+        deletion.</td>
+  </tr>
+  <tr>
+    <td>mongod restarted Fri 11 Sep 06:30 UTC, on a box with 14 days uptime</td>
+    <td>Not a reboot. Something restarted the database service mid-life. Likely
+        the attack window.</td>
+  </tr>
+</table>
+
+<h3>How this attack works</h3>
+<p>
+  This is an automated, untargeted attack that has hit tens of thousands of
+  servers. Bots continuously scan the entire internet for MongoDB listening on
+  port 27017. When they find one with no authentication, they connect as
+  administrator, drop every database, and insert a ransom note. No password was
+  guessed and no software vulnerability was exploited — the door was simply
+  unlocked.
+</p>
+
+<div class="box warn">
+  <strong>Unrelated: the missed ₹5,000 bill.</strong> A missed payment cannot cause
+  this. No provider deletes your data and leaves a Bitcoin demand. The two are
+  separate issues — but settle the bill anyway, because an instance suspended for
+  non-payment would take your only backup with it.
+</div>
+
+<h2>Part 2 — Do not pay the ransom</h2>
+<p>
+  In the overwhelming majority of these campaigns the bot never copies anything.
+  It drops the databases and writes the note, because writing a note is cheap and
+  copying gigabytes is not. There is usually nothing to buy back. Paying funds the
+  operation and, in most documented cases, returns nothing.
+</p>
+<p>
+  Your recovery path is the backup already on the server:
+  <code>mongo_data_backup_20260817_0516.tar.gz</code>, 262,758,785 bytes, dated
+  <strong>17 August 2026</strong>.
+</p>
+
+<div class="box danger">
+  <strong>Be honest with yourself and your client about this:</strong> restoring
+  that file returns you to 17 August. Every user, shop, advertisement, bill scan
+  and review created between 17 August and today is <strong>permanently lost</strong>
+  unless a newer copy exists somewhere else. That is roughly four weeks of growth.
+</div>
+
+<h2 class="pagebreak">Part 3 — Recovery sequence</h2>
+<p><strong>Follow this order exactly.</strong> Each step assumes the previous one is finished.</p>
+
+<h3><span class="step">1</span>Get the backup off the server</h3>
+<p>Before anything else. If the box is terminated, re-attacked, or suspended for
+non-payment, this file is your only copy.</p>
+<pre><code>scp -i $key "${server}:/home/ubuntu/mongo_data_backup_20260817_0516.tar.gz" "F:\my_project_git\claimit_backup_20260817.tar.gz"</code></pre>
+<p>Verify the size is exactly <strong>262,758,785</strong> bytes:</p>
+<pre><code>Get-ChildItem "F:\my_project_git\claimit_backup_20260817.tar.gz" | Select-Object Name, Length</code></pre>
+<p>Then copy it to a second location — an external drive or cloud storage. One
+copy on one laptop is not a backup.</p>
+
+<h3><span class="step">2</span>Find out what format the backup is in</h3>
+<p>This determines which restore procedure applies. Run:</p>
+<pre><code>ssh -i $key $server "tar -tzf ~/mongo_data_backup_20260817_0516.tar.gz | head -20"</code></pre>
+<table>
+  <tr><th>If you see…</th><th>It is…</th><th>Restore with…</th></tr>
+  <tr>
+    <td><code>dump/claimit_db/users.bson</code></td>
+    <td>A <code>mongodump</code> archive</td>
+    <td><code>mongorestore</code> (Step 6a)</td>
+  </tr>
+  <tr>
+    <td><code>WiredTiger</code>, <code>collection-*.wt</code>,
+        <code>_mdb_catalog.wt</code></td>
+    <td>A raw copy of the data directory</td>
+    <td>File-level replacement (Step 6b)</td>
+  </tr>
+</table>
+
+<h3><span class="step">3</span>Close the hole — security group</h3>
+<p>
+  Confirmed on 15 September: security group <code>sg-0b0b4ee04efc561a0</code>
+  (<code>launch-wizard-2</code>), account Verso AI <code>951488807028</code>,
+  region <code>eu-north-1</code>. All five inbound rules are open to the entire
+  internet:
+</p>
+<table>
+  <tr><th>Rule ID</th><th>Port</th><th>Source</th><th>Verdict</th></tr>
+  <tr>
+    <td><code>sgr-06f29c8ca820ba4ce</code></td><td><strong>27017</strong></td>
+    <td>0.0.0.0/0</td>
+    <td class="stop">DELETE NOW — this is how they got in</td>
+  </tr>
+  <tr>
+    <td><code>sgr-00772e04d90b4adbf</code></td><td>22 (SSH)</td><td>0.0.0.0/0</td>
+    <td><strong>Narrow to "My IP"</strong> — the whole internet can currently
+        attempt to log in to your server</td>
+  </tr>
+  <tr>
+    <td><code>sgr-02fcd1412322471a1</code></td><td>8001</td><td>0.0.0.0/0</td>
+    <td>Keep for now — see the warning below</td>
+  </tr>
+  <tr>
+    <td><code>sgr-0b0f1cf608c6cdd3e</code></td><td>8000</td><td>0.0.0.0/0</td>
+    <td>Keep for now — the admin web uses it</td>
+  </tr>
+  <tr>
+    <td><code>sgr-0eee4cdb347421ae0</code></td><td>8002</td><td>0.0.0.0/0</td>
+    <td>Close once you confirm nothing needs it (Step 8)</td>
+  </tr>
+</table>
+<p>
+  EC2 → Security Groups → <code>sg-0b0b4ee04efc561a0</code> →
+  <strong>Edit inbound rules</strong>. Delete the 27017 rule and change the SSH
+  source to <strong>My IP</strong>. Save.
+</p>
+<div class="box danger">
+  <strong>Do not delete the 8000 or 8001 rules today.</strong> There is no rule
+  for port 80 or 443 at all, which means there is no nginx in front — every
+  installed APK talks straight to <code>16.170.110.232:8001</code>. Closing that
+  port takes the app down for every user instantly. It gets fixed properly in
+  Part 5, and that fix needs an app release first.
+</div>
+<div class="box ok">
+  <strong>One clarification:</strong> the Compass connection labelled
+  <code>13.53.194.96:27017</code> is only a stale display name — its actual URI is
+  <code>mongodb://admin:*****@16.170.110.232:27017</code>. There is no second
+  server. Only this one machine is affected.
+</div>
+
+<h3><span class="step">4</span>Bind MongoDB to localhost and turn on authentication</h3>
+<p>The security group is one lock. This is the second, and it is the one that
+matters if a rule is ever changed by mistake.</p>
+<div class="box warn">
+  <strong>You already have an <code>admin</code> user</strong> — Compass
+  authenticates with it. What you do not have is
+  <code>authorization: enabled</code>, so MongoDB never checks. Creating more
+  users without flipping that switch changes nothing. The switch is the fix.
+</div>
+<p>First confirm which users exist and whether the password still works:</p>
+<pre><code>ssh -i $key $server</code></pre>
+<p>Then on the server:</p>
+<pre><code>mongosh --quiet --eval 'db.getSiblingDB("admin").system.users.find({},{user:1,roles:1}).toArray()'</code></pre>
+<p>
+  If the existing <code>admin</code> account has full roles you can keep it and
+  skip the next command. If you are not certain of its password, or it was
+  created by the attacker, create a fresh one <em>now, while auth is still
+  off</em>:
+</p>
+<pre><code>mongosh --eval 'db.getSiblingDB("admin").createUser({user:"claimitroot", pwd:passwordPrompt(), roles:[{role:"userAdminAnyDatabase",db:"admin"},{role:"readWriteAnyDatabase",db:"admin"},{role:"backup",db:"admin"},{role:"restore",db:"admin"}]})'</code></pre>
+<div class="box danger">
+  <strong>Treat every existing MongoDB password as compromised.</strong> The
+  attacker had administrative access with no authentication, which means they
+  could read <code>admin.system.users</code> and create accounts of their own.
+  Check that user list above for anything you do not recognise, and change the
+  <code>admin</code> password regardless.
+</div>
+<p>Then a <em>separate, limited</em> user that the application will use. This one
+can only touch <code>claimit_db</code>, so a leaked <code>.env</code> no longer
+means total loss:</p>
+<pre><code>mongosh --eval 'db.getSiblingDB("claimit_db").createUser({user:"claimit_app", pwd:passwordPrompt(), roles:[{role:"readWrite",db:"claimit_db"}]})'</code></pre>
+<div class="box warn">
+  <code>passwordPrompt()</code> asks for the password interactively so it never
+  appears in your shell history. Use long random passwords — 24+ characters.
+  Store them in a password manager, not in a text file.
+</div>
+<p>Now edit the config:</p>
+<pre><code>sudo nano /etc/mongod.conf</code></pre>
+<p>Make these two sections read exactly:</p>
+<pre><code>net:
+  port: 27017
+  bindIp: 127.0.0.1
+
+security:
+  authorization: enabled</code></pre>
+<p>Restart and confirm:</p>
+<pre><code>sudo systemctl restart mongod
+sleep 3
+systemctl is-active mongod
+sudo ss -lntp | grep 27017</code></pre>
+<p>
+  That last line must now show <code>127.0.0.1:27017</code> and
+  <strong>not</strong> <code>0.0.0.0:27017</code>. Then prove the lock works —
+  this must be <em>rejected</em>:
+</p>
+<pre><code>mongosh --quiet --eval 'db.adminCommand({listDatabases:1})'</code></pre>
+<p>It should fail with an authorization error. If it still succeeds, auth did not
+take effect — stop and fix that before continuing.</p>
+<p>From your laptop, Compass must now fail to connect to
+<code>13.53.194.96:27017</code> and <code>16.170.110.232:27017</code>. To use
+Compass again, connect over an SSH tunnel: Advanced → SSH → Identity File
+(your <code>.pem</code>), user <code>ubuntu</code>, hostname <code>localhost</code>.</p>
+
+<h3 class="pagebreak"><span class="step">5</span>Update the application's connection string</h3>
+<p>The app can no longer connect anonymously. Edit the <code>.env</code> in the
+folder the API actually runs from — confirmed as
+<code>/home/ubuntu/claimit_local_production</code>:</p>
+<pre><code>nano /home/ubuntu/claimit_local_production/.env</code></pre>
+<p>Set:</p>
+<pre><code>MONGODB_URL=mongodb://claimit_app:YOUR_PASSWORD@127.0.0.1:27017/claimit_db?authSource=claimit_db
+DATABASE_NAME=claimit_db</code></pre>
+<pre><code>chmod 600 /home/ubuntu/claimit_local_production/.env</code></pre>
+<div class="box info">
+  Always <code>127.0.0.1</code>, never the public IP — even from the server
+  itself. Routing database traffic out to the internet and back is slower and
+  means the connection only works while the port is open, which is exactly what
+  you are closing.
+</div>
+
+<h3><span class="step">6a</span>Restore — if the backup is a <code>mongodump</code> archive</h3>
+<pre><code>cd ~
+mkdir -p restore_tmp
+tar -xzf mongo_data_backup_20260817_0516.tar.gz -C restore_tmp
+ls -R restore_tmp | head -30</code></pre>
+<p>Then restore, pointing at the folder that contains the <code>.bson</code> files:</p>
+<pre><code>mongorestore -u claimit_app -p 'YOUR_PASSWORD' --authenticationDatabase claimit_db --db claimit_db restore_tmp/dump/claimit_db</code></pre>
+
+<h3><span class="step">6b</span>Restore — if the backup is a raw data directory</h3>
+<div class="box warn">
+  This takes MongoDB offline and overwrites its data files. Read the whole step
+  before starting. Keep the current (empty) data directory rather than deleting
+  it — it is your evidence and your undo.
+</div>
+<pre><code>sudo systemctl stop mongod
+sudo mv /var/lib/mongodb /var/lib/mongodb.attacked-20260915
+sudo mkdir -p /var/lib/mongodb
+sudo tar -xzf ~/mongo_data_backup_20260817_0516.tar.gz -C /var/lib/mongodb --strip-components=1
+sudo chown -R mongodb:mongodb /var/lib/mongodb
+sudo systemctl start mongod
+sleep 3
+systemctl is-active mongod</code></pre>
+<p>
+  <code>--strip-components=1</code> may need to be <code>0</code> depending on how
+  the archive was created. The Step&nbsp;2 listing tells you: if paths start with
+  <code>mongodb/</code>, use 1; if they start with <code>WiredTiger</code>
+  directly, use 0.
+</p>
+
+<h3><span class="step">7</span>Verify the data is back</h3>
+<pre><code>mongosh -u claimit_app -p --authenticationDatabase claimit_db claimit_db --quiet --eval 'db.getCollectionNames()'</code></pre>
+<pre><code>mongosh -u claimit_app -p --authenticationDatabase claimit_db claimit_db --quiet --eval 'db.users.countDocuments({})'</code></pre>
+<pre><code>mongosh -u claimit_app -p --authenticationDatabase claimit_db claimit_db --quiet --eval 'db.shops.countDocuments({})'</code></pre>
+<p>You should see <code>shops</code>, <code>ads</code>, <code>bill_history</code>
+and <code>reviews</code> present again with real counts.</p>
+
+<h3><span class="step">8</span>Fix the process mess</h3>
+<p>Right now three uvicorn processes are running and two of them are orphans that
+PM2 does not manage:</p>
+<table>
+  <tr><th>Port</th><th>PID</th><th>Managed by</th><th>Status</th></tr>
+  <tr><td>8000</td><td>3939920</td><td>PM2 <code>claimit-backend</code></td><td>Healthy</td></tr>
+  <tr><td>8001</td><td>445205</td><td><strong>Nobody</strong> — orphan started 12 Sep 04:26</td><td>Serving your app</td></tr>
+  <tr><td>8002</td><td>445202</td><td><strong>Nobody</strong> — orphan</td><td>Unknown purpose</td></tr>
+  <tr><td>—</td><td>2932442</td><td>PM2 <code>claimit-second-backend</code></td><td><span class="stop">Crash loop, 158+ restarts</span></td></tr>
+</table>
+<div class="box danger">
+  <strong>Do not kill PID 445205 until its replacement is ready.</strong> It is
+  the only thing currently serving your app on port 8001. Its PM2 replacement
+  cannot start — it is misconfigured.
+</div>
+<p>
+  <code>claimit-second-backend</code> fails with
+  <code>Could not import module "api.index"</code>. It was registered with a
+  Vercel-style entry point that does not exist in this codebase; the correct one
+  is <code>app.main:app</code>. Replace it:
+</p>
+<pre><code>pm2 delete claimit-second-backend
+cd /home/ubuntu/claimit_local_production
+pm2 start venv/bin/uvicorn --name claimit-app-api -- app.main:app --host 0.0.0.0 --port 8001</code></pre>
+<p>That will fail to bind while the orphan holds the port, so stop the orphan in
+the same breath:</p>
+<pre><code>kill 445205
+sleep 2
+pm2 restart claimit-app-api
+sleep 3
+pm2 list
+curl -s http://127.0.0.1:8001/health</code></pre>
+<p>Once everything is healthy, make it survive a reboot:</p>
+<pre><code>pm2 save
+pm2 startup</code></pre>
+<p>Then run the command <code>pm2 startup</code> prints back to you.</p>
+<div class="box warn">
+  <strong>Why <code>0.0.0.0</code> and not <code>127.0.0.1</code>?</strong>
+  Because every APK already installed on a user's phone has
+  <code>http://16.170.110.232:8001</code> compiled into it. Binding to localhost
+  today would break every existing install instantly. Moving behind nginx is the
+  correct fix, but it requires an app update first — see Part 5.
+</div>
+<p>Identify port 8002 before deciding its fate:</p>
+<pre><code>ps -p 445202 -o pid,lstart,cmd --no-headers; sudo readlink /proc/445202/cwd</code></pre>
+
+<h3><span class="step">9</span>Remove the ransom note — last, not first</h3>
+<p>Only after the restore is verified and you have kept a record of it:</p>
+<pre><code>mongosh -u claimitroot -p --authenticationDatabase admin --eval 'db.getSiblingDB("READ_ME_TO_RECOVER_YOUR_DATA").dropDatabase()'</code></pre>
+<p>Screenshot the note and record the Bitcoin address first. If you ever file a
+police report or a cyber-insurance claim, that is the evidence.</p>
+
+<h2 class="pagebreak">Part 4 — How the pieces connect, correctly</h2>
+
+<div class="arch">   PHONE APP (Flutter)              ADMIN WEB (React)
+          |                                |
+          | http://16.170.110.232:8001     | http://16.170.110.232:8000
+          v                                v
+   +--------------------+          +--------------------+
+   |  App API           |          |  Web API           |
+   |  uvicorn :8001     |          |  uvicorn :8000     |
+   |  claimit_local_    |          |  PM2 claimit-      |
+   |  production        |          |  backend           |
+   +--------------------+          +--------------------+
+          |         \                      |
+          |          \                     |
+          v           v                    v
+   +--------------+  +------------------+  |
+   |  MongoDB     |  |  Amazon S3       |<-+
+   |  127.0.0.1   |  |  private bucket  |
+   |  :27017      |  |  IAM role, no    |
+   |  AUTH ON     |  |  keys in .env    |
+   |  LOCAL ONLY  |  +------------------+
+   +--------------+
+</div>
+
+<h3>The rules that keep it working</h3>
+<table>
+  <tr><th>Component</th><th>Rule</th><th>Why</th></tr>
+  <tr>
+    <td>MongoDB</td>
+    <td>Bind <code>127.0.0.1</code> only. Authentication on. Never in a security
+        group rule.</td>
+    <td>This incident. The database has no business being reachable from
+        outside the machine.</td>
+  </tr>
+  <tr>
+    <td>App user vs root user</td>
+    <td>The API uses <code>claimit_app</code>, scoped to
+        <code>claimit_db</code> only.</td>
+    <td>A leaked <code>.env</code> then costs you one database, not the server.</td>
+  </tr>
+  <tr>
+    <td>S3</td>
+    <td>Block-all-public-access ON. Access via the EC2 <strong>IAM role</strong>,
+        so <code>AWS_ACCESS_KEY_ID</code> stays empty.</td>
+    <td>No long-lived keys exist to be stolen. Store the object key in Mongo and
+        sign URLs on read.</td>
+  </tr>
+  <tr>
+    <td>Secrets</td>
+    <td>Only in <code>.env</code> on the server, <code>chmod 600</code>. Never in
+        app code, frontend code, or git.</td>
+    <td>Anything in a shipped APK or a public repo is already public.</td>
+  </tr>
+  <tr>
+    <td>Processes</td>
+    <td>Everything under PM2 with <code>pm2 save</code>. No manually started
+        uvicorn.</td>
+    <td>Orphans do not restart on reboot and nobody knows what config they hold —
+        exactly the situation on port 8002 right now.</td>
+  </tr>
+</table>
+
+<h2>Part 5 — What is still wrong after recovery</h2>
+<p>Fixing the breach does not make this production-ready. These remain open,
+roughly in order of risk:</p>
+<table>
+  <tr><th>#</th><th>Problem</th><th>Consequence</th><th>Fix</th></tr>
+  <tr>
+    <td>1</td>
+    <td><strong>No automated backups.</strong> The only backup is a manual
+        tarball from 17 August.</td>
+    <td>This incident costs four weeks of data. The next one costs however long
+        since you last remembered.</td>
+    <td>Nightly <code>mongodump</code> to S3 with a retention policy. See below.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Plain HTTP everywhere.</strong> No TLS.</td>
+    <td>Every OTP, JWT and phone number travels in clear text over the network.
+        Play Store's Data Safety form must declare "not encrypted in transit".</td>
+    <td>Free DuckDNS subdomain plus
+        <code>sudo certbot --nginx -d name.duckdns.org</code>. Costs time, not
+        money.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Secrets committed to git</strong>, including
+        <code>claimit.pem</code> and several <code>.env</code> files.</td>
+    <td>Anyone with repository access has your server. The key is also sitting
+        in your Downloads folder.</td>
+    <td>Rotate the EC2 key pair, rotate every secret, purge from git history,
+        move the <code>.pem</code> somewhere sensible.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>API ports <code>8000</code>/<code>8001</code>/<code>8002</code> bound to
+        <code>0.0.0.0</code>.</td>
+    <td>Bypasses nginx entirely. Internet scanners are already probing them —
+        the logs show <code>/mcp</code> and <code>/jsonrpc</code> requests from
+        unknown hosts.</td>
+    <td>Put nginx in front, bind uvicorn to <code>127.0.0.1</code>. Requires an
+        app release first, because the current APK targets port 8001 directly.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>No monitoring.</td>
+    <td>Your database was empty for days and the first person to notice was you,
+        by opening the app.</td>
+    <td>An uptime check hitting <code>/health</code>, plus a daily job that
+        alerts if <code>users</code> count drops.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>Mystery process on port 8002; <code>stage</code> and several
+        near-duplicate backend folders.</td>
+    <td>Nobody knows which code is live. That is how an orphan ends up serving
+        production.</td>
+    <td>Identify, document, delete what is dead.</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>Twilio account restricted to 50 messages/day (error 63038) and blocked
+        from provisioning numbers.</td>
+    <td>Login OTP delivery is failing for real users — a separate live outage.</td>
+    <td>Tracked separately: fix the Trust Hub profile, email
+        <code>compliance-review@twilio.com</code>.</td>
+  </tr>
+</table>
+
+<h3>Nightly backup — the one that would have saved you</h3>
+<p>On the server, create <code>/home/ubuntu/backup_mongo.sh</code>:</p>
+<pre><code>#!/bin/bash
+set -euo pipefail
+STAMP=$(date +%Y%m%d_%H%M)
+OUT="/home/ubuntu/backups/mongo_$STAMP"
+mkdir -p "$OUT"
+mongodump --uri="mongodb://claimit_app:YOUR_PASSWORD@127.0.0.1:27017/claimit_db?authSource=claimit_db" --out="$OUT"
+tar -czf "$OUT.tar.gz" -C "$OUT" .
+rm -rf "$OUT"
+aws s3 cp "$OUT.tar.gz" "s3://YOUR-BUCKET/db-backups/"
+find /home/ubuntu/backups -name '*.tar.gz' -mtime +14 -delete</code></pre>
+<pre><code>chmod +x /home/ubuntu/backup_mongo.sh
+chmod 600 /home/ubuntu/backup_mongo.sh
+crontab -e</code></pre>
+<p>Add this line to run it at 02:00 server time every night:</p>
+<pre><code>0 2 * * * /home/ubuntu/backup_mongo.sh >> /home/ubuntu/backup.log 2>&1</code></pre>
+<div class="box warn">
+  A backup that has never been restored is not a backup. Once a month, extract the
+  newest archive into a scratch database and count the documents. The first time
+  you test a restore must not be the day you need it.
+</div>
+
+<h2>Part 6 — The part that is not technical</h2>
+<p>
+  Your <code>users</code> collection held real people's phone numbers. Because
+  MongoDB had no authentication and no audit log, you cannot prove whether that
+  data was copied before it was deleted — and the <code>tempusers</code> /
+  <code>temproles</code> artifacts suggest a dump was run. The responsible
+  assumption is that it was taken.
+</p>
+<p>Under India's Digital Personal Data Protection Act this is likely to carry a
+  breach-notification obligation to both the affected users and the Data
+  Protection Board, on a defined timeline.</p>
+<div class="box info">
+  <strong>I am not a lawyer and this is not legal advice.</strong> Engage someone
+  who handles Indian data protection, today rather than next week — the clock on
+  these obligations starts when you become aware, which was today. Tell your
+  client now. Finding out from you is survivable; finding out from a regulator or
+  a user is not.
+</div>
+
+<h2>Part 7 — Quick checklist</h2>
+<table>
+  <tr><th>&#9744;</th><th>Action</th><th>When</th></tr>
+  <tr><td>&#9744;</td><td>Backup copied to laptop, size verified, second copy made</td><td>Now</td></tr>
+  <tr><td>&#9744;</td><td>Backup format identified (Step 2)</td><td>Now</td></tr>
+  <tr><td>&#9744;</td><td>Rule <code>sgr-06f29c8ca820ba4ce</code> (port 27017) deleted</td><td><span class="stop">Before restore</span></td></tr>
+  <tr><td>&#9744;</td><td>SSH rule <code>sgr-00772e04d90b4adbf</code> narrowed to "My IP"</td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td><code>admin.system.users</code> reviewed for accounts you did not create</td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td>Existing MongoDB <code>admin</code> password changed</td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td><code>bindIp: 127.0.0.1</code> + <code>authorization: enabled</code></td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td>Anonymous <code>mongosh</code> confirmed rejected</td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td><code>.env</code> updated with the scoped user, chmod 600</td><td>Before restore</td></tr>
+  <tr><td>&#9744;</td><td>Data restored and counts verified</td><td>Then</td></tr>
+  <tr><td>&#9744;</td><td>PM2 fixed, orphans retired, <code>pm2 save</code></td><td>Then</td></tr>
+  <tr><td>&#9744;</td><td>Ransom note screenshotted, then dropped</td><td>Last</td></tr>
+  <tr><td>&#9744;</td><td>Nightly backup to S3 running and tested</td><td>This week</td></tr>
+  <tr><td>&#9744;</td><td>EC2 key pair rotated, secrets purged from git</td><td>This week</td></tr>
+  <tr><td>&#9744;</td><td>HTTPS via certbot</td><td>This week</td></tr>
+  <tr><td>&#9744;</td><td>Client informed; legal advice obtained</td><td>Today</td></tr>
+</table>
+
+<footer>
+  Claimit — Security Incident &amp; Recovery Plan · 15 September 2026 ·
+  Prepared for Ramesh (Verso AI). Contains no passwords or keys by design.
+</footer>
+
+</body>
+</html>

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../auth/providers/auth_provider.dart';
+import '../../../core/providers/location_provider.dart';
 import '../models/select_category.dart';
 import '../widgets/select_common.dart';
 
@@ -176,7 +176,10 @@ class _SelectHomeScreenState extends State<SelectHomeScreen> {
             child: GestureDetector(
               onTap: () => context.push(
                 '/select/coverage',
-                extra: context.read<AuthProvider>().user?.location ?? '',
+                // The place being browsed, not the city on the account. These
+                // were different values, which is why coverage counts never
+                // matched the location shown in the header.
+                extra: context.read<LocationProvider>().cityLabel,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -188,10 +191,8 @@ class _SelectHomeScreenState extends State<SelectHomeScreen> {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 200),
                     child: Text(
-                      context.select<AuthProvider, String>(
-                        (a) => a.user?.location?.isNotEmpty == true
-                            ? a.user!.location!
-                            : 'Select Area',
+                      context.select<LocationProvider, String>(
+                        (l) => l.selected?.display ?? 'Select Area',
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claimit — Work Log, 10–21 September 2026</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+         color: #1a1a1a; line-height: 1.5; font-size: 10pt;
+         max-width: 960px; margin: 0 auto; padding: 22px; }
+  h1 { font-size: 21pt; margin: 0 0 3px; letter-spacing: -0.4px; }
+  h2 { font-size: 13pt; margin: 26px 0 9px; padding-bottom: 5px;
+       border-bottom: 2px solid #1a237e; color: #1a237e; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 16px 0 5px; color: #222; page-break-after: avoid; }
+  .sub { color: #666; font-size: 9.5pt; margin-bottom: 18px; }
+  code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.5pt;
+         background: #f1f3f5; padding: 1px 4px; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9pt;
+          page-break-inside: avoid; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: 600; }
+  .day { background: #eef0fb; font-weight: 700; color: #1a237e; }
+  .box { padding: 10px 14px; border-radius: 6px; margin: 12px 0; page-break-inside: avoid; }
+  .info { background: #e8eaf6; border-left: 5px solid #1a237e; }
+  .warn { background: #fff8e1; border-left: 5px solid #f9a825; }
+  .crit { background: #fdecea; border-left: 5px solid #c62828; }
+  .ok   { background: #e8f5e9; border-left: 5px solid #2e7d32; }
+  ul { margin: 5px 0 5px 20px; padding: 0; }
+  li { margin: 2px 0; }
+  .hrs { width: 58px; text-align: center; background: #fafafa; }
+  .tag { display: inline-block; font-size: 7.5pt; font-weight: 700; padding: 1px 6px;
+         border-radius: 9px; vertical-align: middle; }
+  .t-dev  { background: #e3f2fd; color: #0d47a1; }
+  .t-inc  { background: #fdecea; color: #b71c1c; }
+  .t-ops  { background: #f3e5f5; color: #4a148c; }
+  .t-doc  { background: #e8f5e9; color: #1b5e20; }
+  footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #ddd;
+           color: #888; font-size: 8pt; }
+  .pagebreak { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>Claimit — Work Log</h1>
+<div class="sub">
+  10 – 21 September 2026 &nbsp;·&nbsp; Verso AI &nbsp;·&nbsp;
+  Flutter app · two FastAPI backends · React admin · AWS EC2
+</div>
+
+<div class="box info">
+  <strong>About the dates.</strong> Entries from <strong>14 September onward</strong> are taken
+  directly from the working session logs and can be checked line by line against
+  server output, screenshots and commits. Entries for <strong>10 – 13 September</strong> are
+  the work items known to have been completed in that window, but the exact day
+  each one landed was not separately recorded, so they are grouped rather than
+  split across days. Nothing has been assigned to a date it cannot be evidenced on.
+  The Hours column is left blank to be filled from your own records.
+</div>
+
+<h2>Summary</h2>
+<table>
+  <tr><th style="width:74px">Date</th><th>Focus</th><th>Outcome</th><th class="hrs">Hours</th></tr>
+  <tr><td>10–13 Sep</td><td>Feature development</td>
+      <td>Claimit Privilege (new 5-screen feature, end to end), admin-configurable rewards, ad scheduling, location consolidation, WhatsApp campaign</td><td class="hrs"></td></tr>
+  <tr><td>14 Sep</td><td>WhatsApp / OTP incident</td>
+      <td>Diagnosed Twilio 50/day account restriction; found OTP endpoint reporting success on failed delivery</td><td class="hrs"></td></tr>
+  <tr><td>15 Sep</td><td><strong>Ransomware incident</strong></td>
+      <td>Database attack identified; data restored; MongoDB secured; automated backups established</td><td class="hrs"></td></tr>
+  <tr><td>16 Sep</td><td>Service restoration</td>
+      <td>Admin panel restored (wrong backend identified); S3 credentials replaced; app + web verified</td><td class="hrs"></td></tr>
+  <tr><td>17 Sep</td><td>—</td><td>No recorded activity</td><td class="hrs"></td></tr>
+  <tr><td>18 Sep</td><td>Infrastructure + app fixes</td>
+      <td>AWS network hardened; duplicate process manager removed; reboot resilience proven; location switching fixed across 6 app screens</td><td class="hrs"></td></tr>
+  <tr><td>19 Sep</td><td>Data integrity</td>
+      <td>Found 174 businesses invisible to users; coordinates made mandatory on bulk upload</td><td class="hrs"></td></tr>
+  <tr><td>20 Sep</td><td>—</td><td>No recorded activity</td><td class="hrs"></td></tr>
+  <tr><td>21 Sep</td><td>Feature development</td>
+      <td>Deal landing page image carousel (up to 4 photos), admin upload UI</td><td class="hrs"></td></tr>
+</table>
+
+<h2>10 – 13 September &nbsp;<span class="tag t-dev">DEVELOPMENT</span></h2>
+<div class="box warn">
+  Grouped, not split by day — the individual completion dates were not logged.
+  Every item below was delivered within this window.
+</div>
+
+<h3>Claimit Privilege — new feature, built end to end</h3>
+<ul>
+  <li>5 app screens: home with 9 category tiles and live counts, partner list, partner detail, pass generation, approval</li>
+  <li>Backend: 9 categories, partner search with three sort modes, coverage counts, 10-minute pass with <code>CLM-XX-nnnnnn</code> reference, approval endpoint, redemption history</li>
+  <li>Self-listing flow for businesses (photo upload, pending status)</li>
+  <li>Admin: full CRUD, bulk upload with template and parser, redemption history view</li>
+  <li>Database indexes: 2dsphere for location, unique reference, user history</li>
+</ul>
+
+<h3>Rewards made admin-configurable</h3>
+<ul>
+  <li>Cashback percentage and reward-point rate moved out of code into admin settings</li>
+  <li>Monthly scan-count tiers — cashback rises with usage (0 / 15 / 50 scans), capped at 5%</li>
+  <li>Counted from permanent bill history rather than the 24-hour scan cache, so the tier is accurate</li>
+  <li>Admin validation rejecting invalid tier ladders</li>
+</ul>
+
+<h3>Advertising and content</h3>
+<ul>
+  <li>Ad duration modes: publish immediately, never expire, or weekly cycle</li>
+  <li>"Never show empty" — nearest-content fallback applied across five feature pages</li>
+  <li>Claimit Select coverage screen: professional counts by city and category</li>
+  <li>WhatsApp user-acquisition campaign, with cashback and reward-point figures pulled live from admin settings so the message can never promise an amount the wallet won't pay</li>
+</ul>
+
+<h3>Location and UI</h3>
+<ul>
+  <li>Pincode free-text inputs replaced with a dropdown — typos and <code>000000</code> were making listings invisible to the 5 km search</li>
+  <li>Two competing location pages consolidated; seven call sites updated</li>
+  <li>Removed the permission prompt on app open — it now asks only when the user taps "use current location"</li>
+  <li>Bottom navigation icons unified across Deals, Shop list and Reelz; sizing made responsive rather than fixed</li>
+</ul>
+
+<h3>Documentation</h3>
+<ul>
+  <li>Admin overview guide explaining each dashboard metric, written for the client</li>
+</ul>
+
+<h2 class="pagebreak">14 September &nbsp;<span class="tag t-inc">INCIDENT</span></h2>
+<h3>WhatsApp delivery failure — diagnosis</h3>
+<ul>
+  <li>Bulk sends of 300, 50 and 3 messages all failing; OTP delivery also failing</li>
+  <li>Traced to Twilio error <code>63038</code> — a 50-message daily cap applied to the whole account, not the campaign</li>
+  <li>Established the account was paid and active, so the cap was an anti-fraud restriction triggered by a burst of template messages to cold numbers, not a trial limit</li>
+  <li><strong>Found a second, separate fault:</strong> <code>/auth/send-otp</code> returned <code>200 OK</code> and "OTP sent" even when Twilio rejected the message — users saw success and no code arrived</li>
+  <li>Confirmed Meta/WhatsApp side was healthy (sender Online, quality High, 80 MPS) — ruling out two earlier incorrect theories</li>
+</ul>
+
+<h2>15 September &nbsp;<span class="tag t-inc">CRITICAL INCIDENT</span></h2>
+<div class="box crit">
+  <strong>Ransomware attack on the production database, discovered this day.</strong>
+  MongoDB was reachable from the public internet on port 27017 and, although an
+  <code>admin</code> user existed, <code>authorization</code> was never enabled in the
+  configuration — so the password was never checked. An automated bot deleted
+  every collection and left a database named
+  <code>READ_ME_TO_RECOVER_YOUR_DATA</code> demanding 0.0065 BTC. No ransom paid.
+</div>
+
+<h3>Response</h3>
+<ul>
+  <li>Attack identified and distinguished from the "missing data" symptom the client first reported</li>
+  <li>250 MB backup located on the server and copied off it</li>
+  <li>Port 27017 closed at the firewall</li>
+  <li>Database restored from the 17 August backup — <strong>25 users, 1,052 shops recovered</strong></li>
+  <li>MongoDB bound to <code>127.0.0.1</code> and authentication enforced; verified that anonymous access is now refused</li>
+  <li>New 32-character password generated on the server, written to config, never displayed</li>
+  <li><code>mongodump</code> backups scheduled every 3 days with automatic rotation, and a test-restore proving the archive works</li>
+  <li>Incident and recovery documented for the client</li>
+</ul>
+<div class="box warn">
+  <strong>Data loss:</strong> the newest backup available was 17 August. Records created
+  between 17 August and 15 September could not be recovered.
+</div>
+
+<h2>16 September &nbsp;<span class="tag t-ops">RESTORATION</span></h2>
+<ul>
+  <li>Admin website loading but showing no data — traced through Firebase Hosting → CloudFront → EC2</li>
+  <li><strong>Found three backends running, not two.</strong> The admin panel is served by port 8002; ports 8000 and 8001 are separate services. Earlier checks had been run against the wrong one, which is why it appeared healthy while the panel stayed broken</li>
+  <li>Corrected the admin backend's database connection and credentials</li>
+  <li>Images failing app-wide — traced to AWS having deleted the IAM access key (it was published in a git repository). New credentials issued and installed across all backends</li>
+  <li>Claimit Privilege cards redesigned to match Claimit Select exactly — same padding, photo size, typography and button layout</li>
+  <li>Server operations guide written for the client</li>
+</ul>
+
+<h2>18 September &nbsp;<span class="tag t-ops">INFRASTRUCTURE</span> <span class="tag t-dev">DEVELOPMENT</span></h2>
+
+<h3>AWS network</h3>
+<ul>
+  <li>Reduced from five ports open to the entire internet down to two that must be public</li>
+  <li>SSH restricted to a single IP address</li>
+  <li>Dead port 8000 closed and its service retired</li>
+  <li>Confirmed only one security group is attached, so the restrictions actually take effect</li>
+</ul>
+
+<h3>Process management — root cause of repeated outages</h3>
+<ul>
+  <li>Discovered <strong>two process managers</strong> (systemd and PM2) both starting the same two applications. At every boot they raced for the same ports; the loser crash-looped — over 2,200 restarts observed</li>
+  <li>This was the underlying cause of the "orphan processes" that had recurred all week</li>
+  <li>PM2 removed and disabled; systemd left as the single owner</li>
+  <li>Services ordered to start after the database, fixing a start-up race</li>
+  <li>Pending OS security updates applied; reboot performed and recovery verified twice, unattended</li>
+</ul>
+
+<h3>App — location switching</h3>
+<ul>
+  <li>Found that screens loaded data once and never refreshed when the user changed location — the header updated, the content did not</li>
+  <li>Found a second, worse fault: several screens read the city saved on the account at registration rather than the location the user had picked, so they could never respond to the picker at all</li>
+  <li>Built a shared mechanism so any screen refetches on location change, and applied it to Select, Privilege, Reward Zone, Deals, Search and Notifications</li>
+  <li>Added the missing back button to Claimit Privilege</li>
+</ul>
+
+<h2>19 September &nbsp;<span class="tag t-inc">DATA INTEGRITY</span></h2>
+<div class="box crit">
+  <strong>174 businesses were invisible to every user.</strong> Bulk-uploaded records
+  saved without map coordinates are not returned by a location search at all —
+  they import cleanly, appear in the admin panel, and no customer can ever reach
+  them. Local Finds was <strong>100% invisible</strong> (95 of 95); Claimit Select was
+  <strong>67% invisible</strong> (79 of 118).
+</div>
+<ul>
+  <li>Built an audit tool reporting, per feature: total records, how many are findable, which pincodes the invisible ones belong to, swapped or zeroed coordinates, and index health</li>
+  <li>Confirmed Claimit Privilege was unaffected (157 of 157 findable) — it was the one importer that already handled this correctly</li>
+  <li>Made coordinates mandatory on bulk upload across shops, Select and Local Finds: a row without them is now rejected with the row number and reason, exactly like a missing phone number</li>
+  <li>Validation also catches coordinates entered in the wrong order and <code>0,0</code> defaults</li>
+  <li>Upload templates corrected — the columns had been described as optional</li>
+</ul>
+
+<h2>21 September &nbsp;<span class="tag t-dev">DEVELOPMENT</span></h2>
+<h3>Deal landing page image carousel</h3>
+<ul>
+  <li>Brand Deals and Nearby Deals extended from one image to four: one card thumbnail plus up to three landing-page photos</li>
+  <li>Admin upload interface for the extra photos, shown only for deal-type ads</li>
+  <li>Carousel on the deal landing page matching the shop page — swipe, auto-advance, position dots</li>
+  <li>Built so deals with a single image are visually unchanged, and existing deals need no migration</li>
+</ul>
+
+<h2>Outstanding</h2>
+<table>
+  <tr><th>Item</th><th>Why it matters</th><th>Status</th></tr>
+  <tr><td>Rebuild and release the app</td>
+      <td>All app-side work since the last build is written but not shipped to users</td>
+      <td>Ready to build</td></tr>
+  <tr><td>Re-upload Select and Local Finds with coordinates</td>
+      <td>Recovers the 174 businesses currently invisible</td>
+      <td>Client action</td></tr>
+  <tr><td>Backups stored off the server</td>
+      <td>Backups currently sit on the machine they protect</td>
+      <td>One config line</td></tr>
+  <tr><td>HTTPS</td>
+      <td>OTPs and tokens travel unencrypted; affects Play Store data-safety declaration</td>
+      <td>Not started</td></tr>
+  <tr><td>Secrets removed from version control</td>
+      <td>Caused the AWS key deletion on 16 Sep</td>
+      <td>Not started</td></tr>
+  <tr><td>IAM role instead of long-lived keys</td>
+      <td>Prevents a repeat of the S3 outage</td>
+      <td>Not started</td></tr>
+  <tr><td>Twilio messaging restriction</td>
+      <td>Blocks WhatsApp OTP for new signups</td>
+      <td>Awaiting Twilio</td></tr>
+</table>
+
+<footer>
+  Claimit — Work Log, 10–21 September 2026 · Verso AI.
+  Entries from 14 September are evidenced in session records; 10–13 September
+  is grouped because per-day timing was not logged. Hours to be completed from
+  your own records.
+</footer>
+
+</body>
+</html>

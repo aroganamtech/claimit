@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claimit — Server Operations Guide</title>
+<style>
+  @page { size: A4; margin: 15mm 13mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+         color: #1a1a1a; line-height: 1.55; font-size: 10.5pt;
+         max-width: 900px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22pt; margin: 0 0 4px; letter-spacing: -0.4px; }
+  h2 { font-size: 14pt; margin: 28px 0 10px; padding-bottom: 6px;
+       border-bottom: 2px solid #1a237e; color: #1a237e; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 18px 0 6px; color: #333; page-break-after: avoid; }
+  .sub { color: #666; font-size: 10pt; margin-bottom: 20px; }
+  code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-size: 9pt; }
+  code { background: #f1f3f5; padding: 1px 5px; border-radius: 3px; }
+  pre { background: #1e1e2e; color: #e6e6e6; padding: 11px 13px; border-radius: 6px;
+        overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+        line-height: 1.45; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  .box { padding: 11px 15px; border-radius: 6px; margin: 13px 0; page-break-inside: avoid; }
+  .danger { background: #fdecea; border-left: 5px solid #c62828; }
+  .warn   { background: #fff8e1; border-left: 5px solid #f9a825; }
+  .ok     { background: #e8f5e9; border-left: 5px solid #2e7d32; }
+  .info   { background: #e8eaf6; border-left: 5px solid #1a237e; }
+  table { border-collapse: collapse; width: 100%; margin: 11px 0; font-size: 9.5pt;
+          page-break-inside: avoid; }
+  th, td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: 600; }
+  .yes { color: #2e7d32; font-weight: 700; }
+  .no  { color: #c62828; font-weight: 700; }
+  ul, ol { margin: 7px 0 7px 22px; padding: 0; }
+  li { margin: 3px 0; }
+  .arch { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.5pt;
+          background: #fafafa; border: 1px solid #ddd; padding: 13px;
+          border-radius: 6px; white-space: pre; overflow-x: auto; }
+  .pagebreak { page-break-before: always; }
+  footer { margin-top: 32px; padding-top: 11px; border-top: 1px solid #ddd;
+           color: #888; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<h1>Claimit — Server Operations Guide</h1>
+<div class="sub">
+  16 September 2026 &nbsp;·&nbsp; EC2 <code>16.170.110.232</code> (eu-north-1) &nbsp;·&nbsp;
+  AWS account Verso AI <code>951488807028</code>
+</div>
+
+<div class="box ok">
+  <strong>Status: the database emergency is over.</strong> Data restored, the way in
+  is closed, automatic backups are running. What remains is ordinary hardening —
+  important, but no longer an open door.
+</div>
+
+<h2>1. What happened, in one paragraph</h2>
+<p>
+  On 11 September a bot found MongoDB on port 27017, open to the whole internet
+  and not checking passwords. It deleted every collection and left a database
+  called <code>READ_ME_TO_RECOVER_YOUR_DATA</code> demanding 0.0065 bitcoin. No
+  ransom was paid. The database was rebuilt from a 17 August backup that happened
+  to be sitting on the server. Everything created between 17 August and
+  15 September was lost.
+</p>
+<p>
+  The cause was <strong>two mistakes that only mattered together</strong>: port
+  27017 was open to <code>0.0.0.0/0</code>, and although an <code>admin</code>
+  user existed, <code>authorization</code> was never switched on in
+  <code>mongod.conf</code> — so MongoDB accepted a password when offered and
+  shrugged when one wasn't. Both are now fixed.
+</p>
+
+<h2>2. Current state</h2>
+<table>
+  <tr><th>Component</th><th>Where</th><th>Status</th></tr>
+  <tr>
+    <td><strong>App API</strong><br>(phone app)</td>
+    <td><code>/home/ubuntu/claimit_local_production</code><br>
+        port 8001 · systemd <code>claimit.service</code> · <code>app.main:app</code></td>
+    <td class="yes">Working</td>
+  </tr>
+  <tr>
+    <td><strong>Web API</strong><br>(admin site)</td>
+    <td><code>/home/ubuntu/claimit_web_local_backend</code><br>
+        port <strong>8002</strong> · systemd <code>claimit_web.service</code> · <code>main:app</code></td>
+    <td class="yes">Working</td>
+  </tr>
+  <tr>
+    <td>Retired backend</td>
+    <td><code>/home/ubuntu/claimit_web_backend_ec2</code><br>
+        was port 8000, code frozen 5 June</td>
+    <td class="yes">Stopped, port closed</td>
+  </tr>
+  <tr>
+    <td><strong>S3 images</strong></td>
+    <td><code>claimit-image-bucket</code> · eu-north-1 · presigned URLs</td>
+    <td class="yes">Working</td>
+  </tr>
+  <tr>
+    <td><strong>MongoDB</strong></td>
+    <td><code>127.0.0.1:27017</code> · databases <code>claimit_db</code>,
+        <code>claimit_web</code></td>
+    <td class="yes">Secured</td>
+  </tr>
+  <tr>
+    <td><strong>Data</strong></td>
+    <td><code>users</code> 25 · <code>shops</code> 1052 · 26 collections</td>
+    <td class="yes">Restored</td>
+  </tr>
+  <tr>
+    <td><strong>Backups</strong></td>
+    <td><code>/home/ubuntu/backups/</code> · every 3 days · ~765 KB each</td>
+    <td class="yes">Running</td>
+  </tr>
+  <tr>
+    <td><strong>Off-site backup copy</strong></td>
+    <td>—</td>
+    <td class="no">Not set up</td>
+  </tr>
+  <tr>
+    <td><strong>SSH exposure</strong></td>
+    <td>Port 22 open to <code>0.0.0.0/0</code></td>
+    <td class="no">Open to the world</td>
+  </tr>
+  <tr>
+    <td><strong>Encryption in transit</strong></td>
+    <td>Plain HTTP, no TLS</td>
+    <td class="no">None</td>
+  </tr>
+</table>
+
+<h3>How it fits together now</h3>
+<div class="arch">   PHONE APP                     ADMIN WEBSITE
+       |                        claimit-web-aro.web.app
+       |                              |  (Firebase Hosting)
+       |                              v
+       |                     d2uuvn9mxaozm5.cloudfront.net/api
+       |                              |  (CloudFront)
+       | :8001                        | :8002
+       v                              v
+  +------------------+       +---------------------+
+  |  App API         |       |  Web API            |
+  |  claimit.service |       |  claimit_web.service|
+  |  claimit_local_  |       |  claimit_web_local_ |
+  |  production      |       |  backend            |
+  +------------------+       +---------------------+
+   both systemd units, After=mongod.service, Restart=always
+            \                        /        \
+             \                      /          \
+              v                    v            v
+            +--------------------------+   +------------------+
+            |  MongoDB 8.0.4           |   |  S3              |
+            |  bindIp 127.0.0.1        |   |  claimit-image-  |
+            |    <- not on the network |   |  bucket          |
+            |  authorization: enabled  |   |  presigned URLs  |
+            |    <- password enforced  |   +------------------+
+            |  claimit_db / claimit_web|
+            +--------------------------+
+                        |
+                        v  every 3 days, 02:00
+            /home/ubuntu/backups/*.tar.gz  (keep newest 10)
+
+  NOT IN THE PATH:  port 8000 / claimit-backend / claimit_web_backend_ec2
+  It answers requests and looks healthy, but nothing sends it any. Its code
+  is frozen at 5 June. Testing it proves nothing about the live system —
+  that mistake cost a full day on 16 September.
+</div>
+
+<h2>3. Everything that was changed</h2>
+<table>
+  <tr><th>#</th><th>Change</th><th>Why</th></tr>
+  <tr><td>1</td><td>Deleted security-group rule for port 27017</td>
+      <td>Closed the way in</td></tr>
+  <tr><td>2</td><td><code>MONGODB_URL</code> host → <code>127.0.0.1</code> (app)</td>
+      <td>Was routing database traffic out to the internet and back</td></tr>
+  <tr><td>3</td><td><code>MONGO_URL</code> host → <code>127.0.0.1</code> (web)</td>
+      <td>Same. This is what broke the website after step 1</td></tr>
+  <tr><td>4</td><td>Killed the untracked uvicorn on 8001; moved it under PM2</td>
+      <td>It was an orphan nobody managed and wouldn't survive a reboot</td></tr>
+  <tr><td>5</td><td>Deleted PM2 entry <code>claimit-second-backend</code></td>
+      <td>158 failed restarts — it had the web backend's entry point pointed at
+          the app backend's folder, so it could never start</td></tr>
+  <tr><td>6</td><td>Restored MongoDB from the 17 August backup</td>
+      <td>Recovered 25 users and 1052 shops</td></tr>
+  <tr><td>7</td><td><code>bindIp: 0.0.0.0</code> → <code>127.0.0.1</code></td>
+      <td>MongoDB now has no presence on the network at all</td></tr>
+  <tr><td>8</td><td>Added <code>authorization: enabled</code></td>
+      <td><strong>The actual fix.</strong> Passwords are now checked</td></tr>
+  <tr><td>9</td><td>New 32-character password, both <code>.env</code> files, chmod 600</td>
+      <td><code>claimit123</code> was guessable in seconds</td></tr>
+  <tr><td>10</td><td><code>mongodump</code> backup every 3 days via cron</td>
+      <td>765 KB per run instead of 251 MB — cheap enough to keep 10</td></tr>
+  <tr><td>11</td><td><code>pm2 save</code></td>
+      <td>Both backends now restart automatically after a reboot</td></tr>
+</table>
+<p>
+  Nothing was deleted. The wiped data directory is kept at
+  <code>/var/lib/mongodb.wiped-keep</code>, and every edited file has a
+  <code>.bak_&lt;timestamp&gt;</code> beside it.
+</p>
+
+<h2 class="pagebreak">4. Day-to-day commands</h2>
+<p>Start every session with these two lines:</p>
+<pre><code>$key = "C:\Users\sk764\Downloads\claimit.pem"
+$server = "ubuntu@16.170.110.232"</code></pre>
+
+<div class="box danger">
+  <strong>Use systemd. Never PM2.</strong> PM2 was removed on 18 September and
+  <code>pm2-ubuntu.service</code> is disabled. For months both systemd AND PM2
+  were starting the same two apps: at every boot they raced for ports 8001 and
+  8002, the loser crash-looped hundreds of times, and the survivors looked like
+  untracked "orphan" processes. Every mystery outage that week traced back to
+  it. Adding anything back under PM2 recreates the whole problem.
+</div>
+
+<h3>Is everything alive?</h3>
+<pre><code>ssh -i $key $server "systemctl is-active claimit claimit_web mongod"</code></pre>
+<pre><code>curl.exe -s -m 10 "http://16.170.110.232:8001/health"</code></pre>
+<p>And the check that catches duplicates — this must print exactly two lines:</p>
+<pre><code>ssh -i $key $server "ps aux | grep uvicorn | grep -v grep"</code></pre>
+
+<h3>Restart a backend</h3>
+<pre><code>ssh -i $key $server "sudo systemctl restart claimit; sleep 6; systemctl is-active claimit"</code></pre>
+<pre><code>ssh -i $key $server "sudo systemctl restart claimit_web; sleep 6; systemctl is-active claimit_web"</code></pre>
+
+<h3>Read the logs</h3>
+<pre><code>ssh -i $key $server "journalctl -u claimit -n 50 --no-pager"</code></pre>
+<pre><code>ssh -i $key $server "journalctl -u claimit_web -n 50 --no-pager"</code></pre>
+<pre><code>ssh -i $key $server "systemctl status claimit --no-pager"</code></pre>
+
+<h3>Deploy a changed file</h3>
+<pre><code>scp -i $key "F:\my_project_git\claimit\fastapi\backend\app\routes\auth.py" "${server}:/home/ubuntu/claimit_local_production/app/routes/auth.py"</code></pre>
+<pre><code>ssh -i $key $server "sudo systemctl restart claimit; sleep 6; systemctl is-active claimit"</code></pre>
+<div class="box warn">
+  The remote path mirrors the local path under the backend folder. Note the app
+  backend deploys to <code>claimit_local_production</code> and the admin backend
+  to <code>claimit_web_local_backend</code> — <strong>not</strong> the
+  <code>*_ec2</code> folders, which are stale copies from June.
+</div>
+
+<h3>Run a backup right now</h3>
+<pre><code>ssh -i $key $server "bash ~/backup_mongo.sh"</code></pre>
+<p>With a test-restore to prove the archive actually works:</p>
+<pre><code>ssh -i $key $server "bash ~/backup_mongo.sh --verify"</code></pre>
+
+<h3>List backups and copy the newest to your PC</h3>
+<pre><code>ssh -i $key $server "ls -lht ~/backups/ | head"</code></pre>
+<pre><code>scp -i $key "${server}:/home/ubuntu/backups/mongo_YYYYMMDD_HHMM.tar.gz" "F:\my_project_git\"</code></pre>
+
+<h3>Count your data</h3>
+<pre><code>ssh -i $key $server "URI=$(grep -E '^MONGODB_URL=' /home/ubuntu/claimit_local_production/.env | cut -d= -f2-); mongosh \"$URI\" --quiet --eval 'const d=db.getSiblingDB(\"claimit_db\"); print(d.users.countDocuments({}) + \" users, \" + d.shops.countDocuments({}) + \" shops\")'"</code></pre>
+
+<h3>Read the database password</h3>
+<pre><code>ssh -i $key $server "grep MONGODB_URL /home/ubuntu/claimit_local_production/.env"</code></pre>
+<div class="box warn">
+  The password is the part between <code>admin:</code> and <code>@</code>. Put it
+  in a password manager. <strong>Do not paste the output of this command into a
+  chat, an email or a screenshot.</strong>
+</div>
+
+<h3>Rotate the password</h3>
+<pre><code>ssh -i $key $server "bash ~/rotate_db_password.sh"</code></pre>
+<p>Then read the new one with the command above and save it.</p>
+
+<h3>Connect with MongoDB Compass</h3>
+<p>
+  <strong>Never reopen port 27017.</strong> Use an SSH tunnel instead — Compass
+  supports this natively:
+</p>
+<ol>
+  <li>New connection → URI: <code>mongodb://admin:&lt;password&gt;@localhost:27017/?authSource=admin</code></li>
+  <li>Advanced Connection Options → Proxy/SSH → <strong>SSH with Identity File</strong></li>
+  <li>SSH Hostname: <code>16.170.110.232</code>, Username: <code>ubuntu</code>,
+      Identity File: your <code>claimit.pem</code></li>
+</ol>
+
+<h2>5. If the data disappears again</h2>
+<p>Restore the newest backup. This is <code>mongorestore</code>, not the raw
+file swap used on 15 September — safer, and it doesn't stop MongoDB.</p>
+<pre><code>ssh -i $key $server "ls -t ~/backups/*.tar.gz | head -1"</code></pre>
+<pre><code>ssh -i $key $server "cd ~ && rm -rf restore_tmp && mkdir restore_tmp && tar -xzf $(ls -t ~/backups/*.tar.gz | head -1) -C restore_tmp && ls -R restore_tmp | head -20"</code></pre>
+<p>Then restore, pointing at the folder holding the <code>.bson</code> files:</p>
+<pre><code>ssh -i $key $server "URI=$(grep -E '^MONGODB_URL=' /home/ubuntu/claimit_local_production/.env | cut -d= -f2-); mongorestore --uri=\"$URI\" --drop ~/restore_tmp/mongo_*/"</code></pre>
+<div class="box danger">
+  <code>--drop</code> replaces existing collections. Only use it when the current
+  data is known-bad. If you are unsure, restore into a scratch database first by
+  adding <code>--nsFrom='claimit_db.*' --nsTo='claimit_db_check.*'</code> and
+  inspect it before committing.
+</div>
+
+<h2>6. What is still not done</h2>
+<p>In the order I would do them.</p>
+<table>
+  <tr><th>#</th><th>Task</th><th>Risk if skipped</th><th>Effort</th></tr>
+  <tr>
+    <td>1</td>
+    <td><strong>Narrow SSH to your own IP.</strong> EC2 → Security Groups →
+        rule <code>sgr-00772e04d90b4adbf</code> → Source → <em>My IP</em></td>
+    <td>The entire internet can attempt to log in to your server right now</td>
+    <td>30 seconds</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Move <code>claimit.pem</code> out of Downloads</strong> and
+        remove it from git</td>
+    <td>That file is total control of the server, sitting in the folder every
+        browser download lands in</td>
+    <td>5 minutes</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Copy backups off the server</strong> — S3, or a scheduled pull
+        to your PC</td>
+    <td>Backups live on the machine they protect. Lose the instance, lose both</td>
+    <td>15 minutes</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><strong>HTTPS.</strong> Free DuckDNS subdomain +
+        <code>certbot --nginx</code></td>
+    <td>OTPs, tokens and phone numbers travel in clear text. Play Store's Data
+        Safety form must declare "not encrypted in transit"</td>
+    <td>1 hour, needs an app release</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><strong>Purge secrets from git history</strong> and rotate everything
+        that was committed</td>
+    <td>Anyone with repository access has the server and the S3 bucket</td>
+    <td>1 hour</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><strong>Replace the IAM user with an IAM role.</strong>
+        <code>claimit_user</code> has two long-lived keys, one 100 days old</td>
+    <td>A role issues temporary credentials automatically; there are no keys
+        left to leak</td>
+    <td>30 minutes</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><strong>Identify port 8002</strong> and close it if unused</td>
+    <td>An open port nobody can account for</td>
+    <td>10 minutes</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><strong>Uptime monitoring</strong> on <code>/health</code></td>
+    <td>The database was empty for days and you found out by opening the app</td>
+    <td>20 minutes</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><strong>Twilio</strong> — 50/day cap still blocks OTP; the
+        <code>auth.py</code> honesty fix is written but not deployed</td>
+    <td>New users cannot register by WhatsApp</td>
+    <td>Separate task</td>
+  </tr>
+</table>
+
+<h2>7. The rule that matters most</h2>
+<div class="box info">
+  <strong>Never open port 27017 again.</strong> Not for Compass, not "just for
+  five minutes", not for a colleague. The SSH tunnel in section 4 does the same
+  job with none of the risk. Every MongoDB ransom incident starts with someone
+  opening that port temporarily.
+</div>
+<p>Two habits worth keeping:</p>
+<ul>
+  <li><strong>Test a restore once a month.</strong> Run
+      <code>bash ~/backup_mongo.sh --verify</code>. A backup nobody has restored
+      is a guess, not a backup.</li>
+  <li><strong>Check the backup log occasionally.</strong>
+      <code>ssh -i $key $server "tail -20 ~/backup.log"</code> — a cron job that
+      quietly stopped working is worse than no cron job, because you think you
+      are covered.</li>
+</ul>
+
+<footer>
+  Claimit — Server Operations Guide · 16 September 2026 · Verso AI.
+  Contains no passwords or keys by design.
+</footer>
+
+</body>
+</html>

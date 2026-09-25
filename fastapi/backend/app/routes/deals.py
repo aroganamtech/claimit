@@ -15,9 +15,29 @@ router = APIRouter(prefix="/deals", tags=["Deals"])
 
 
 def _fix_image_url(doc: dict) -> dict:
+    """Turn stored S3 keys into URLs the app can load.
+
+    Two fields, same convention shops already use:
+      image_s3_key   -> image_url    the card thumbnail, one image
+      image_s3_keys  -> image_urls   the landing page carousel, up to 4
+
+    The gallery is optional. A deal created before galleries existed has only
+    the single key, and the app falls back to image_url — so nothing needs
+    backfilling and no existing deal changes.
+    """
     key = doc.get("image_s3_key") or doc.get("image_key") or ""
     if key:
         doc["image_url"] = public_url(key)
+
+    keys = doc.get("image_s3_keys") or []
+    if isinstance(keys, list) and keys:
+        urls = [public_url(k) for k in keys if k]
+        if urls:
+            doc["image_urls"] = urls
+            # Keep the thumbnail in step: the first slide is the cover, so a
+            # deal whose single key was never set still shows a picture.
+            if not doc.get("image_url"):
+                doc["image_url"] = urls[0]
     return doc
 
 

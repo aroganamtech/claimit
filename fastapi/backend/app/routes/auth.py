@@ -147,11 +147,34 @@ async def send_otp(request: SendOtpRequest):
 
     otp = generate_otp()
     await store_otp(identifier, otp)
+
+    delivered = False
     try:
-        await send_otp_sms(identifier, otp)
+        delivered = await send_otp_sms(identifier, otp)
     except Exception as exc:
-        # Delivery failure must never return 500 — OTP is stored; user can retry.
         print(f"⚠️  OTP delivery error for {identifier}: {exc}")
+
+    if not delivered:
+        # Do not claim to have sent something we didn't. This endpoint used to
+        # return 200 / success:True no matter what, so a WhatsApp rejection
+        # showed up in the app as "OTP sent" and the user waited forever.
+        #
+        # 503 rather than 500: nothing is wrong with the request, the delivery
+        # channel is temporarily unavailable, and a retry is the right move.
+        # The OTP is already stored, so a later attempt that does get through
+        # still verifies fine.
+        if _is_email(identifier):
+            detail = ("We couldn't email your code right now. "
+                      "Please try again in a few minutes.")
+        else:
+            # Phone users have a way out that still works: the email path uses
+            # SMTP, so a WhatsApp outage or a Twilio cap doesn't touch it.
+            detail = ("We couldn't send your code on WhatsApp right now. "
+                      "Please try again, or use your email address instead.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        )
 
     return {
         "success": True,

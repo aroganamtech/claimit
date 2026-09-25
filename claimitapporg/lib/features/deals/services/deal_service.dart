@@ -26,6 +26,10 @@ class DealDto {
   final String type;
   final String imageUrl;
   final String imageData;
+  /// Landing-page carousel, up to 4. imageUrl stays the card thumbnail.
+  /// Empty on deals created before galleries existed — the detail screen
+  /// falls back to imageUrl, so old deals look exactly as they did.
+  final List<String> imageUrls;
   final String description;
   final String address;
   final String phone;
@@ -47,6 +51,7 @@ class DealDto {
     required this.type,
     required this.imageUrl,
     this.imageData = '',
+    this.imageUrls = const [],
     required this.description,
     required this.address,
     required this.phone,
@@ -68,6 +73,13 @@ class DealDto {
         type: j['type'] as String? ?? '',
         imageUrl: j['image_url'] as String? ?? '',
         imageData: j['image_data'] as String? ?? '',
+        // Blank entries are dropped here rather than in the UI, so the
+        // carousel's page count always matches what it can actually draw.
+        imageUrls: (j['image_urls'] as List?)
+                ?.map((e) => e.toString())
+                .where((s) => s.trim().isNotEmpty)
+                .toList() ??
+            const [],
         description: j['description'] as String? ?? '',
         address: j['address'] as String? ?? '',
         phone: j['phone'] as String? ?? '',

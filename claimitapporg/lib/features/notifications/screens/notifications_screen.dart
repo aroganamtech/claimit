@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/providers/location_provider.dart';
 import '../providers/notification_provider.dart';
 import '../models/notification_model.dart';
 
@@ -110,10 +111,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     // Read location here (in build) so context.select is valid
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true
-          ? a.user!.location!
-          : 'Select Area',
+    final location = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select Area',
     );
 
     return Consumer<NotificationProvider>(

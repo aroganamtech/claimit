@@ -17,7 +17,7 @@ from utils.s3 import (
 )
 from bson import ObjectId
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 import json
 
 router = APIRouter()
@@ -156,6 +156,11 @@ class CreateAdRequest(BaseModel):
     scheduled_date: Optional[str] = None
     creative_key: Optional[str] = None
     thumbnail_key: Optional[str] = None
+    # Extra photos for the deal landing page carousel — Brand Deals and
+    # Nearby Deals only. creative_key stays the thumbnail shown on the card;
+    # these are the additional slides behind it, capped at 3 so the gallery
+    # is never more than 4 images in total. Ignored for other ad types.
+    gallery_keys: Optional[List[str]] = None
     # Cashfree payment reference — set by the frontend once
     # GET /payments/status/{link_id} returns "PAID". Re-verified
     # server-side below before the ad is created/charged.
@@ -269,6 +274,19 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     creative_url  = (_video_presign(creative_s3_key) if is_video else _presign(creative_s3_key)) if creative_s3_key else ""
     thumbnail_url = _presign(thumbnail_s3_key) if thumbnail_s3_key else ""
 
+    # Deal gallery: the creative is slide 1, these are slides 2-4.
+    #
+    # Capped at 3 extras here rather than trusting the form, because the app's
+    # carousel is built for a small fixed set and a sheet or a retry could
+    # otherwise push twenty images into one deal. Blank entries are dropped so
+    # an empty slot in the form never becomes a broken slide.
+    gallery_s3_keys = [k for k in (body.gallery_keys or []) if k and k.strip()][:3]
+    gallery_urls    = [_presign(k) for k in gallery_s3_keys]
+
+    # Cover first, then the extras — this exact order is what the app shows.
+    deal_image_keys = ([creative_s3_key] if creative_s3_key else []) + gallery_s3_keys
+    deal_image_urls = ([creative_url] if creative_url else []) + gallery_urls
+
     parsed_tags: list = []
     if body.tags:
         try:
@@ -341,6 +359,11 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "tags":         parsed_tags,
             "image_s3_key": creative_s3_key,
             "image_url":    creative_url,
+            # Cover + up to 3 extras, for the landing page carousel. Same
+            # field names shops use, so the app's existing gallery code reads
+            # them without a second convention to remember.
+            "image_s3_keys": deal_image_keys,
+            "image_urls":    deal_image_urls,
             "rating":       4.0,
             "reviews":      0,
             "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
@@ -403,6 +426,10 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "category":   ad_doc.get("type", ""),
             "image_s3_key": creative_s3_key,
             "image_url":  creative_url,
+            # Carousel images for the deal landing page. The app falls back to
+            # image_url when this is empty, so existing deals are unaffected.
+            "image_s3_keys": deal_image_keys,
+            "image_urls":    deal_image_urls,
             "description": ad_doc.get("description", ""),
             "address":    ad_doc.get("address", ""),
             "phone":      ad_doc.get("phone", ""),

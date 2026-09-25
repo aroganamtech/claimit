@@ -8,6 +8,8 @@ import '../../../shared/widgets/shop_filter_sheet.dart';
 import '../services/shop_service.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
 import '../../../core/services/location_service.dart';
 import '../../bill_reader/services/bill_service.dart';
 
@@ -166,7 +168,8 @@ class ShopListScreen extends StatefulWidget {
   State<ShopListScreen> createState() => _ShopListScreenState();
 }
 
-class _ShopListScreenState extends State<ShopListScreen> {
+class _ShopListScreenState extends State<ShopListScreen>
+    with LocationReloadMixin {
   late bool _isRewards;
 
   bool _showSearch = false;
@@ -238,6 +241,17 @@ class _ShopListScreenState extends State<ShopListScreen> {
       if (mounted) setState(() {});
     });
   }
+
+  /// The user picked a different place while this screen was open — in the
+  /// Reward Zone that is the location control in the middle of the app bar.
+  ///
+  /// _loadShops() calls _resolveLocation(), which re-reads
+  /// LocationService.selectedLat/Lng, so simply running it again is enough:
+  /// the coordinates, the area and the pincode all refresh together. Before
+  /// this, the picker updated the app-bar label and the cards below kept
+  /// showing the old town's shops.
+  @override
+  void onLocationChanged() => _loadShops();
 
   // Resolves the coordinates to search around:
   //  1) the location the user manually picked in the app (geocoded), or
@@ -567,8 +581,13 @@ class _ShopListScreenState extends State<ShopListScreen> {
 
   // ── AppBar — home-style: logo+location+bell / back+title+filter+search ───────
   PreferredSizeWidget _buildAppBar() {
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true ? a.user!.location! : 'Select Area',
+    // The place being browsed, from the location picker — NOT the city saved
+    // on the account. Reading AuthProvider here is what made the Reward Zone
+    // app bar say "Select Area" forever: nothing the picker does writes to
+    // user.location, so the label could never update even though the shop
+    // list below it had already switched to the new area.
+    final location = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select Area',
     );
     final topPad = MediaQuery.of(context).padding.top;
     return PreferredSize(

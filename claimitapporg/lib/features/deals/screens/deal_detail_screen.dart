@@ -1,16 +1,66 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../deals/models/deal_model.dart';
 
-class DealDetailScreen extends StatelessWidget {
+class DealDetailScreen extends StatefulWidget {
   final DealData deal;
   const DealDetailScreen({super.key, required this.deal});
 
   @override
+  State<DealDetailScreen> createState() => _DealDetailScreenState();
+}
+
+class _DealDetailScreenState extends State<DealDetailScreen> {
+  // ── Image carousel ────────────────────────────────────────────────────────
+  // Same behaviour as the shop landing page: swipe between up to 4 photos,
+  // auto-advance every 4 seconds, dots underneath. A deal with one image
+  // behaves exactly as it did before — no pager, no dots, no timer.
+  final PageController _imgCtrl = PageController();
+  int _currentImg = 0;
+  Timer? _imgTimer;
+
+  /// Cover first, then the extras. Falls back to the single thumbnail for
+  /// deals created before galleries existed, so nothing needs backfilling.
+  List<String> get _images {
+    final gallery =
+        widget.deal.imageUrls.where((s) => s.trim().isNotEmpty).toList();
+    if (gallery.isNotEmpty) return gallery;
+    if (widget.deal.imageUrl.trim().isNotEmpty) return [widget.deal.imageUrl];
+    return const [];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_images.length > 1) {
+      _imgTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!mounted || !_imgCtrl.hasClients) return;
+        final next = (_currentImg + 1) % _images.length;
+        _imgCtrl.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    // Both must go, or the timer keeps firing against a disposed controller
+    // after the user navigates away.
+    _imgTimer?.cancel();
+    _imgCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final d = deal;
+    final d = widget.deal;
     return Scaffold(
       backgroundColor: Colors.white,
       body: CustomScrollView(
@@ -33,20 +83,7 @@ class DealDetailScreen extends StatelessWidget {
               ),
             ),
             flexibleSpace: FlexibleSpaceBar(
-              background: CachedNetworkImage(
-                imageUrl: d.imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: d.fallbackColor,
-                  child: Icon(d.fallbackIcon,
-                      color: const Color(0xFF9CA3AF), size: 60),
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  color: d.fallbackColor,
-                  child: Icon(d.fallbackIcon,
-                      color: const Color(0xFF9CA3AF), size: 60),
-                ),
-              ),
+              background: _buildCarousel(d),
             ),
           ),
 
@@ -285,6 +322,64 @@ class DealDetailScreen extends StatelessWidget {
       ),
     );
   }
+
+  // ── Carousel ──────────────────────────────────────────────────────────────
+  // Deliberately the same shape as the shop landing page: a PageView filling
+  // the FlexibleSpaceBar, dots pinned to the bottom, and no pager at all when
+  // there is a single image. The UI is unchanged for one-image deals.
+  Widget _buildCarousel(DealData d) {
+    final images = _images;
+    if (images.isEmpty) return _fallback(d);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _imgCtrl,
+          itemCount: images.length,
+          onPageChanged: (i) => setState(() => _currentImg = i),
+          itemBuilder: (_, i) => CachedNetworkImage(
+            imageUrl: images[i],
+            fit: BoxFit.cover,
+            placeholder: (_, __) => _fallback(d),
+            errorWidget: (_, __, ___) => _fallback(d),
+          ),
+        ),
+
+        // Dots. Only drawn for a real gallery — a lone dot under a single
+        // photo just looks like a smudge.
+        if (images.length > 1)
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(images.length, (i) {
+                final active = i == _currentImg;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 18 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: active ? Colors.white : Colors.white54,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                );
+              }),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Shown while an image loads, when one fails, and when a deal has no
+  /// photo at all — so the hero area is never blank or broken.
+  Widget _fallback(DealData d) => Container(
+        color: d.fallbackColor,
+        child: Icon(d.fallbackIcon, color: const Color(0xFF9CA3AF), size: 60),
+      );
 }
 
 class _InfoRow extends StatelessWidget {

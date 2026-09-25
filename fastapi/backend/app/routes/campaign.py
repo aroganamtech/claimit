@@ -32,7 +32,8 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..utils.whatsapp import (
-    send_template, _looks_like_phone, _to_e164, _new_user_bonus, _money,
+    send_template_ex, FATAL_ERROR_CODES,
+    _looks_like_phone, _to_e164, _new_user_bonus, _money,
 )
 
 router = APIRouter(prefix="/campaign", tags=["Campaign"])

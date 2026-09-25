@@ -7,6 +7,8 @@ import '../services/deal_service.dart';
 import '../../../shared/widgets/shop_filter_sheet.dart'; // filterCats
 import '../../profile/providers/profile_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DealListScreen
@@ -32,7 +34,8 @@ class DealListScreen extends StatefulWidget {
   State<DealListScreen> createState() => _DealListScreenState();
 }
 
-class _DealListScreenState extends State<DealListScreen> {
+class _DealListScreenState extends State<DealListScreen>
+    with LocationReloadMixin {
   // ── Data ──────────────────────────────────────────────────────────────────
   List<DealDto> _all = [];
   bool _isLoading = true;
@@ -87,6 +90,10 @@ class _DealListScreenState extends State<DealListScreen> {
     _loadDeals();
   }
 
+  /// Deals are location-filtered, so a new location means a new list.
+  @override
+  void onLocationChanged() => _loadDeals();
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -116,6 +123,7 @@ class _DealListScreenState extends State<DealListScreen> {
       distance: d.distance,
       type: d.type,
       imageUrl: d.imageUrl,
+      imageUrls: d.imageUrls,
       fallbackColor: meta.$1,
       fallbackIcon: meta.$2,
       description: d.description,
@@ -150,8 +158,11 @@ class _DealListScreenState extends State<DealListScreen> {
 
   // ── AppBar ────────────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
-    final location = context.select<AuthProvider, String>(
-      (a) => a.user?.location?.isNotEmpty == true ? a.user!.location! : 'Select Area',
+    // The picked location, not the account's saved city. See the note in
+    // shop_list_screen — reading AuthProvider here is why these app bars said
+    // "Select Area" no matter what the user chose in the location picker.
+    final location = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select Area',
     );
     final topPad = MediaQuery.of(context).padding.top;
     return PreferredSize(
