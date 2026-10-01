@@ -4,6 +4,8 @@ import '../models/privilege_models.dart';
 import '../services/privilege_service.dart';
 import '../widgets/privilege_common.dart';
 import 'privilege_approved_screen.dart' show PrivilegeTime;
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // My Privileges — every discount this user has actually had approved.
@@ -49,7 +51,12 @@ class _PrivilegeHistoryScreenState extends State<PrivilegeHistoryScreen> {
     return Scaffold(
       backgroundColor: kPrivBg,
       appBar: const PrivilegeHeader(),
-      bottomNavigationBar: const PrivilegeBottomBar(current: 2),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

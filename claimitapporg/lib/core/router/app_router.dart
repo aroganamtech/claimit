@@ -60,7 +60,6 @@ import '../../features/select/screens/select_messages_screen.dart';
 import '../../features/select/screens/select_chat_screen.dart';
 import '../../features/select/screens/select_profile_tab_screen.dart';
 import '../../features/classifieds/screens/classified_home_screen.dart';
-import '../../features/classifieds/screens/classified_ads_screen.dart';
 import '../../features/classifieds/screens/local_finds_screen.dart';
 import '../../features/classifieds/screens/local_finds_categories_screen.dart';
 import '../../features/classifieds/screens/local_find_zone_screen.dart';
@@ -147,7 +146,10 @@ class AppRouter {
         final isPostLoginFlow =
             state.matchedLocation == '/auth/success' ||
             state.matchedLocation == '/auth/complete-profile' ||
-            state.matchedLocation == '/location';
+            state.matchedLocation == '/location' ||
+            // Login lands here now, so it has to count as part of the
+            // post-login flow or the guard below bounces the user out of it.
+            state.matchedLocation == '/location/pick';
 
         if (!isLoggedIn && !isPreLoginPage && !isPostLoginFlow) {
           return '/auth/login';
@@ -464,9 +466,14 @@ class AppRouter {
         ),
 
         // ── Classifieds ────────────────────────────────────────────────────
-        // '/classified' now opens the "Local Finds" zone-grid landing screen;
-        // its "LOCAL CLASSIFIEDS" heading pushes on to the original
-        // toggle+grid screen at '/classified/home'.
+        // '/classified' opens the "Local Finds" zone-grid landing screen.
+        //
+        // '/classified/ads' is the one the dashboard's "Local Classifieds"
+        // tile actually opens (see features/home/data/explore_zones.dart), and
+        // it now shows ClassifiedHomeScreen — the screen built to the client's
+        // design sheet. It used to show ClassifiedAdsScreen, an older
+        // near-duplicate that has been retired; '/classified/home' is kept as
+        // an alias so any saved link still lands somewhere sensible.
         GoRoute(
           path: '/classified',
           builder: (context, state) => const LocalFindsScreen(),
@@ -477,7 +484,7 @@ class AppRouter {
         ),
         GoRoute(
           path: '/classified/ads',
-          builder: (context, state) => const ClassifiedAdsScreen(),
+          builder: (context, state) => const ClassifiedHomeScreen(),
         ),
         GoRoute(
           path: '/classified/zone',

@@ -23,6 +23,7 @@ Business rules (must stay in sync with BillRewardProvider in Flutter):
                         or           "shop|date|amount"         (without time)
 """
 
+import asyncio
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
@@ -365,6 +366,45 @@ async def _get_or_create_wallet(db, uid: str) -> tuple:
     return wallet, False
 
 
+# ── Server-side amount verification ───────────────────────────────────────────
+# `total_amount` arrives from the phone, so on its own it is a number the user
+# controls: anyone who can post to this endpoint could claim a ₹90,000 bill and
+# mint the points for it. When the app sends the bill photo (it does, for any
+# image under 2 MB) the server reads the total itself and compares.
+#
+# Two deliberate choices:
+#   • FAIL OPEN. If the AI is down, rate-limited or slow, the scan proceeds on
+#     the client's figure. Blocking real customers because our OCR provider is
+#     having a bad day is worse than the fraud this prevents.
+#   • MISMATCH ≠ REJECT. A disagreement routes the scan to the manual-review
+#     queue that already exists, rather than calling the user a liar. Bills are
+#     genuinely hard to read; a human settles it.
+#
+# Tolerance is the larger of 2% and ₹5, which absorbs rounding and a misread
+# paise digit while still catching an invented amount.
+async def _verify_total_with_ai(image_base64: Optional[str]) -> Optional[float]:
+    """The AI's reading of the bill total, or None when it could not check."""
+    if not image_base64:
+        return None
+    try:
+        # Short timeout and a single attempt: this sits in the user's path and
+        # /bill/ocr has already done the patient version before we got here.
+        ai = await asyncio.wait_for(
+            ai_bill_ocr(BillOcrRequest(image_base64=image_base64)),
+            timeout=8.0,
+        )
+    except Exception:
+        return None
+    if not isinstance(ai, dict) or not ai.get("success"):
+        return None
+    got = ai.get("total_amount")
+    return float(got) if isinstance(got, (int, float)) and got > 0 else None
+
+
+def _amounts_agree(claimed: float, seen: float) -> bool:
+    return abs(claimed - seen) <= max(claimed * 0.02, 5.0)
+
+
 # ── POST /bill/scan ────────────────────────────────────────────────────────────
 @router.post("/scan")
 async def scan_bill(data: BillScanRequest, request: Request):
@@ -388,6 +428,20 @@ async def scan_bill(data: BillScanRequest, request: Request):
     )
     if await db.bill_scans.find_one({"user_id": uid, "dup_key": key}):
         raise HTTPException(status_code=409, detail="Bill already scanned")
+
+    # Does the photo actually say what the app claims it says?
+    seen = await _verify_total_with_ai(data.image_base64)
+    if seen is not None and not _amounts_agree(total, seen):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "amount_mismatch",
+                "message": "We read a different total on this bill. "
+                           "Send it for review and we'll check it by hand.",
+                "claimed_amount": total,
+                "scanned_amount": seen,
+            },
+        )
 
     scan_type = _resolve_scan_type(data.scan_type, data.shop_id)
 
@@ -440,8 +494,42 @@ async def scan_bill(data: BillScanRequest, request: Request):
     discount_value  = 0.0
     deducted_points = 0
     if scan_type == "redeem" and discount_pct:
-        discount_value  = round(total * discount_pct / 100, 2)
-        deducted_points = min(discount_value, wallet["reward_points"])
+        discount_value = round(total * discount_pct / 100, 2)
+
+        # One point is worth ₹1, so the discount in rupees IS the points price.
+        required_points = discount_value
+        available       = float(wallet["reward_points"])
+
+        # The user must be able to pay for the discount IN FULL.
+        #
+        # This used to be `min(required_points, available)`, which deducted
+        # whatever the user had and still granted the whole discount: a user
+        # with 90 points walked out with ₹200 off and the shop absorbed the
+        # other ₹110. Short users are now turned away with the exact shortfall
+        # so they know how much more they need, and no points are spent.
+        # Half a point of grace. Points carry one decimal (₹1,564 → 156.4 pts),
+        # so a wallet can land on 224.9 against a 225.0 price purely through
+        # rounding. Turning that user away would be indefensible; a rupee of
+        # slack is not.
+        if available < required_points - 0.5:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":      "insufficient_points",
+                    "message":   f"You need {round(required_points - available, 1)} more "
+                                 f"points to redeem {discount_pct}% off this "
+                                 f"₹{total:,.0f} bill.",
+                    "required":  round(required_points, 1),
+                    "available": round(available, 1),
+                    "shortfall": round(required_points - available, 1),
+                    "discount_percent": discount_pct,
+                    "discount_value":   discount_value,
+                },
+            )
+
+        # Never spend more than the wallet holds — with the grace above, a
+        # 224.9 wallet paying a 225.0 price must land on 0, not −0.1.
+        deducted_points = min(required_points, available)
 
     new_pts       = wallet["reward_points"]     - deducted_points + earned_pts
     new_cb_wallet = wallet["cashback_wallet"]   + earned_cb
@@ -842,7 +930,6 @@ async def admin_action_review(
 # start with "AQ." and are sent via the x-goog-api-key header).
 # ══════════════════════════════════════════════════════════════════════════════
 
-import asyncio
 import json as _json
 import httpx
 

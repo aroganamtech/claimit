@@ -6,6 +6,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../models/select_professional.dart';
 import '../services/select_service.dart';
 import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — Profile tab.
@@ -60,7 +62,12 @@ class _SelectProfileTabScreenState extends State<SelectProfileTabScreen> {
 
     return Scaffold(
       backgroundColor: kSelBg,
-      bottomNavigationBar: const SelectBottomNav(current: 3),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: Column(
         children: [
           _blueHeader(),

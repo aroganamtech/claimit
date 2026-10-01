@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../models/privilege_models.dart';
 import '../widgets/privilege_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The Categories tab — all nine, as a full-width list rather than the home
@@ -18,7 +20,12 @@ class PrivilegeCategoriesScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: kPrivBg,
       appBar: const PrivilegeHeader(),
-      bottomNavigationBar: const PrivilegeBottomBar(current: 1),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: ListView.builder(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
         itemCount: kPrivilegeCategories.length,

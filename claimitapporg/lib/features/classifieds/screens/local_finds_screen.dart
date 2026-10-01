@@ -3,11 +3,18 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
+import '../../../core/services/location_service.dart';
 import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
+import '../widgets/local_finder_bottom_bar.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local Finds — "Discover Local Businesses" home. Banner + Register, a 12-zone
@@ -75,16 +82,58 @@ class LocalFindsScreen extends StatefulWidget {
   State<LocalFindsScreen> createState() => _LocalFindsScreenState();
 }
 
-class _LocalFindsScreenState extends State<LocalFindsScreen> {
+class _LocalFindsScreenState extends State<LocalFindsScreen>
+    with LocationReloadMixin {
   List<ClassifiedPost> _nearby = [];
   bool _loading = true;
   Position? _me;
   final Set<String> _liked = {};
 
+  // Search is scoped to Local Finder on purpose.
+  //
+  // The app's global search reaches shops, deals, reels and classifieds. On
+  // this screen that is wrong: a user searching "salon" here means "a salon
+  // near me in Local Finder", not "anything called salon anywhere in the app".
+  // Filtering the already-loaded local_find list keeps it scoped by
+  // construction — there is no code path from this box to the global search.
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// The whole app searches around one place. Changing it anywhere — here, on
+  /// the dashboard, in Select — reloads this list too.
+  @override
+  void onLocationChanged() => _load();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Name, category, area or address — whichever the user is likely to type.
+  List<ClassifiedPost> get _visible {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _nearby;
+    return _nearby.where((b) {
+      final haystack = [
+        b.businessName,
+        b.title,
+        b.userName,
+        b.category,
+        b.subcategory,
+        b.area,
+        b.city,
+        b.address,
+        b.description,
+      ].where((s) => s.trim().isNotEmpty).join(' ').toLowerCase();
+      return haystack.contains(q);
+    }).toList();
   }
 
   Future<void> _load() async {
@@ -97,15 +146,24 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
     final me = results[1] as Position?;
 
     // Order: Premium first, then Standard, then Free; and within each tier the
-    // nearest business first (based on the user's current location).
+    // nearest business first.
+    //
+    // "Nearest" means nearest to the SELECTED location, not to the phone.
+    // The list is already fetched around the selected place, so measuring
+    // from GPS produced nonsense the moment the two differed: pick Madurai
+    // while sitting in Chennai and every result read "450 km", in an order
+    // that meant nothing. GPS is only the fallback when nothing is picked.
     int planRank(String p) =>
         p == 'premium' ? 0 : (p == 'standard' ? 1 : 2);
+    final refLat = LocationService.selectedLat ?? me?.latitude;
+    final refLng = LocationService.selectedLng ?? me?.longitude;
     double distOf(ClassifiedPost b) {
-      if (me == null || b.latitude == null || b.longitude == null) {
+      if (refLat == null || refLng == null ||
+          b.latitude == null || b.longitude == null) {
         return double.infinity;
       }
       return Geolocator.distanceBetween(
-          me.latitude, me.longitude, b.latitude!, b.longitude!);
+          refLat, refLng, b.latitude!, b.longitude!);
     }
 
     list.sort((a, b) {
@@ -151,7 +209,11 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
+            // Divider + red title, matching the new design. Red is used here
+            // only to mark the feature, exactly as the mockup shows.
+            Container(width: 1.5, height: 20, color: const Color(0xFFD7DEE8)),
+            const SizedBox(width: 8),
             // Flexible + ellipsis so the title can never overflow the row
             // beside the logo at a large system font size.
             const Flexible(
@@ -160,7 +222,9 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: kLfBlue, fontWeight: FontWeight.w700, fontSize: 18),
+                    color: Color(0xFFE23744),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18),
               ),
             ),
           ],
@@ -175,33 +239,54 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
           ),
         ],
       ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const LocalFinderBottomBar(),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           children: [
-            LfDiscoverBanner(onRegister: () => context.push('/local-finds/add')),
-            const SizedBox(height: 24),
+            _locationField(),
+            // Tightened at the client's request: the three stacked controls
+            // and the banner were sitting too far apart, pushing the cards
+            // below the fold.
+            const SizedBox(height: 6),
+            _searchField(),
+            const SizedBox(height: 8),
+            _banner(),
+            const SizedBox(height: 10),
             _sectionHeader('Categories',
                 () => context.push('/local-finds/categories')),
-            const SizedBox(height: 14),
+            const SizedBox(height: 6),
+            // Five across, matching the design: ten categories in two even
+            // rows instead of four-plus-a-ragged-remainder.
             LfCategoriesGrid(
-              columns: 4,
+              columns: 5,
+              // The ten from the design. "See All" still opens the full list,
+              // so nothing became unreachable.
+              zones: localFindHomeZones,
               onTap: (z) => context.push('/classified/zone', extra: z),
             ),
-            const SizedBox(height: 26),
-            _sectionHeader('Nearby Businesses',
-                () => context.push('/local-finds/categories')),
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
+            _nearbyHeader(),
+            const SizedBox(height: 10),
             if (_loading)
               const Padding(
                   padding: EdgeInsets.all(28),
                   child: Center(child: CircularProgressIndicator(color: kLfBlue)))
-            else if (_nearby.isEmpty)
-              _emptyNearby()
+            else if (_visible.isEmpty)
+              _query.trim().isEmpty ? _emptyNearby() : _emptySearch()
             else
-              ..._nearby.take(10).map((b) => _businessCard(context, b)),
-            const SizedBox(height: 18),
+              // Unfiltered shows the top 10; a search shows everything it
+              // matched, because cutting search results at 10 silently hides
+              // the thing the user was looking for.
+              ...(_query.trim().isEmpty ? _visible.take(10) : _visible)
+                  .map((b) => _businessCard(context, b)),
+            const SizedBox(height: 14),
             _registerButton(context),
           ],
         ),
@@ -209,11 +294,143 @@ class _LocalFindsScreenState extends State<LocalFindsScreen> {
     );
   }
 
+  // ── Location ──────────────────────────────────────────────────────────────
+  // Reads the app-wide selected location, so Local Finder is always searching
+  // the same place as the dashboard, Select, Privilege and Reward Zone. Tapping
+  // it opens the shared picker; changing it there reloads this screen through
+  // LocationReloadMixin.
+  Widget _locationField() {
+    final label = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
+    );
+    return InkWell(
+      onTap: () => context.push('/location/pick'),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 18, color: kLfBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 14, color: kLfInk, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: kLfMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Search — Local Finder only ────────────────────────────────────────────
+  Widget _searchField() {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFD7DEE8)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, size: 19, color: kLfMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _query = v),
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search local businesses & services',
+                hintStyle: TextStyle(fontSize: 13.5, color: kLfMuted),
+              ),
+              style: const TextStyle(fontSize: 14, color: kLfInk),
+            ),
+          ),
+          if (_query.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _searchCtrl.clear();
+                setState(() => _query = '');
+              },
+              child: const Icon(Icons.close_rounded, size: 18, color: kLfMuted),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Banner ────────────────────────────────────────────────────────────────
+  // A single artwork rather than composed text, so the design can be changed
+  // by replacing one file. Falls back to the original built-in banner if the
+  // asset is missing, so the screen is never blank.
+  Widget _banner() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.asset(
+        'assets/images/lf_banner.png',
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            LfDiscoverBanner(onRegister: () => context.push('/local-finds/add')),
+      ),
+    );
+  }
+
+  /// "Nearby Businesses" with the red underline from the design.
+  Widget _nearbyHeader() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => context.push('/local-finds/categories'),
+            child: const Text(
+              'Nearby Businesses',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: kLfBlue),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(width: 104, height: 2.5, color: const Color(0xFFE23744)),
+        ],
+      );
+
+  Widget _emptySearch() => Container(
+        padding: const EdgeInsets.symmetric(vertical: 26),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            const Icon(Icons.search_off_rounded, size: 34, color: kLfMuted),
+            const SizedBox(height: 8),
+            Text(
+              'No local business matches "${_query.trim()}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13.5, color: kLfMuted),
+            ),
+          ],
+        ),
+      );
+
   Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(title,
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: kLfBlue)),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kLfBlue)),
           GestureDetector(
             onTap: onSeeAll,
             child: const Text('See All',
@@ -500,13 +717,19 @@ class LfCategoriesGrid extends StatelessWidget {
     final w = MediaQuery.of(context).size.width;
     final iconSize = (w / (columns + 1)).clamp(52.0, 80.0);
     final list = zones ?? localFindZones;
-    return GridView.count(
-      crossAxisCount: columns,
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 18,
-      crossAxisSpacing: 8,
-      childAspectRatio: 0.80,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 6,
+        // Height stated outright rather than derived from the cell WIDTH:
+        // childAspectRatio made the tile shorter than the icon on a 360dp
+        // phone (overflow) and taller than it needed on a wide one (the gap
+        // under the labels). icon + 4 gap + ~15 label + 1 slack.
+        mainAxisExtent: iconSize + 20,
+      ),
       children: list
           .map((z) => GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -530,7 +753,7 @@ class LfCategoriesGrid extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600, color: kLfInk)),
+                              fontSize: 10.5, fontWeight: FontWeight.w600, color: kLfInk)),
                     ),
                   ],
                 ),

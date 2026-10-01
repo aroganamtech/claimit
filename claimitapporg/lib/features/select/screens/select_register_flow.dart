@@ -13,6 +13,8 @@ import '../widgets/select_common.dart';
 // Proven, already-shipped helpers — reused rather than reimplemented.
 import '../../classifieds/services/payment_service.dart';
 import '../../classifieds/screens/local_finds_screen.dart' show lfCurrentPosition;
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — "List yourself" (professional self-registration).
@@ -491,6 +493,13 @@ class _SelectRegisterFlowState extends State<SelectRegisterFlow> {
     ];
 
     return Scaffold(
+      // Same bottom bar on every page of this feature.
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       backgroundColor: kSelBg,
       appBar: AppBar(
         backgroundColor: Colors.white,

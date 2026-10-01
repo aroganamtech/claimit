@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
 import '../widgets/listing_flow_widgets.dart';
+import '../widgets/local_finder_bottom_bar.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 const Color _navy = Color(0xFF1E3A5F);
 
@@ -138,6 +141,12 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
           style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 17),
         ),
       ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const LocalFinderBottomBar(),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _navy))
           : _posts.isEmpty

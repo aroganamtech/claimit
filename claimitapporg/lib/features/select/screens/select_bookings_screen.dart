@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/select_booking.dart';
 import '../services/select_service.dart';
 import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — Bookings tab.
@@ -94,7 +96,12 @@ class _SelectBookingsScreenState extends State<SelectBookingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kSelBg,
-      bottomNavigationBar: const SelectBottomNav(current: 1),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: Column(
         children: [
           _blueHeader(),

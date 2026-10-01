@@ -266,3 +266,85 @@ class PrivilegeSection extends StatelessWidget {
     );
   }
 }
+
+/// The feature's own four destinations, as a compact strip that sits directly
+/// under the AppBar.
+///
+/// They used to be the bottom bar, but the bottom of every screen now carries
+/// the app-wide [ClaimitBottomBar] — the same one the home page shows — so
+/// these moved up here rather than competing for the same edge. Implements
+/// PreferredSizeWidget so it drops straight into `AppBar(bottom: ...)`.
+class PrivilegeTopNav extends StatelessWidget implements PreferredSizeWidget {
+  final int current;
+  const PrivilegeTopNav({super.key, required this.current});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(44);
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({IconData icon, String label, String route})>[
+      (icon: Icons.home_rounded,        label: 'Home',       route: '/privilege'),
+      (icon: Icons.grid_view_rounded,   label: 'Categories', route: '/privilege/categories'),
+      (icon: Icons.local_offer_rounded, label: 'Mine',       route: '/privilege/history'),
+      (icon: Icons.person_rounded,      label: 'Profile',    route: '/profile'),
+    ];
+
+    return Container(
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: kPrivLine)),
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < items.length; i++)
+            Expanded(
+              child: InkWell(
+                onTap: () {
+                  if (i == current) return;
+                  context.go(items[i].route);
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(items[i].icon,
+                            size: 15,
+                            color: i == current ? kPrivBlue : kPrivMuted),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              items[i].label,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: i == current
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: i == current ? kPrivBlue : kPrivMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Container(
+                      height: 2,
+                      width: 26,
+                      color: i == current ? kPrivBlue : Colors.transparent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

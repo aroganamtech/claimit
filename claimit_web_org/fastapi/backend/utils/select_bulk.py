@@ -28,19 +28,21 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # MUST stay identical to SELECT_CATEGORIES in the app backend
 # (fastapi/backend/app/routes/select.py). If these drift, a bulk professional
 # gets a category id the app's grid doesn't know, so they'd be invisible.
+#
+# Reduced to ten and the ids aligned to the labels on 26 Sep 2026
+# (interior -> interiors, financial -> finance, career -> education; Real Estate
+# and Event Planners dropped), with the data re-uploaded against the new ids.
 CATEGORY_LEGEND: Dict[str, str] = {
-    "doctors":     "Doctors",
-    "lawyers":     "Lawyers",
-    "ca_tax":      "CA & Tax",
-    "architects":  "Architects",
-    "interior":    "Interiors",
-    "financial":   "Financial Advisors",
-    "business":    "Business Consultants",
-    "real_estate": "Real Estate",
-    "marketing":   "Marketing Experts",
-    "it_ai":       "IT & AI Experts",
-    "career":      "Career Consultants",
-    "events":      "Event Planners",
+    "doctors":    "Doctors",
+    "lawyers":    "Lawyers",
+    "ca_tax":     "CA & Tax",
+    "architects": "Architects",
+    "interiors":  "Interiors",
+    "business":   "Business",
+    "marketing":  "Marketing",
+    "finance":    "Finance",
+    "education":  "Education",
+    "it_ai":      "IT & AI",
 }
 
 CATEGORY_NAMES = list(CATEGORY_LEGEND.values())
@@ -52,22 +54,22 @@ _ALIASES = {
     "ca": "ca_tax", "ca and tax": "ca_tax", "tax": "ca_tax",
     "chartered accountant": "ca_tax", "accountant": "ca_tax",
     "architect": "architects",
-    "interior": "interior", "interiors": "interior",
-    "interior designer": "interior", "interior designers": "interior",
-    "financial advisor": "financial", "finance": "financial",
-    "financial": "financial", "investment": "financial",
-    "business consultant": "business", "business": "business",
-    "consultant": "business",
-    "realestate": "real_estate", "real estate": "real_estate",
-    "property": "real_estate", "realtor": "real_estate",
-    "marketing": "marketing", "marketing expert": "marketing",
+    "interior": "interiors", "interior designer": "interiors",
+    "interior designers": "interiors",
+    "financial advisor": "finance", "financial": "finance",
+    "investment": "finance",
+    "business consultant": "business", "consultant": "business",
+    "marketing expert": "marketing",
     "digital marketing": "marketing", "advertising": "marketing",
     "it": "it_ai", "ai": "it_ai", "it and ai": "it_ai",
     "it & ai": "it_ai", "software": "it_ai", "tech": "it_ai",
-    "career": "career", "career consultant": "career",
-    "career counselling": "career", "hr": "career",
-    "event": "events", "event planner": "events",
-    "events": "events", "event management": "events",
+    "career": "education", "career consultant": "education",
+    "career counselling": "education", "tutor": "education",
+    "tutors": "education", "coaching": "education",
+    # "Real Estate" and "Event Planners" were removed from the catalogue on
+    # 26 Sep 2026. They are deliberately NOT aliased to anything: a row still
+    # using them is rejected with the valid list, rather than silently filed
+    # under a category the client did not choose.
 }
 
 PLANS = ["premium", "standard", "custom"]

@@ -11,7 +11,7 @@ nobody notices for weeks:
     So a row needs a 6-digit pincode (or explicit lat/lng). A row without one
     is rejected loudly here rather than saved and invisible.
 
-  • The category has to be one of the nine fixed ids. A typo like "Hotel"
+  • The category has to be one of the ten fixed ids. A typo like "Hotel"
     would create a category nothing links to, so the row is rejected with the
     list of valid ids in the message.
 """
@@ -21,22 +21,29 @@ from typing import List, Tuple
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
-# Must match PRIVILEGE_CATEGORIES in the app backend's routes/privilege.py.
+# Must match PRIVILEGE_CATEGORIES in the app backend's routes/privilege.py and
+# kPrivilegeCategories in the Flutter app.
+#
+# Ids were brought into line with the labels on 26 Sep 2026 (hotels -> stay,
+# jewellery -> premium, interiors -> home, health -> wellness) and the partner
+# catalogue re-uploaded against them. An id renamed here WITHOUT a re-upload
+# orphans every partner filed under the old one.
 CATEGORY_IDS = [
-    "hotels", "travel", "events", "interiors", "health",
-    "auto", "education", "property", "jewellery",
+    "stay", "travel", "dine", "home", "wellness",
+    "events", "auto", "property", "education", "premium",
 ]
 
 CATEGORY_LABELS = {
-    "hotels":    "Hotels & Resorts",
-    "travel":    "Tours, Travel & Packages",
-    "events":    "Wedding & Events",
-    "interiors": "Interiors & Furniture",
-    "health":    "Healthcare, Dental & Wellness",
-    "auto":      "Cars, Bikes & Auto Services",
-    "education": "Education & Overseas Studies",
-    "property":  "Real Estate & Property",
-    "jewellery": "Jewellery & Premium Retail",
+    "stay":      "Stay",
+    "travel":    "Travel",
+    "dine":      "Dine",
+    "home":      "Home",
+    "wellness":  "Wellness",
+    "events":    "Events",
+    "auto":      "Auto",
+    "property":  "Property",
+    "education": "Education",
+    "premium":   "Premium",
 }
 
 COLUMNS = [
@@ -107,7 +114,7 @@ def build_template() -> bytes:
     # A filled example row, so the first-time user can see the shape rather
     # than guess it.
     example = [
-        "The Grand Residency", "hotels", 15, "Food and Soft Beverages",
+        "The Grand Residency", "stay", 15, "Food and Soft Beverages",
         "A premium business hotel offering elegant rooms and multi-cuisine dining.",
         "Get 15% off eligible food and soft-beverage charges at the all-day "
         "dining restaurant.",

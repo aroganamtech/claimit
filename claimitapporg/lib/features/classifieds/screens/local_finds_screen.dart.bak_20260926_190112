@@ -1,0 +1,754 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
+import '../../../core/services/location_service.dart';
+import '../data/classified_categories.dart';
+import '../models/classified_post.dart';
+import '../services/classified_service.dart';
+import '../widgets/local_finder_bottom_bar.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local Finds — "Discover Local Businesses" home. Banner + Register, a 12-zone
+// category grid (See All → Categories screen), and a Nearby Businesses list.
+// Kept as LocalFindsScreen so existing routing is unaffected.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Color kLfBlue = Color(0xFF1565C0);
+const Color kLfInk = Color(0xFF1E293B);
+const Color kLfMuted = Color(0xFF64748B);
+const Color kLfGold = Color(0xFFF4B400);
+const Color kLfWa = Color(0xFF25D366);
+const Color kLfBanner = Color(0xFFE8F0FE);
+
+// ── Shared business-contact actions (used by listing/detail screens too) ──────
+Future<void> lfCall(String phone) async {
+  final p = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+  if (p.isEmpty) return;
+  await launchUrl(Uri.parse('tel:$p'));
+}
+
+Future<void> lfWhatsApp(String phone) async {
+  var p = phone.replaceAll(RegExp(r'[^0-9]'), '');
+  if (p.isEmpty) return;
+  if (p.length == 10) p = '91$p';
+  await launchUrl(Uri.parse('https://wa.me/$p'), mode: LaunchMode.externalApplication);
+}
+
+Future<void> lfNavigate(String address, {double? lat, double? lng}) async {
+  final Uri uri = (lat != null && lng != null)
+      ? Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng')
+      : Uri.parse(
+          'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}');
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+// ── Shared location helpers (best-effort; degrade gracefully) ─────────────────
+Future<Position?> lfCurrentPosition() async {
+  try {
+    if (!await Geolocator.isLocationServiceEnabled()) return null;
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      return null;
+    }
+    return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low);
+  } catch (_) {
+    return null;
+  }
+}
+
+String? lfDistanceLabel(Position? me, double? lat, double? lng) {
+  if (me == null || lat == null || lng == null) return null;
+  final m = Geolocator.distanceBetween(me.latitude, me.longitude, lat, lng);
+  if (m < 950) return '${m.round()} m';
+  final km = m / 1000;
+  return '${km.toStringAsFixed(km < 10 ? 1 : 0)} Km';
+}
+
+class LocalFindsScreen extends StatefulWidget {
+  const LocalFindsScreen({super.key});
+
+  @override
+  State<LocalFindsScreen> createState() => _LocalFindsScreenState();
+}
+
+class _LocalFindsScreenState extends State<LocalFindsScreen>
+    with LocationReloadMixin {
+  List<ClassifiedPost> _nearby = [];
+  bool _loading = true;
+  Position? _me;
+  final Set<String> _liked = {};
+
+  // Search is scoped to Local Finder on purpose.
+  //
+  // The app's global search reaches shops, deals, reels and classifieds. On
+  // this screen that is wrong: a user searching "salon" here means "a salon
+  // near me in Local Finder", not "anything called salon anywhere in the app".
+  // Filtering the already-loaded local_find list keeps it scoped by
+  // construction — there is no code path from this box to the global search.
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// The whole app searches around one place. Changing it anywhere — here, on
+  /// the dashboard, in Select — reloads this list too.
+  @override
+  void onLocationChanged() => _load();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Name, category, area or address — whichever the user is likely to type.
+  List<ClassifiedPost> get _visible {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _nearby;
+    return _nearby.where((b) {
+      final haystack = [
+        b.businessName,
+        b.title,
+        b.userName,
+        b.category,
+        b.subcategory,
+        b.area,
+        b.city,
+        b.address,
+        b.description,
+      ].where((s) => s.trim().isNotEmpty).join(' ').toLowerCase();
+      return haystack.contains(q);
+    }).toList();
+  }
+
+  Future<void> _load() async {
+    final results = await Future.wait([
+      ClassifiedService.instance.fetchClassifieds(listingType: 'local_find'),
+      lfCurrentPosition(),
+    ]);
+    if (!mounted) return;
+    final list = results[0] as List<ClassifiedPost>;
+    final me = results[1] as Position?;
+
+    // Order: Premium first, then Standard, then Free; and within each tier the
+    // nearest business first.
+    //
+    // "Nearest" means nearest to the SELECTED location, not to the phone.
+    // The list is already fetched around the selected place, so measuring
+    // from GPS produced nonsense the moment the two differed: pick Madurai
+    // while sitting in Chennai and every result read "450 km", in an order
+    // that meant nothing. GPS is only the fallback when nothing is picked.
+    int planRank(String p) =>
+        p == 'premium' ? 0 : (p == 'standard' ? 1 : 2);
+    final refLat = LocationService.selectedLat ?? me?.latitude;
+    final refLng = LocationService.selectedLng ?? me?.longitude;
+    double distOf(ClassifiedPost b) {
+      if (refLat == null || refLng == null ||
+          b.latitude == null || b.longitude == null) {
+        return double.infinity;
+      }
+      return Geolocator.distanceBetween(
+          refLat, refLng, b.latitude!, b.longitude!);
+    }
+
+    list.sort((a, b) {
+      final r = planRank(a.plan).compareTo(planRank(b.plan));
+      if (r != 0) return r;
+      return distOf(a).compareTo(distOf(b));
+    });
+
+    setState(() {
+      _nearby = list;
+      _me = me;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kLfBlue, size: 20),
+          onPressed: () => context.pop(),
+        ),
+        // Logo on the left, right after the back arrow, then the page title.
+        // Same asset + size + text fallback the home and shop-list headers use
+        // (home_main_logo.png already contains the icon + "claimit" wordmark).
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/images/home_main_logo.png',
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Text(
+                'claimit',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1565C0),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Divider + red title, matching the new design. Red is used here
+            // only to mark the feature, exactly as the mockup shows.
+            Container(width: 1.5, height: 20, color: const Color(0xFFD7DEE8)),
+            const SizedBox(width: 8),
+            // Flexible + ellipsis so the title can never overflow the row
+            // beside the logo at a large system font size.
+            const Flexible(
+              child: Text(
+                'Local Finder',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Color(0xFFE23744),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        // Owners reach their own business listings here. Scoped to
+        // listingType 'local_find', so Classifieds posts never appear.
+        actions: [
+          IconButton(
+            tooltip: 'My Listings',
+            icon: const Icon(Icons.receipt_long_rounded, color: kLfBlue, size: 22),
+            onPressed: () => context.push('/local-finds/mine'),
+          ),
+        ],
+      ),
+      bottomNavigationBar: const LocalFinderBottomBar(),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          children: [
+            _locationField(),
+            const SizedBox(height: 10),
+            _searchField(),
+            const SizedBox(height: 16),
+            _banner(),
+            const SizedBox(height: 22),
+            _sectionHeader('Categories',
+                () => context.push('/local-finds/categories')),
+            const SizedBox(height: 14),
+            // Five across, matching the design: ten categories in two even
+            // rows instead of four-plus-a-ragged-remainder.
+            LfCategoriesGrid(
+              columns: 5,
+              // The ten from the design. "See All" still opens the full list,
+              // so nothing became unreachable.
+              zones: localFindHomeZones,
+              onTap: (z) => context.push('/classified/zone', extra: z),
+            ),
+            const SizedBox(height: 24),
+            _nearbyHeader(),
+            const SizedBox(height: 12),
+            if (_loading)
+              const Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(child: CircularProgressIndicator(color: kLfBlue)))
+            else if (_visible.isEmpty)
+              _query.trim().isEmpty ? _emptyNearby() : _emptySearch()
+            else
+              // Unfiltered shows the top 10; a search shows everything it
+              // matched, because cutting search results at 10 silently hides
+              // the thing the user was looking for.
+              ...(_query.trim().isEmpty ? _visible.take(10) : _visible)
+                  .map((b) => _businessCard(context, b)),
+            const SizedBox(height: 18),
+            _registerButton(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Location ──────────────────────────────────────────────────────────────
+  // Reads the app-wide selected location, so Local Finder is always searching
+  // the same place as the dashboard, Select, Privilege and Reward Zone. Tapping
+  // it opens the shared picker; changing it there reloads this screen through
+  // LocationReloadMixin.
+  Widget _locationField() {
+    final label = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
+    );
+    return InkWell(
+      onTap: () => context.push('/location/pick'),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 18, color: kLfBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 14, color: kLfInk, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: kLfMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Search — Local Finder only ────────────────────────────────────────────
+  Widget _searchField() {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFD7DEE8)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, size: 19, color: kLfMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _query = v),
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search local businesses & services',
+                hintStyle: TextStyle(fontSize: 13.5, color: kLfMuted),
+              ),
+              style: const TextStyle(fontSize: 14, color: kLfInk),
+            ),
+          ),
+          if (_query.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _searchCtrl.clear();
+                setState(() => _query = '');
+              },
+              child: const Icon(Icons.close_rounded, size: 18, color: kLfMuted),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Banner ────────────────────────────────────────────────────────────────
+  // A single artwork rather than composed text, so the design can be changed
+  // by replacing one file. Falls back to the original built-in banner if the
+  // asset is missing, so the screen is never blank.
+  Widget _banner() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.asset(
+        'assets/images/lf_banner.png',
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            LfDiscoverBanner(onRegister: () => context.push('/local-finds/add')),
+      ),
+    );
+  }
+
+  /// "Nearby Businesses" with the red underline from the design.
+  Widget _nearbyHeader() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => context.push('/local-finds/categories'),
+            child: const Text(
+              'Nearby Businesses',
+              style: TextStyle(
+                  fontSize: 19, fontWeight: FontWeight.w800, color: kLfBlue),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Container(width: 118, height: 2.5, color: const Color(0xFFE23744)),
+        ],
+      );
+
+  Widget _emptySearch() => Container(
+        padding: const EdgeInsets.symmetric(vertical: 26),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            const Icon(Icons.search_off_rounded, size: 34, color: kLfMuted),
+            const SizedBox(height: 8),
+            Text(
+              'No local business matches "${_query.trim()}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13.5, color: kLfMuted),
+            ),
+          ],
+        ),
+      );
+
+  Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: kLfBlue)),
+          GestureDetector(
+            onTap: onSeeAll,
+            child: const Text('See All',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: kLfBlue)),
+          ),
+        ],
+      );
+
+  // ── Nearby business card (image + name + location + chips + heart) ──────────
+  Widget _businessCard(BuildContext context, ClassifiedPost b) {
+    final name = b.businessName.isNotEmpty ? b.businessName : b.title;
+    final id = b.id.isNotEmpty ? b.id : name;
+    final liked = _liked.contains(id);
+    final dist = lfDistanceLabel(_me, b.latitude, b.longitude);
+    final cat = b.subcategory.isNotEmpty ? b.subcategory : b.category;
+    return GestureDetector(
+      onTap: () => context.push('/classified/detail', extra: b),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFEEF1F5)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
+              child: _thumb(b),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 15.5, fontWeight: FontWeight.w700, color: kLfInk)),
+                        ),
+                        GestureDetector(
+                          onTap: () => setState(() =>
+                              liked ? _liked.remove(id) : _liked.add(id)),
+                          child: Icon(
+                              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                              size: 20, color: liked ? Colors.redAccent : kLfBlue),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                        b.address.isNotEmpty
+                            ? b.address
+                            : (b.area.isNotEmpty ? b.area : cat),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, color: kLfMuted)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (dist != null) _chip(dist, accent: true),
+                        _chip(cat),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, {bool accent = false}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: accent ? const Color(0xFFE3EEFC) : const Color(0xFFEFF3F8),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11.5,
+                color: accent ? kLfBlue : kLfInk,
+                fontWeight: FontWeight.w500)),
+      );
+
+  Widget _thumb(ClassifiedPost b) {
+    if (b.photos.isNotEmpty) {
+      final raw = b.photos.first;
+      // Two kinds of photo live in this field: a listing posted from the app
+      // stores base64, while an admin bulk upload stores an S3 image the API
+      // hands back as a URL. Only base64 used to be handled, so every
+      // bulk-uploaded business showed the grey placeholder instead of its
+      // picture.
+      if (raw.startsWith('http')) {
+        return Image.network(raw,
+            width: 108, height: 108, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _thumbFallback());
+      }
+      try {
+        return Image.memory(base64Decode(raw),
+            width: 108, height: 108, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _thumbFallback());
+      } catch (_) {}
+    }
+    return _thumbFallback();
+  }
+
+  Widget _thumbFallback() => Container(
+      width: 108, height: 108, color: const Color(0xFFEFF3F8),
+      child: const Icon(Icons.storefront_rounded, color: kLfBlue, size: 34));
+
+  Widget _emptyNearby() => Container(
+        padding: const EdgeInsets.all(24),
+        alignment: Alignment.center,
+        child: const Text('No businesses nearby yet. Be the first to register!',
+            style: TextStyle(color: kLfMuted)),
+      );
+
+  Widget _registerButton(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => context.push('/local-finds/add'),
+          icon: const Icon(Icons.add_business_rounded),
+          label: const Text('Register Your Business'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kLfGold,
+            foregroundColor: Colors.black,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Reusable widgets (shared by the Categories screen).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// The "Discover Local Businesses & Services Near You" banner with the map-pin
+/// + floating-icons illustration. Icons render as system color emoji, matching
+/// the design on Android.
+class LfDiscoverBanner extends StatelessWidget {
+  final VoidCallback onRegister;
+  const LfDiscoverBanner({super.key, required this.onRegister});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 10, 18),
+      decoration: BoxDecoration(
+        color: kLfBanner,
+        borderRadius: BorderRadius.circular(18),
+        // Client-supplied artwork — already has the pin + floating category
+        // icons baked in, so it replaces the old programmatic _BannerArt().
+        // BoxFit.cover previously cropped the right-edge icons off on some
+        // screen widths (the source PNG was tightly auto-cropped with no
+        // margin, so any cover-crop immediately ate into edge content).
+        // BoxFit.contain guarantees the whole illustration is always fully
+        // visible — any leftover space lands on the left (behind the text
+        // column) thanks to centerRight alignment, so nothing is ever cut.
+        image: const DecorationImage(
+          image: AssetImage('assets/images/local_finds_banner_bg.png'),
+          fit: BoxFit.contain,
+          alignment: Alignment.centerRight,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Find Local\nBusinesses &\nServices\nNear You',
+                    style: TextStyle(
+                        fontSize: 23, fontWeight: FontWeight.w800, color: kLfBlue, height: 1.3)),
+                const SizedBox(height: 8),
+                const Text('Find trusted\nbusinesses within 5 km of your location.',
+                    style: TextStyle(fontSize: 12.5, color: kLfMuted, height: 1.4)),
+                const SizedBox(height: 14),
+                ElevatedButton(
+                  onPressed: onRegister,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kLfGold,
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
+                  ),
+                  child: const Text('Register Now',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          // The right side is now the background image itself (pin + icons
+          // are baked into local_finds_banner_bg.png) — this just reserves
+          // the same space the old _BannerArt() icon cluster used, so the
+          // text column on the left keeps its exact same width.
+          const Expanded(flex: 4, child: SizedBox.shrink()),
+        ],
+      ),
+    );
+  }
+}
+
+class _BannerArt extends StatelessWidget {
+  const _BannerArt();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 152,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: const [
+          Positioned(
+            left: 14, top: 40,
+            child: Icon(Icons.location_on, color: Color(0xFFE53935), size: 66),
+          ),
+          Positioned(right: 2, top: 0, child: _EmojiChip('🏪')),
+          Positioned(right: 34, top: 44, child: _EmojiChip('🧺')),
+          Positioned(right: 0, top: 78, child: _EmojiChip('🍴')),
+          Positioned(left: 2, bottom: 4, child: _EmojiChip('👩')),
+          Positioned(left: 48, bottom: 0, child: _EmojiChip('➕', green: true)),
+          Positioned(left: 92, bottom: 12, child: _EmojiChip('📱')),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmojiChip extends StatelessWidget {
+  final String emoji;
+  final bool green;
+  const _EmojiChip(this.emoji, {this.green = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6)],
+      ),
+      child: green
+          ? const Icon(Icons.add, color: Color(0xFF2E7D32), size: 24)
+          : Text(emoji, style: const TextStyle(fontSize: 22)),
+    );
+  }
+}
+
+/// The 12-category icon grid used on both the home and the Categories screen.
+class LfCategoriesGrid extends StatelessWidget {
+  final int columns;
+  final void Function(LocalFindZone zone) onTap;
+  final List<LocalFindZone>? zones;
+  const LfCategoriesGrid(
+      {super.key, this.columns = 4, required this.onTap, this.zones});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final iconSize = (w / (columns + 1)).clamp(52.0, 80.0);
+    final list = zones ?? localFindZones;
+    return GridView.count(
+      crossAxisCount: columns,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 18,
+      crossAxisSpacing: 8,
+      childAspectRatio: 0.80,
+      children: list
+          .map((z) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onTap(z),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    z.iconAsset != null
+                        ? Image.asset(z.iconAsset!,
+                            width: iconSize, height: iconSize, fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => _fallback(z, iconSize))
+                        : _fallback(z, iconSize),
+                    const SizedBox(height: 6),
+                    // Longer names ("Professional Services", "Fitness &
+                    // Wellness") shrink to fit rather than truncating to
+                    // "Professional S…". scaleDown never grows the text and
+                    // never overflows the tile.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(z.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600, color: kLfInk)),
+                    ),
+                  ],
+                ),
+              ))
+          .toList(),
+    );
+  }
+
+  Widget _fallback(LocalFindZone z, double size) => Container(
+        width: size, height: size,
+        decoration: const BoxDecoration(color: kLfBanner, shape: BoxShape.circle),
+        child: Icon(z.icon, size: size * 0.5, color: kLfBlue),
+      );
+}

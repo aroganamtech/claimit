@@ -2,6 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/providers/location_provider.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../home/screens/home_screen.dart';
 
 import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
@@ -21,6 +26,12 @@ const Color _banner = Color(0xFFE8F0FE);
 /// Display label for a stored classifieds `category` value.
 String classifiedCategoryLabel(String value) {
   for (final c in localClassifiedCategories) {
+    if (c.category == value) return c.name;
+  }
+  // An ad posted before the list was cut to five still needs a readable name
+  // on its card, so fall back to the retired set rather than showing the raw
+  // stored value.
+  for (final c in classifiedLegacyCategories) {
     if (c.category == value) return c.name;
   }
   return value.isEmpty ? 'Classifieds' : value;
@@ -57,305 +68,297 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
     if (mounted) setState(() { _recent = list; _loading = false; });
   }
 
-  List<ClassifiedTopCategory> get _filteredCats {
-    if (_query.trim().isEmpty) return localClassifiedCategories;
-    final q = _query.toLowerCase();
-    return localClassifiedCategories
-        .where((c) => c.name.toLowerCase().contains(q))
-        .toList();
-  }
-
   void _openAll() => context.push('/classified/list',
       extra: {'category': '', 'subcategory': '', 'title': 'All Classifieds'});
 
+  /// Ads matching the search box. Scoped to Local Classifieds by construction:
+  /// it filters the list this screen already loaded with
+  /// `listingType: 'classified'`, so it can never return a Local Finder
+  /// business or anything from the app-wide search.
+  List<ClassifiedPost> get _visible {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _recent;
+    return _recent.where((b) {
+      final hay = [
+        b.title,
+        b.description,
+        b.category,
+        b.subcategory,
+        b.userName,
+        b.area,
+        b.address,
+        classifiedCategoryLabel(b.category),
+      ].join(' ').toLowerCase();
+      return hay.contains(q);
+    }).toList();
+  }
+
+  void _openCategory(ClassifiedTopCategory c) => context.push(
+        '/classified/list',
+        extra: {
+          'category': c.category,
+          'subcategory': c.subcategory,
+          'title': c.name
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
-    final cats = _filteredCats;
+    final visible = _visible;
     return Scaffold(
       backgroundColor: Colors.white,
+      // The same header Local Finder, Select and Privilege use.
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _blue, size: 20),
-          onPressed: () => context.pop(),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: _blue, size: 20),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
         ),
         titleSpacing: 0,
-        // Two labelled buttons leave the title roughly 130px on a small
-        // phone, which "Local Classifieds" at 18pt doesn't fit into.
-        // scaleDown shrinks it to fit instead of cutting it to "Local Clas…".
-        title: const FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text('Local Classifieds',
-              maxLines: 1,
-              style: TextStyle(
-                  color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/images/home_main_logo.png',
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Text('claimit',
+                  style: TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700, color: _blue)),
+            ),
+            const SizedBox(width: 8),
+            Container(width: 1.5, height: 20, color: const Color(0xFFD7DEE8)),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Local Classifieds',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: _ink, fontWeight: FontWeight.w800, fontSize: 18),
+              ),
+            ),
+          ],
         ),
         actions: [
-          // Two solid tiles instead of bare outline icons. Gold is the
-          // primary action (post an ad); blue is secondary (see your own
-          // ads). Kept icon-sized rather than labelled pills so the row can
-          // never overflow the app bar on a narrow phone.
-          _appBarButton(
-            tooltip: 'Post Ad',
-            icon: Icons.add_rounded,
-            bg: _gold,
-            fg: Colors.black,
-            onTap: () => context.push('/classified/add'),
-          ),
-          _appBarButton(
+          IconButton(
             tooltip: 'My Ads',
-            icon: Icons.list_alt_rounded,
-            bg: const Color(0xFFE8F0FE),
-            fg: _blue,
-            onTap: () => context.push('/classified/mine'),
+            icon: const Icon(Icons.list_alt_rounded, color: _blue, size: 22),
+            onPressed: () => context.push('/classified/mine'),
           ),
-          const SizedBox(width: 10),
         ],
       ),
-      // ── Posting an ad is the one thing people come here to do, so the call
-      // to action now sits at the very top instead of below the whole page,
-      // and a floating button keeps it reachable while the list scrolls.
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/classified/add'),
-        backgroundColor: _gold,
-        foregroundColor: Colors.black,
-        elevation: 8,
-        shape: const StadiumBorder(),
-        extendedPadding: const EdgeInsets.symmetric(horizontal: 22),
-        icon: const Icon(Icons.add_circle_rounded, size: 24),
-        label: const Text('Post Your Ad',
-            style: TextStyle(
-                fontWeight: FontWeight.w800, fontSize: 15.5, letterSpacing: 0.2)),
-      ),
+      // The dashboard's centre button, docked into the shared bar's notch.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: RefreshIndicator(
         onRefresh: _load,
-        // Bottom padding leaves room for the floating button so it never
-        // covers the last card.
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
-            _findBanner(),
-            const SizedBox(height: 22),
-            // ── Ads first: the created classifieds with their details ──────────
-            _sectionHeader('Latest Ads', _openAll),
+            _locationField(),
+            const SizedBox(height: 6),
+            _searchField(),
+            const SizedBox(height: 14),
+            _homeGrid(),
+            const SizedBox(height: 18),
+            _latestHeader(),
             const SizedBox(height: 12),
             if (_loading)
               const Padding(
-                  padding: EdgeInsets.all(24),
+                  padding: EdgeInsets.all(28),
                   child: Center(child: CircularProgressIndicator(color: _blue)))
-            else if (_recent.isEmpty)
-              _emptyRecent()
+            else if (visible.isEmpty)
+              _query.trim().isEmpty ? _emptyRecent() : _emptySearch()
             else
-              ..._recent.map(_recentCard),
-            const SizedBox(height: 22),
-            // ── Browse by category ─────────────────────────────────────────────
-            _sectionHeader('Categories', _openAll),
-            const SizedBox(height: 12),
-            _searchBar(),
-            const SizedBox(height: 18),
-            if (cats.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 30),
-                child: Center(child: Text('No categories match your search.',
-                    style: TextStyle(color: _muted))),
-              )
-            else
-              _categoriesGrid(cats),
+              ...visible.map(_recentCard),
           ],
         ),
       ),
     );
   }
 
-  /// A solid rounded tile for the app bar, with a label underneath so it's
-  /// obvious what each one does rather than relying on the icon alone.
-  Widget _appBarButton({
-    required String tooltip,
-    required IconData icon,
-    required Color bg,
-    required Color fg,
-    required VoidCallback onTap,
-  }) =>
-      Tooltip(
-        message: tooltip,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 6),
-          child: Material(
-            color: bg,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: onTap,
-              child: Container(
-                width: 62,
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, color: fg, size: 18),
-                    const SizedBox(height: 1),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(tooltip,
-                          maxLines: 1,
-                          style: TextStyle(
-                              color: fg,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              height: 1.1)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-  Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Text(title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w800, color: _blue)),
-          ),
-          GestureDetector(
-            onTap: onSeeAll,
-            child: const Text('See All',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: _blue)),
-          ),
-        ],
-      );
-
-  Widget _searchBar() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+  // ── Location ──────────────────────────────────────────────────────────────
+  // The app-wide selected location, identical to the other three features.
+  Widget _locationField() {
+    final label = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
+    );
+    return InkWell(
+      onTap: () => context.push('/location/pick'),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
-            const Icon(Icons.search_rounded, color: _muted, size: 22),
+            const Icon(Icons.location_on_rounded, size: 18, color: _blue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, color: _ink, fontWeight: FontWeight.w500)),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: _muted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Search — Local Classifieds only ───────────────────────────────────────
+  Widget _searchField() => Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search_rounded, size: 19, color: _muted),
             const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: _searchCtrl,
                 onChanged: (v) => setState(() => _query = v),
+                textInputAction: TextInputAction.search,
                 decoration: const InputDecoration(
-                  hintText: "Search for stores, category's",
-                  hintStyle: TextStyle(color: _muted, fontSize: 14),
+                  isDense: true,
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 13),
+                  hintText:
+                      'Search Buy & Sell, Jobs, Services, Property or Community',
+                  hintStyle: TextStyle(fontSize: 12.5, color: _muted),
                 ),
+                style: const TextStyle(fontSize: 14, color: _ink),
               ),
             ),
-            // Icon(Icons.mic_none_rounded, color: _muted.withOpacity(0.7), size: 22),
+            if (_query.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchCtrl.clear();
+                  setState(() => _query = '');
+                },
+                child: const Icon(Icons.close_rounded, size: 18, color: _muted),
+              ),
           ],
         ),
       );
 
-  Widget _categoriesGrid(List<ClassifiedTopCategory> cats) {
-    final w = MediaQuery.of(context).size.width;
-    final iconSize = (w / 5).clamp(56.0, 84.0);
+  // ── Category row ──────────────────────────────────────────────────────────
+  /// Icon + label, one column per category — the same grid the other three
+  /// features draw. More categories are coming; this row renders whatever
+  /// `localClassifiedHomeCategories` holds, so adding one is a data change
+  /// here and nothing else.
+  Widget _homeGrid() {
+    final cats = localClassifiedHomeCategories;
+    final iconSize = (MediaQuery.of(context).size.width / (cats.length + 1))
+        .clamp(52.0, 80.0);
     return GridView.count(
-      crossAxisCount: 3,
+      crossAxisCount: cats.length,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 18,
-      crossAxisSpacing: 10,
-      childAspectRatio: 0.86,
-      children: cats.map((c) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.push('/classified/list', extra: {
-              'category': c.category,
-              'subcategory': c.subcategory,
-              'title': c.name,
-            }),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                c.iconAsset != null
-                    ? Image.asset(c.iconAsset!,
-                        width: iconSize, height: iconSize, fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => _iconFallback(c, iconSize))
-                    : _iconFallback(c, iconSize),
-                const SizedBox(height: 6),
-                Text(c.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w600, color: _ink)),
-              ],
-            ),
-          )).toList(),
+      crossAxisSpacing: 8,
+      childAspectRatio: 0.80,
+      children: cats
+          .map((c) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openCategory(c),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    c.iconAsset != null
+                        ? Image.asset(c.iconAsset!,
+                            width: iconSize,
+                            height: iconSize,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                                _iconFallback(c, iconSize))
+                        : _iconFallback(c, iconSize),
+                    const SizedBox(height: 6),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(c.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _ink)),
+                    ),
+                  ],
+                ),
+              ))
+          .toList(),
     );
   }
+
+  /// "Latest Ads" on the left, the POST button on the right, as in the design.
+  Widget _latestHeader() => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          GestureDetector(
+            onTap: _openAll,
+            child: const Text('Latest Ads',
+                style: TextStyle(
+                    fontSize: 19, fontWeight: FontWeight.w800, color: _blue)),
+          ),
+          GestureDetector(
+            onTap: () => context.push('/classified/add'),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                const Text('POST',
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: _ink)),
+                const SizedBox(width: 8),
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration:
+                      const BoxDecoration(color: _gold, shape: BoxShape.circle),
+                  child: const Icon(Icons.add_rounded,
+                      size: 20, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+  Widget _emptySearch() => Container(
+        padding: const EdgeInsets.symmetric(vertical: 26),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            const Icon(Icons.search_off_rounded, size: 34, color: _muted),
+            const SizedBox(height: 8),
+            Text('No ad matches "${_query.trim()}"',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13.5, color: _muted)),
+          ],
+        ),
+      );
 
   Widget _iconFallback(ClassifiedTopCategory c, double size) => Container(
         width: size, height: size,
         decoration: const BoxDecoration(color: _banner, shape: BoxShape.circle),
         child: Icon(c.icon, size: size * 0.5, color: _blue),
-      );
-
-  Widget _findBanner() => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: _banner, borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('📢', style: TextStyle(fontSize: 34)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Find anything you want',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _blue)),
-                      SizedBox(height: 4),
-                      Text("Buy, Sell, Rent or Find — It's simple and secure.",
-                          style: TextStyle(fontSize: 12.5, color: _muted, height: 1.4)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => context.push('/classified/add'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Text('Create Your Ad',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                    SizedBox(width: 8),
-                    CircleAvatar(radius: 11, backgroundColor: _blue,
-                        child: Icon(Icons.add, color: Colors.white, size: 16)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
       );
 
   // ── "Latest Ads" card ─────────────────────────────────────────────────────
@@ -395,12 +398,15 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
               ),
             ],
           ),
+          // Photo left, then heading / description / "Call: …" with the
+          // category chip sitting at the bottom right, exactly as the design
+          // sheet draws it.
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: SizedBox(width: 96, height: 96, child: _thumb(b)),
+                child: SizedBox(width: 96, height: 112, child: _thumb(b)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -414,45 +420,53 @@ class _ClassifiedHomeScreenState extends State<ClassifiedHomeScreen> {
                         style: const TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w700,
-                            color: _ink,
+                            color: _blue,
                             height: 1.25)),
                     const SizedBox(height: 5),
-                    // Price when there is one. When there isn't, fall back to
-                    // the contact number rather than an empty line — that's
-                    // what this card showed before and it's still useful.
-                    Text(
-                      hasPrice
-                          ? '₹ ${_money(b.price)}'
-                          : (phone.isNotEmpty ? phone : 'Ask for price'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: hasPrice ? 15.5 : 13,
-                        fontWeight: hasPrice ? FontWeight.w800 : FontWeight.w600,
-                        color: hasPrice
-                            ? _blue
-                            : (phone.isNotEmpty ? _blue : _muted),
-                      ),
-                    ),
-                    if (b.area.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on_rounded,
-                              size: 13, color: _muted),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(b.area,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 12, color: _muted)),
+                    // The ad's own words — what the design shows here. Three
+                    // lines, then ellipsis; the detail page has the rest.
+                    if (b.description.trim().isNotEmpty)
+                      Text(b.description.trim(),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, color: _ink, height: 1.35)),
+                    const SizedBox(height: 5),
+                    // Last line of the block, with the chip beside it. A price
+                    // replaces the number only when the seller gave one, so an
+                    // ad with no price still shows a way to make contact
+                    // rather than an empty row.
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            hasPrice
+                                ? '₹ ${_money(b.price)}'
+                                : (phone.isNotEmpty
+                                    ? 'Call: $phone'
+                                    : 'Ask for price'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: hasPrice ? 15.5 : 13,
+                              fontWeight:
+                                  hasPrice ? FontWeight.w800 : FontWeight.w600,
+                              color: hasPrice ? _blue : _ink,
+                            ),
+                          ),
+                        ),
+                        if (tag.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          // Bounded so a long subcategory shrinks the chip
+                          // instead of squeezing the phone number off the row.
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 110),
+                            child: _chip(tag),
                           ),
                         ],
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    if (tag.isNotEmpty) _chip(tag),
+                      ],
+                    ),
                   ],
                 ),
               ),

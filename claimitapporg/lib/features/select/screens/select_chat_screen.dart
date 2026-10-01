@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../models/select_chat.dart';
 import '../services/select_service.dart';
 import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — one chat thread.
@@ -104,6 +106,13 @@ class _SelectChatScreenState extends State<SelectChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Same bottom bar on every page of this feature.
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       backgroundColor: kSelBg,
       body: Column(
         children: [

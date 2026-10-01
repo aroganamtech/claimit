@@ -1,4 +1,5 @@
 // // // import 'package:flutter/material.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
 // // // import 'package:go_router/go_router.dart';
 // // // import '../../../core/theme/app_theme.dart';
 
@@ -1676,158 +1677,44 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final sel = _selectedIndex(context);
-    final screenW = MediaQuery.of(context).size.width;
 
-    // ── Responsive Scale Calculations ────────────────────────────────────────
-    // Scales dynamically using screen width percentages, bounded safely by clamps.
-    final dynamicHomeReelsSize = (screenW * 0.075).clamp(24.0, 28.0);
-    // Scan Bill and Profile no longer have a size of their own — all four nav
-    // items use dynamicHomeReelsSize now, which is what makes the whole row
-    // line up. The separate 0.095 scale that used to make them larger has been
-    // removed rather than left unused.
-    final dynamicFontSize = (screenW * 0.025).clamp(9.0, 11.0);
+    // The responsive icon/font sizing moved into ClaimitBottomBar along with
+    // the bar itself, so it is computed once, in one place, for all four
+    // screens that show it.
 
     return Scaffold(
       body: widget.child,
 
       // ── Yellow centred FAB ─────────────────────────────────────────────
-      floatingActionButton: SizedBox(
-        width: 68,
-        height: 68,
-        child: FloatingActionButton(
-          backgroundColor: const Color(0xFFEAB308),
-          elevation: 6,
-          shape: const CircleBorder(),
-          onPressed: () => _showFeaturedZones(context),
-          child: Image.asset(
-            "assets/icons/main_icon.png",
-            width: 54,
-            height: 54,
-            fit: BoxFit.contain,
-          ),
-        ),
-      ),
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => _showFeaturedZones(context)),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
       // ── Bottom App Bar (notched for FAB) ───────────────────────────────
-      bottomNavigationBar: BottomAppBar(
-        notchMargin: 10.0,
-        shape: const CircularNotchedRectangle(),
-        color: const Color.fromARGB(255, 20, 143, 208), 
-        elevation: 8,
-        padding: EdgeInsets.zero,
-        // Material's standard 56dp, down from 62. The row holds an icon
-        // (max 28) + 1 + a label (max ~13) = 42, so there is still ~14dp of
-        // slack at the largest icon and font this bar allows — it cannot
-        // overflow, and the content simply sits lower on the screen.
-        height: kBottomNavigationBarHeight,
-        child: Row(
-          children: [
-            // Left half
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _NavItem(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_rounded,
-                    label: 'Home',
-                    isSelected: sel == 0,
-                    onTap: () => context.go('/home'),
-                    // New nav icon set — all four drawn to one spec (92x92,
-                    // same stroke, same rounded caps) so they sit identically.
-                    // _NavItem tints them via BlendMode.srcIn, so the same
-                    // file serves both the normal and selected state.
-                    assetIcon: 'assets/images/nav_home.png',
-                    assetActiveIcon: 'assets/images/nav_home.png',
-                    iconSize: dynamicHomeReelsSize,
-                    fontSize: dynamicFontSize,
-                    // Zero, like the other three. The old 4dp inset made this
-                    // icon render smaller than its neighbours even at the same
-                    // iconSize — the new set is drawn with its own padding.
-                    assetPadding: EdgeInsets.zero,
-                  ),
-                  // Learn Claimit, in the slot that used to hold Reels.
-                  // Reels is still reachable as "Promo Reelz" in the Explore
-                  // Claimit strip and in the centre button's grid.
-                  //
-                  // assetIcon falls back to the Material icon below it if the
-                  // PNG is ever missing, so a bad asset path can't leave an
-                  // empty gap in the navigation bar.
-                  _NavItem(
-                    icon: Icons.school_outlined,
-                    activeIcon: Icons.school_rounded,
-                    label: 'Learn',
-                    isSelected: sel == 1,
-                    onTap: () => context.go('/learn'),
-                    // Bottom-nav only. 92x92 like icon5/icon7 beside it — the
-                    // old zone_learn.png is 139x158 and a different shape, so
-                    // it never matched its neighbours. The Explore Claimit
-                    // tile still uses zone_learn.png, unchanged.
-                    assetIcon: 'assets/images/nav_learn.png',
-                    assetActiveIcon: 'assets/images/nav_learn.png',
-                    iconSize: dynamicHomeReelsSize,
-                    fontSize: dynamicFontSize,
-                    assetPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            ),
-            
-            // Gap for FAB
-            const SizedBox(width: 72),
-            
-            // Right half
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Bottom padding lifts these two off the bar's lower edge.
-                  // The _NavItem centres itself in whatever height it is given,
-                  // so removing height from the bottom moves the content up by
-                  // half of it — layout-safe, unlike a Transform, which shifts
-                  // painting without telling the layout and can end up drawn
-                  // outside the bar.
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: _kNavLift),
-                    child: _NavItem(
-                      icon: Icons.qr_code_scanner_rounded,
-                      activeIcon: Icons.qr_code_scanner_rounded,
-                      label: 'Scan Bill',
-                      isSelected: false,
-                      onTap: () => context.push('/bill-reader'),
-                      assetIcon: 'assets/images/nav_scan.png',
-                      assetActiveIcon: 'assets/images/nav_scan.png',
-                      iconSize: dynamicHomeReelsSize,
-                      fontSize: dynamicFontSize,
-                      assetPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: _kNavLift),
-                    child: _NavItem(
-                      icon: Icons.person_outline_rounded,
-                      activeIcon: Icons.person_rounded,
-                      label: 'Profile',
-                      isSelected: sel == 3,
-                      onTap: () => context.go('/profile'),
-                      assetIcon: 'assets/images/nav_profile.png',
-                      assetActiveIcon: 'assets/images/nav_profile.png',
-                      iconSize: dynamicHomeReelsSize,
-                      fontSize: dynamicFontSize,
-                      assetPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      // One shared definition, in core/widgets/claimit_bottom_bar.dart —
+      // Local Finder, Select and Privilege render the very same widget,
+      // so the bar can never look different on those screens.
+      bottomNavigationBar: ClaimitBottomBar(currentIndex: sel),
     );
   }
 }
 
+
+/// Opens the Featured Zones sheet from anywhere.
+///
+/// The centre button exists on Local Finder, Select and Privilege too, and it
+/// has to do the same thing there as it does on the dashboard — so the sheet
+/// is reachable from outside this file rather than reimplemented.
+void showClaimitFeaturedZones(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isDismissible: true,
+    enableDrag: true,
+    isScrollControlled: true,
+    builder: (_) => const _FeaturedZonesSheet(),
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Featured Zones bottom sheet — what the centre button opens.
@@ -2155,108 +2042,4 @@ class _ZoneTile extends StatelessWidget {
 // Reusable Single Nav Item Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NavItem extends StatefulWidget {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final String? assetIcon;
-  final String? assetActiveIcon;
-  final double iconSize;      
-  final double fontSize;      
-  final EdgeInsets assetPadding;
 
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    this.assetIcon,
-    this.assetActiveIcon,
-    required this.iconSize,
-    required this.fontSize,
-    this.assetPadding = EdgeInsets.zero,
-  });
-
-  @override
-  State<_NavItem> createState() => _NavItemState();
-}
-
-class _NavItemState extends State<_NavItem> {
-  bool isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color;
-    if (widget.isSelected) {
-      color = const Color.fromARGB(255, 238, 255, 0); 
-    } else if (isHovered) {
-      color = Colors.yellow;
-    } else {
-      color = Colors.white;
-    }
-
-    final assetPath = widget.isSelected
-        ? (widget.assetActiveIcon ?? widget.assetIcon)
-        : widget.assetIcon;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => isHovered = true),
-      onExit: (_) => setState(() => isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 60, maxWidth: 100),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: widget.iconSize,
-                height: widget.iconSize,
-                child: Center(
-                  child: assetPath != null
-                      ? Padding(
-                          padding: widget.assetPadding,
-                          child: Image.asset(
-                            assetPath,
-                            fit: BoxFit.contain,
-                            color: color,
-                            colorBlendMode: BlendMode.srcIn,
-                            errorBuilder: (_, __, ___) => Icon(
-                              widget.isSelected ? widget.activeIcon : widget.icon,
-                              color: color,
-                              size: widget.iconSize,
-                            ),
-                          ),
-                        )
-                      : Icon(
-                          widget.isSelected ? widget.activeIcon : widget.icon,
-                          color: color,
-                          size: widget.iconSize,
-                        ),
-                ),
-              ),
-
-              const SizedBox(height: 1),
-
-              Text(
-                widget.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: widget.fontSize,
-                  fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.w600,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

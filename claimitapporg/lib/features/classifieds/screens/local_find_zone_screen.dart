@@ -7,6 +7,9 @@ import 'package:go_router/go_router.dart';
 import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
+import '../widgets/local_finder_bottom_bar.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../home/screens/home_screen.dart';
 import 'local_finds_screen.dart'
     show
         lfCall,
@@ -175,6 +178,12 @@ class _LocalFindZoneScreenState extends State<LocalFindZoneScreen> {
           ),
         ],
       ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const LocalFinderBottomBar(),
       body: Column(
         children: [
           if (_searchOpen)

@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../models/privilege_models.dart';
 import '../widgets/privilege_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen 5 — discount approved.
@@ -23,7 +25,12 @@ class PrivilegeApprovedScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: kPrivBg,
       appBar: const PrivilegeHeader(),
-      bottomNavigationBar: const PrivilegeBottomBar(current: 2),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 26, 16, 26),
         children: [

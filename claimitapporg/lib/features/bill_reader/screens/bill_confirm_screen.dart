@@ -170,6 +170,23 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
       setState(() => _claiming = false);
       _showAlreadyScannedDialog(shopName, amount, billDate);
       return;
+    } on InsufficientPointsException catch (e) {
+      // All-or-nothing: nothing was deducted, so tell them exactly how far
+      // short they are rather than showing a generic failure.
+      if (!mounted) return;
+      setState(() => _claiming = false);
+      _showInsufficientPointsDialog(e);
+      return;
+    } on AmountMismatchException catch (e) {
+      if (!mounted) return;
+      setState(() => _claiming = false);
+      _showAmountMismatchDialog(e);
+      return;
+    } on BillRejectedException catch (e) {
+      if (!mounted) return;
+      setState(() => _claiming = false);
+      _snack(e.message);
+      return;
     } catch (e) {
       if (!mounted) return;
       setState(() => _claiming = false);
@@ -180,6 +197,100 @@ class _BillConfirmScreenState extends State<BillConfirmScreen> {
     if (!mounted) return;
     setState(() => _claiming = false);
     context.pushReplacement('/bill-reader/success');
+  }
+
+  /// Not enough points for a Redeem bill. Nothing was spent, so the message is
+  /// about what they still need, not about a failure.
+  void _showInsufficientPointsDialog(InsufficientPointsException e) {
+    String pts(double v) =>
+        v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFF3E0), shape: BoxShape.circle),
+              child: const Icon(Icons.savings_rounded,
+                  size: 32, color: Color(0xFFF59E0B)),
+            ),
+            const SizedBox(height: 16),
+            const Text('Not enough points yet',
+                textAlign: TextAlign.center,
+                style:
+                    TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Text(
+              'This discount costs ${pts(e.required)} points and you have '
+              '${pts(e.available)}.\n\nScan ${pts(e.shortfall)} more points '
+              'worth of bills and it is yours — nothing was deducted.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 14, color: Color(0xFF64748B), height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Got it'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The server read a different total on the photo. Offer the manual-review
+  /// route rather than leaving the user stuck.
+  void _showAmountMismatchDialog(AmountMismatchException e) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE8F0FE), shape: BoxShape.circle),
+              child: const Icon(Icons.fact_check_rounded,
+                  size: 32, color: Color(0xFF1565C0)),
+            ),
+            const SizedBox(height: 16),
+            const Text("Let's double-check this bill",
+                textAlign: TextAlign.center,
+                style:
+                    TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Text(
+              e.message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 14, color: Color(0xFF64748B), height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showAlreadyScannedDialog(

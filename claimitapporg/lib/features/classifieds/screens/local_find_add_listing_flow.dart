@@ -9,7 +9,10 @@ import 'package:image_picker/image_picker.dart';
 import '../data/classified_categories.dart';
 import '../models/classified_post.dart';
 import '../services/classified_service.dart';
+import '../widgets/local_finder_bottom_bar.dart';
 import 'local_finds_screen.dart' show lfCurrentPosition;
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local Finds — "Register Your Business" (self-contained 3-step flow, per the
@@ -411,6 +414,12 @@ class _LocalFindAddListingFlowState extends State<LocalFindAddListingFlow> {
         title: const Text('Register Your Business',
             style: TextStyle(color: _blue, fontWeight: FontWeight.w700, fontSize: 18)),
       ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const LocalFinderBottomBar(),
       body: Column(
         children: [
           // Header card with progress

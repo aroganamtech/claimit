@@ -385,7 +385,16 @@ class BillRewardProvider extends ChangeNotifier {
         _showNewUserBonusPopup = true;
       }
     } catch (e) {
-      if (e is BillAlreadyScannedException) rethrow;
+      // A deliberate server REFUSAL must never fall through to the local
+      // fallback below — that would credit the reward anyway and hand a user
+      // who cannot afford the discount the discount. Only genuine transport
+      // failures (offline, timeout, 5xx) deserve the optimistic path.
+      if (e is BillAlreadyScannedException ||
+          e is InsufficientPointsException ||
+          e is AmountMismatchException ||
+          e is BillRejectedException) {
+        rethrow;
+      }
       AppError.friendly(e, '', context: 'BillSync');
       // Fallback: apply locally so the user still sees the result this session
       // Local fallback mirrors the server rule: earn on both types,

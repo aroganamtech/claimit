@@ -24,8 +24,19 @@ class SelectCategory {
   });
 }
 
-/// The 12 fixed categories, in the same display order as the client's icon
-/// sheet. Kept in sync with SELECT_CATEGORIES in the backend.
+/// The ten fixed categories, in the display order the client specified.
+/// Kept in sync with SELECT_CATEGORIES in the backend and with CATEGORY_IDS
+/// in the web backend's utils/select_bulk.py.
+///
+/// Ids were renamed to match the labels on 26 Sep 2026 (interior -> interiors,
+/// financial -> finance, career -> education) and Real Estate / Event Planners
+/// were dropped. Safe only because all professional data is being re-uploaded
+/// against the new ids — a rename without a re-upload leaves the old records in
+/// the database but invisible in the app.
+///
+/// iconAsset filenames still carry the OLD id in a few cases
+/// (sel_interior / sel_financial / sel_career) so the image files already
+/// placed in assets/images do not have to be renamed.
 const List<SelectCategory> kSelectCategories = [
   SelectCategory(
     id: 'doctors',
@@ -56,60 +67,46 @@ const List<SelectCategory> kSelectCategories = [
     color: Color(0xFF3B82F6),
   ),
   SelectCategory(
-    id: 'interior',
+    id: 'interiors',
     label: 'Interiors',
     iconAsset: 'assets/images/sel_interior.png',
     icon: Icons.chair_rounded,
     color: Color(0xFFEAB308),
   ),
   SelectCategory(
-    id: 'financial',
-    label: 'Financial Advisors',
-    iconAsset: 'assets/images/sel_financial.png',
-    icon: Icons.trending_up_rounded,
-    color: Color(0xFF16A34A),
-  ),
-  SelectCategory(
     id: 'business',
-    label: 'Business Consultants',
+    label: 'Business',
     iconAsset: 'assets/images/sel_business.png',
     icon: Icons.business_center_rounded,
     color: Color(0xFF8B5E3C),
   ),
   SelectCategory(
-    id: 'real_estate',
-    label: 'Real Estate',
-    iconAsset: 'assets/images/sel_real_estate.png',
-    icon: Icons.home_work_rounded,
-    color: Color(0xFF2563EB),
-  ),
-  SelectCategory(
     id: 'marketing',
-    label: 'Marketing Experts',
+    label: 'Marketing',
     iconAsset: 'assets/images/sel_marketing.png',
     icon: Icons.campaign_rounded,
     color: Color(0xFFEF4444),
   ),
   SelectCategory(
-    id: 'it_ai',
-    label: 'IT & AI Experts',
-    iconAsset: 'assets/images/sel_it_ai.png',
-    icon: Icons.memory_rounded,
-    color: Color(0xFF0EA5A5),
+    id: 'finance',
+    label: 'Finance',
+    iconAsset: 'assets/images/sel_financial.png',
+    icon: Icons.trending_up_rounded,
+    color: Color(0xFF16A34A),
   ),
   SelectCategory(
-    id: 'career',
-    label: 'Career Consultants',
+    id: 'education',
+    label: 'Education',
     iconAsset: 'assets/images/sel_career.png',
     icon: Icons.school_rounded,
     color: Color(0xFF7C3AED),
   ),
   SelectCategory(
-    id: 'events',
-    label: 'Event Planners',
-    iconAsset: 'assets/images/sel_events.png',
-    icon: Icons.celebration_rounded,
-    color: Color(0xFFEF4444),
+    id: 'it_ai',
+    label: 'IT & AI',
+    iconAsset: 'assets/images/sel_it_ai.png',
+    icon: Icons.memory_rounded,
+    color: Color(0xFF0EA5A5),
   ),
 ];
 

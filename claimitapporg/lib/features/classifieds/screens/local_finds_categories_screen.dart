@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/classified_categories.dart';
+import '../widgets/local_finder_bottom_bar.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../home/screens/home_screen.dart';
 import 'local_finds_screen.dart'
     show LfCategoriesGrid, LfDiscoverBanner, kLfBlue, kLfMuted;
 
@@ -70,6 +73,12 @@ class _LocalFindsCategoriesScreenState
           ),
         ],
       ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const LocalFinderBottomBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         children: [

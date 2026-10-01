@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/classified_post.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 class ClassifiedDetailScreen extends StatefulWidget {
   final ClassifiedPost post;
@@ -55,6 +57,10 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
     final initials = p.userName.isNotEmpty ? p.userName[0].toUpperCase() : '?';
 
     return Scaffold(
+      // No Scaffold FAB here on purpose. This screen stacks the WhatsApp/Call
+      // row above the nav bar, and a centerDocked FAB docks to the top of that
+      // whole stack — which left the button floating above the Call row. The
+      // bar draws its own centre button instead; see ClaimitBottomBar.
       backgroundColor: const Color(0xFFF8FAFC),
       body: CustomScrollView(
         slivers: [
@@ -340,10 +346,20 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
         ],
       ),
 
-      // ── Sticky bottom action bar ────────────────────────────────────────
-      bottomNavigationBar: Container(
+      // ── Sticky bottom action bar + app navigation ───────────────────────
+      // Two bars stacked, not one replacing the other: the Call / WhatsApp
+      // buttons are the point of this page and must stay reachable, while the
+      // nav bar is what makes Local Finder feel like the rest of the app.
+      // MainAxisSize.min so the Column takes only the height it needs —
+      // without it a Column in bottomNavigationBar tries to fill the screen.
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+        // Bottom padding reduced from 24 — the nav bar underneath now covers
+        // the gesture area, so the old inset would double up as dead space.
         padding:
-            const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            const EdgeInsets.fromLTRB(16, 12, 16, 12),
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [
@@ -398,6 +414,11 @@ class _ClassifiedDetailScreenState extends State<ClassifiedDetailScreen> {
             ),
           ],
         ),
+          ),
+          ClaimitBottomBar(
+            onCenterTap: () => showClaimitFeaturedZones(context),
+          ),
+        ],
       ),
     );
   }

@@ -862,10 +862,16 @@ def _scope_categories(scope: str) -> dict:
     if scope == "select":
         from utils.select_bulk import CATEGORY_LEGEND
         return dict(CATEGORY_LEGEND)
-    if scope in ("local_find", "classified"):
-        from utils.classified_bulk import categories_for
-        # These use the label itself as the id (that's what the app stores).
-        return {label: label for label in categories_for(scope)}
+    if scope == "local_find":
+        from utils.classified_bulk import LOCAL_FIND_CATEGORIES
+        # Local Finder stores the label itself — id and label are the same.
+        return {label: label for label in LOCAL_FIND_CATEGORIES}
+    if scope == "classified":
+        from utils.classified_bulk import CLASSIFIED_LABELS
+        # Classifieds stores an id and shows a label, like Select and
+        # Privilege do. They were the same string until 28 Sep 2026, which is
+        # why this used to be one branch.
+        return dict(CLASSIFIED_LABELS)
     return {}
 
 

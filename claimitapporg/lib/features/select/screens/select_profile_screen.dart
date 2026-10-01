@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../home/screens/home_screen.dart';
 import '../models/select_professional.dart';
 import '../services/select_service.dart';
 import '../widgets/select_common.dart';
@@ -112,7 +114,18 @@ class _SelectProfileScreenState extends State<SelectProfileScreen> {
                   ),
                 )
               : _content(pro),
-      bottomNavigationBar: pro == null ? null : _actionBar(),
+      // The Call/WhatsApp row with the app-wide bar beneath it. No Scaffold
+      // FAB: a centerDocked one would dock to the top of this whole Column and
+      // float above the Call row, so the bar draws its own centre button.
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (pro != null) _actionBar(),
+          ClaimitBottomBar(
+            onCenterTap: () => showClaimitFeaturedZones(context),
+          ),
+        ],
+      ),
     );
   }
 

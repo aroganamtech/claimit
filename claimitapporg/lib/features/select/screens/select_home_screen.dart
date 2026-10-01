@@ -3,8 +3,14 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
+import '../../../core/services/location_service.dart';
 import '../models/select_category.dart';
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
 import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — home.
@@ -25,13 +31,48 @@ class SelectHomeScreen extends StatefulWidget {
   State<SelectHomeScreen> createState() => _SelectHomeScreenState();
 }
 
-class _SelectHomeScreenState extends State<SelectHomeScreen> {
+class _SelectHomeScreenState extends State<SelectHomeScreen>
+    with LocationReloadMixin {
   final _searchCtrl = TextEditingController();
+
+  // ── Nearby professionals ──────────────────────────────────────────────────
+  // Same shape as Local Finder and Privilege, so the three features read as
+  // one product rather than three. The backend already sorts by distance and
+  // falls back when the radius is empty, so nothing new was needed server-side.
+  List<SelectProfessional> _nearby = const [];
+  bool _loadingNearby = true;
+
+  /// Favourites, per session — same affordance as the Local Finder card.
+  final Set<String> _liked = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNearby();
+  }
+
+  @override
+  void onLocationChanged() => _loadNearby();
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadNearby() async {
+    setState(() => _loadingNearby = true);
+    final items = await SelectService.instance.fetchProfessionals(
+      sort: 'nearby',
+      lat: LocationService.selectedLat,
+      lng: LocationService.selectedLng,
+      radiusKm: LocationService.radiusKm,
+    );
+    if (!mounted) return;
+    setState(() {
+      _nearby = items.take(6).toList();
+      _loadingNearby = false;
+    });
   }
 
   // Both entry points hand the list screen the same shaped map, so it never
@@ -50,287 +91,442 @@ class _SelectHomeScreenState extends State<SelectHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kSelBg,
-      bottomNavigationBar: const SelectBottomNav(current: 0),
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+      backgroundColor: Colors.white,
+      // Identical header to Local Finder and Privilege — logo, hairline
+      // divider, then the feature name in that feature's own colour. Select is
+      // gold; kSelYellow itself is unreadable as text on white, so the deeper
+      // kSelAccent carries the wordmark and kSelYellow the underline.
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: kSelAccent, size: 20),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+        ),
+        titleSpacing: 0,
+        title: Row(
           children: [
-            _header(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
-                child: _categoryGrid(),
+            Image.asset(
+              'assets/images/home_main_logo.png',
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Text('claimit',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1565C0))),
+            ),
+            const SizedBox(width: 8),
+            Container(width: 1.5, height: 20, color: const Color(0xFFD7DEE8)),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Select',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: kSelAccent,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18),
               ),
             ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'My Bookings',
+            icon: const Icon(Icons.event_note_rounded,
+                color: kSelAccent, size: 22),
+            onPressed: () => context.push('/select/bookings'),
+          ),
+        ],
+      ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
+      body: RefreshIndicator(
+        onRefresh: _loadNearby,
+        color: kSelAccent,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          children: [
+            _locationField(),
+            // Tightened at the client's request: the three stacked controls
+            // and the banner were sitting too far apart, pushing the cards
+            // below the fold.
+            const SizedBox(height: 6),
+            _searchField(),
+            const SizedBox(height: 8),
+            _banner(),
+            const SizedBox(height: 10),
+            _sectionHeader(
+                'Categories', () => context.push('/select/coverage')),
+            const SizedBox(height: 6),
+            _categoryGrid(),
+            const SizedBox(height: 6),
+            _nearbyHeader(),
+            const SizedBox(height: 10),
+            if (_loadingNearby)
+              const Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(
+                      child: CircularProgressIndicator(color: kSelAccent)))
+            else if (_nearby.isEmpty)
+              _emptyNearby()
+            else
+              ..._nearby.map(_nearbyCard),
+            const SizedBox(height: 14),
+            _registerButton(context),
           ],
         ),
       ),
     );
   }
 
-  // ── Yellow branded header ───────────────────────────────────────────────────
-  Widget _header() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFFD233), kSelYellow],
+  // ── Location ────────────────────────────────────────────────────────────
+  Widget _locationField() {
+    final label = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
+    );
+    return InkWell(
+      onTap: () => context.push('/location/pick'),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(22)),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 18, color: kSelAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      color: kSelInk,
+                      fontWeight: FontWeight.w500)),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: kSelMuted),
+          ],
+        ),
       ),
-      child: Column(
+    );
+  }
+
+  // ── Search — Select professionals only ──────────────────────────────────
+  Widget _searchField() => Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search_rounded, size: 19, color: kSelMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _submitSearch(),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Search trusted professionals',
+                  hintStyle: TextStyle(fontSize: 13.5, color: kSelMuted),
+                ),
+                style: const TextStyle(fontSize: 14, color: kSelInk),
+              ),
+            ),
+            GestureDetector(
+              onTap: _submitSearch,
+              child: const Icon(Icons.arrow_forward_rounded,
+                  size: 19, color: kSelAccent),
+            ),
+          ],
+        ),
+      );
+
+  Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent)),
+          GestureDetector(
+            onTap: onSeeAll,
+            child: const Text('See All',
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: kSelAccent)),
+          ),
+        ],
+      );
+
+  Widget _registerButton(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => context.push('/select/register'),
+          icon: const Icon(Icons.person_add_alt_1_rounded),
+          label: const Text('List Yourself'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kSelYellow,
+            foregroundColor: kSelOnYellow,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+
+  Widget _banner() => ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.asset(
+          'assets/images/select_banner.png',
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            height: 132,
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                colors: [kSelYellow, Color(0xFFFFD233)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Find',
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: kSelOnYellow,
+                        height: 1.1)),
+                Text('trusted professionals\nnear you.',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: kSelOnYellow,
+                        height: 1.25)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  /// "Nearby Businesses" — same header treatment as Local Finder and
+  /// Privilege, in Select's own colour.
+  Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Wordmark + back + bell
-          Row(
+          const Text(
+            'Nearby Businesses',
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent),
+          ),
+          const SizedBox(height: 4),
+          Container(width: 104, height: 2.5, color: kSelYellow),
+        ],
+      );
+
+  Widget _emptyNearby() => Container(
+        padding: const EdgeInsets.symmetric(vertical: 26),
+        alignment: Alignment.center,
+        child: const Text('No professionals here yet.',
+            style: TextStyle(color: kSelMuted)),
+      );
+
+  /// Compact row. The full card with photo, tags and Call/View buttons lives
+  /// on the list screen — this is a summary, not a second list.
+  // ── Nearby card ─────────────────────────────────────────────────────────
+  // Deliberately the same card Local Finder draws: 108px photo on the left,
+  // name + favourite on the first line, address underneath, then chips for the
+  // distance and the role. Tapping it opens the landing page.
+  Widget _nearbyCard(SelectProfessional p) {
+    final liked = _liked.contains(p.id);
+    return GestureDetector(
+      onTap: () => context.push('/select/professional', extra: p.id),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFEEF1F5)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)
+          ],
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              GestureDetector(
-                onTap: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go('/home');
-                  }
-                },
-                child: const Padding(
-                  padding: EdgeInsets.only(right: 6),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      size: 18, color: kSelOnYellow),
-                ),
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(14),
+                    bottomLeft: Radius.circular(14)),
+                child: _thumb(p),
               ),
-              // The app's own logo (home_main_logo.png already contains the
-              // icon + "claimit" wordmark — the same asset the home and
-              // dashboard headers use), with the "Select" sub-brand beside it.
-              // FittedBox keeps the pair on one line at any font scale.
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Image.asset(
-                        'assets/images/home_main_logo.png',
-                        height: 30,
-                        fit: BoxFit.contain,
-                        // Same fallback convention as the dashboard header.
-                        errorBuilder: (_, __, ___) => const Text(
-                          'claimit',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            color: kSelOnYellow,
-                            letterSpacing: -0.5,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(p.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: kSelInk)),
                           ),
-                        ),
+                          GestureDetector(
+                            onTap: () => setState(() => liked
+                                ? _liked.remove(p.id)
+                                : _liked.add(p.id)),
+                            child: Icon(
+                                liked
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                size: 20,
+                                color: liked ? Colors.redAccent : kSelAccent),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Select',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                          color: kSelOnYellow,
-                        ),
+                      const SizedBox(height: 4),
+                      Text(p.address.isNotEmpty
+                              ? p.address
+                              : [p.area, p.city].where((e) => e.isNotEmpty).join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, color: kSelMuted)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          if (p.distance.isNotEmpty)
+                            _chip(p.distance, accent: true),
+                          _chip(p.role.isNotEmpty ? p.role : p.categoryLabel),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.notifications_none_rounded,
-                  size: 24, color: kSelOnYellow),
             ],
           ),
-          const SizedBox(height: 2),
-          const Text(
-            'Trusted professionals near you',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF3A2E00),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Location chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            // Tappable — opens "Who's here?", which shows how many
-            // professionals this city has category by category, plus the
-            // nearby cities that have more. Changing the location itself is
-            // still one tap away, from that screen's own action. Not a const
-            // Row: ConstrainedBox has no const constructor (it asserts on its
-            // constraints), so the children are marked const individually.
-            child: GestureDetector(
-              onTap: () => context.push(
-                '/select/coverage',
-                // The place being browsed, not the city on the account. These
-                // were different values, which is why coverage counts never
-                // matched the location shown in the header.
-                extra: context.read<LocationProvider>().cityLabel,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, size: 15, color: Color(0xFFE53935)),
-                  const SizedBox(width: 5),
-                  // Constrained so a long area name ellipsises instead of
-                  // overflowing the chip.
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Text(
-                      context.select<LocationProvider, String>(
-                        (l) => l.selected?.display ?? 'Select Area',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: kSelInk,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  const Icon(Icons.keyboard_arrow_down_rounded,
-                      size: 18, color: kSelInk),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Search
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TextField(
-              controller: _searchCtrl,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _submitSearch(),
-              decoration: const InputDecoration(
-                hintText: 'Search professionals or services',
-                hintStyle: TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8)),
-                prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF94A3B8)),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  // ── Category grid ───────────────────────────────────────────────────────────
+  Widget _chip(String label, {bool accent = false}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: accent ? const Color(0xFFFFF4D6) : const Color(0xFFEFF3F8),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11.5,
+                color: accent ? kSelAccent : kSelInk,
+                fontWeight: FontWeight.w500)),
+      );
+
+  Widget _thumb(SelectProfessional p) {
+    final url = p.photoUrl;
+    if (url.isNotEmpty) {
+      return Image.network(url,
+          width: 108, height: 108, fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _thumbFallback());
+    }
+    return _thumbFallback();
+  }
+
+  Widget _thumbFallback() => Container(
+      width: 108,
+      height: 108,
+      color: const Color(0xFFEFF3F8),
+      child: const Icon(Icons.person_rounded, color: kSelAccent, size: 34));
+
+  /// draw, so the ten categories sit in two even rows.
   Widget _categoryGrid() {
-    return GridView.builder(
+    final iconSize = (MediaQuery.of(context).size.width / 6).clamp(52.0, 80.0);
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: kSelectCategories.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 5,
         mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        // Fixed height rather than childAspectRatio: an aspect ratio scales
-        // the cell height with its width, which left a lot of empty space in
-        // each tile on wider screens. 112px fits the 46px icon + a 2-line
-        // label like "5. Interior Designers" on every screen size.
-        mainAxisExtent: 112,
+        crossAxisSpacing: 6,
+        // Height stated outright rather than derived from the cell WIDTH:
+        // childAspectRatio made the tile shorter than the icon on a 360dp
+        // phone (overflow) and taller than it needed on a wide one (the gap
+        // under the labels). icon + 4 gap + ~15 label + 1 slack.
+        mainAxisExtent: iconSize + 20,
       ),
-      itemBuilder: (_, i) => _CategoryTile(
-        index: i + 1,
-        category: kSelectCategories[i],
-        onTap: () => _openCategory(kSelectCategories[i]),
-      ),
-    );
-  }
-}
-
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({
-    required this.index,
-    required this.category,
-    required this.onTap,
-  });
-
-  final int index;
-  final SelectCategory category;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Client-supplied illustrated icon (transparent PNG). Falls back
-            // to the Material icon if the asset is ever missing, so a tile is
-            // never blank.
-            Image.asset(
-              category.iconAsset,
-              width: 52,
-              height: 52,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: category.color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(13),
+      children: kSelectCategories
+          .map((c) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openCategory(c),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      c.iconAsset,
+                      width: iconSize,
+                      height: iconSize,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: const BoxDecoration(
+                            color: Color(0xFFFFF4D6), shape: BoxShape.circle),
+                        child: Icon(c.icon,
+                            size: iconSize * 0.5, color: kSelAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(c.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: kSelInk)),
+                    ),
+                  ],
                 ),
-                child: Icon(category.icon, size: 26, color: category.color),
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Flexible + 2 lines + ellipsis: the long names ("Business
-            // Consultants", "Financial Advisors") wrap neatly and can never
-            // overflow the tile.
-            Flexible(
-              child: Text(
-                '${category.label}',
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  height: 1.25,
-                  fontWeight: FontWeight.w600,
-                  color: kSelInk,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+              ))
+          .toList(),
     );
   }
 }

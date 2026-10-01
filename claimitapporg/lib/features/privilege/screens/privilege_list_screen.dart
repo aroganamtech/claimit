@@ -7,6 +7,8 @@ import '../../../core/providers/location_reload_mixin.dart';
 import '../models/privilege_models.dart';
 import '../services/privilege_service.dart';
 import '../widgets/privilege_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen 2 — partners in a category.
@@ -121,7 +123,12 @@ class _PrivilegeListScreenState extends State<PrivilegeListScreen>
     return Scaffold(
       backgroundColor: kPrivBg,
       appBar: const PrivilegeHeader(showBack: true),
-      bottomNavigationBar: const PrivilegeBottomBar(current: 1),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: Column(
         children: [
           Padding(

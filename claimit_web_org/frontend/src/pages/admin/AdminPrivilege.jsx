@@ -28,7 +28,7 @@ const TH = { textAlign: 'left', padding: '10px 12px', fontSize: 12, fontWeight: 
 const TD = { padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f2f2f2' }
 
 const BLANK = {
-  name: '', category: 'hotels', discount_percent: '', discount_label: '',
+  name: '', category: 'stay', discount_percent: '', discount_label: '',
   about: '', privilege_details: '', terms: '',
   area: '', city: '', state: '', pincode: '', address: '', phone: '',
   status: 'active',

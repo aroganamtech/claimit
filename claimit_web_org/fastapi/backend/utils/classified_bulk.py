@@ -35,24 +35,62 @@ from openpyxl.worksheet.datavalidation import DataValidation
 #   localClassifiedCategories → CLASSIFIED_CATEGORIES
 # A category the app doesn't know means the listing never appears under any
 # zone/tab in the app.
-# These are the values STORED on a listing, not what the app displays. The app
-# shows friendlier names for four of them (Services → "Home Services",
-# Fitness → "Fitness & Wellness", Stay → "Stay & Travel", Entertain →
-# "Entertainment") via LocalFindZone.displayLabel, deliberately leaving the
-# stored value alone so existing listings keep matching. Do not "correct" the
-# names here to match the app's labels — that would orphan every listing.
+# These are the values STORED on a listing. They must match LocalFindZone.label
+# in the app exactly — a mismatch does not show a wrong name, it makes the
+# listing vanish from its zone.
+#
+# "Entertain" became "Leisure" on 26 Sep 2026, with the listing data re-uploaded
+# against the new value. Renaming one of these WITHOUT a re-upload orphans every
+# listing already stored under the old name. "Stay" still displays as
+# "Stay & Travel" in the app via LocalFindZone.displayLabel — that one is a
+# display override, so the stored value below stays "Stay".
 LOCAL_FIND_CATEGORIES = [
     "Shop", "Eat", "Beauty", "Health", "Fitness", "Education",
-    "Services", "Auto", "Stay", "Entertain", "Finance", "Living",
+    "Services", "Auto", "Stay", "Leisure", "Finance", "Living",
     # 13th, added at the client's request. New, so its stored value is the
     # full name.
     "Professional Services",
 ]
 
+# Local Classifieds is the opposite of Local Finder above: a classified ad
+# stores the category ID, not the label, because that is what the app's
+# category tiles send as ?category= when filtering.
+#
+# This is a CHANGE of 28 Sep 2026. The importer used to store the label
+# ("Buy & Sell") while the app filtered on the id ("buy_sell"), so every
+# bulk-uploaded ad was invisible under its own category tile. Ads are being
+# re-uploaded against the ids below.
+#
+# The list was also cut from twelve to five at the client's request; the other
+# seven are gone from the app entirely (see classifiedLegacyCategories in
+# classified_categories.dart) and a row still using one is now rejected.
 CLASSIFIED_CATEGORIES = [
-    "Buy & Sell", "Vehicles", "Property", "Jobs", "Services", "Electronics",
-    "Pets", "Education", "Events", "Fashion", "Agriculture", "Living",
+    "buy_sell", "jobs", "services", "property", "community",
 ]
+
+# What an admin types in the sheet → the id stored on the ad. Covers the
+# display label, the id itself, and the obvious near-misses, so a sheet filled
+# in by hand does not fail on "Buy and Sell" or "Job".
+CLASSIFIED_LABELS = {
+    "buy_sell":  "Buy & Sell",
+    "jobs":      "Jobs",
+    "services":  "Services",
+    "property":  "Property",
+    "community": "Community",
+}
+
+_CLASSIFIED_ALIASES = {
+    "buy sell": "buy_sell", "buysell": "buy_sell", "buy": "buy_sell",
+    "sell": "buy_sell", "for sale": "buy_sell", "second hand": "buy_sell",
+    "job": "jobs", "vacancy": "jobs", "vacancies": "jobs",
+    "hiring": "jobs", "employment": "jobs", "recruitment": "jobs",
+    "service": "services", "home services": "services",
+    "properties": "property", "real estate": "property",
+    "realestate": "property", "rent": "property", "flat": "property",
+    "communities": "community", "notice": "community",
+    "noticeboard": "community", "events": "community",
+    "announcement": "community", "announcements": "community",
+}
 
 LOCAL_FIND_PLANS = ["free", "standard", "premium"]
 
@@ -64,19 +102,44 @@ def categories_for(listing_type: str) -> List[str]:
             else CLASSIFIED_CATEGORIES)
 
 
+def _norm(x: str) -> str:
+    return (str(x).strip().lower()
+            .replace(" & ", " and ").replace("&", "and")
+            .replace("_", " ").replace("-", " "))
+
+
 def resolve_category(value, listing_type: str) -> str:
-    """Excel cell → a category label the app recognises, or "" if unknown.
-    Matching is case-insensitive and tolerates '&' / 'and'."""
+    """Excel cell → the value to STORE on the listing, or "" if unknown.
+
+    The two products store different things, which is the whole reason this
+    function exists rather than a plain membership test:
+
+      • local_find  → the LABEL  ("Shop"), matching LocalFindZone.label
+      • classified  → the ID     ("buy_sell"), matching the app's category tiles
+
+    Matching is case-insensitive and tolerates '&' vs 'and', underscores and
+    hyphens, so "Buy & Sell", "buy_sell" and "buy and sell" all land on the
+    same id.
+    """
     s = str(value or "").strip()
     if not s:
         return ""
-    def norm(x: str) -> str:
-        return x.strip().lower().replace(" & ", " and ").replace("&", "and")
-    target = norm(s)
-    for label in categories_for(listing_type):
-        if norm(label) == target:
-            return label
-    return ""
+    target = _norm(s)
+
+    if listing_type == "local_find":
+        for label in LOCAL_FIND_CATEGORIES:
+            if _norm(label) == target:
+                return label
+        return ""
+
+    # Classifieds — accept the id, the display label, or a known variant.
+    for cid in CLASSIFIED_CATEGORIES:
+        if _norm(cid) == target:
+            return cid
+    for cid, label in CLASSIFIED_LABELS.items():
+        if _norm(label) == target:
+            return cid
+    return _CLASSIFIED_ALIASES.get(target, "")
 
 
 # ── Column specs (one per product — they collect different things) ────────────
@@ -169,7 +232,13 @@ def build_template_bytes(listing_type: str) -> bytes:
     headers = headers_for(listing_type)
     widths = _LF_WIDTHS if is_lf else _CL_WIDTHS
     example = _LF_EXAMPLE if is_lf else _CL_EXAMPLE
-    cats = categories_for(listing_type)
+    # What the dropdown OFFERS. Local Finder stores its label, so the two are
+    # the same string. Classifieds stores an id but an admin should be picking
+    # "Buy & Sell", not "buy_sell" — resolve_category() accepts either, so the
+    # sheet can stay readable without the importer losing anything.
+    cats = ([CLASSIFIED_LABELS[c] for c in CLASSIFIED_CATEGORIES]
+            if listing_type == "classified"
+            else categories_for(listing_type))
     product = "Local Finds" if is_lf else "Classifieds"
 
     wb = openpyxl.Workbook()

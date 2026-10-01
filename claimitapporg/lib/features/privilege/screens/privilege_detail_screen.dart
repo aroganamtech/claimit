@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/privilege_models.dart';
 import '../services/privilege_service.dart';
 import '../widgets/privilege_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen 3 — partner detail.
@@ -65,7 +67,12 @@ class _PrivilegeDetailScreenState extends State<PrivilegeDetailScreen> {
     return Scaffold(
       backgroundColor: kPrivBg,
       appBar: const PrivilegeHeader(showBack: true),
-      bottomNavigationBar: const PrivilegeBottomBar(current: 1),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : p == null

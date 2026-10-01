@@ -61,17 +61,30 @@ IST = timezone(timedelta(hours=5, minutes=30))
 PASS_VALID_MINUTES = 10
 
 # ── Categories ────────────────────────────────────────────────────────────────
-# Fixed catalogue, in the order the home grid draws them (3 x 3).
+# Fixed catalogue, in the order the home grid draws them.
+#
+# Every partner document stores its category by id, so an id renamed here is
+# only safe when the partner data is re-uploaded against the new ids — otherwise
+# the old partners stay in the database and become invisible in the app. That is
+# exactly what happened on 26 Sep 2026: the ids were brought into line with the
+# labels (hotels -> stay, jewellery -> premium, interiors -> home,
+# health -> wellness) and the catalogue was re-uploaded.
+#
+# This list must stay in step with kPrivilegeCategories in the Flutter app and
+# with CATEGORY_IDS in the web backend's utils/privilege_bulk.py. A category
+# missing from any one of them returns a zero count on the home grid even when
+# partners exist under it.
 PRIVILEGE_CATEGORIES = [
-    {"id": "hotels",     "label": "Hotels & Resorts"},
-    {"id": "travel",     "label": "Tours, Travel & Packages"},
-    {"id": "events",     "label": "Wedding & Events"},
-    {"id": "interiors",  "label": "Interiors & Furniture"},
-    {"id": "health",     "label": "Healthcare, Dental & Wellness"},
-    {"id": "auto",       "label": "Cars, Bikes & Auto Services"},
-    {"id": "education",  "label": "Education & Overseas Studies"},
-    {"id": "property",   "label": "Real Estate & Property"},
-    {"id": "jewellery",  "label": "Jewellery & Premium Retail"},
+    {"id": "stay",       "label": "Stay"},
+    {"id": "travel",     "label": "Travel"},
+    {"id": "dine",       "label": "Dine"},
+    {"id": "home",       "label": "Home"},
+    {"id": "wellness",   "label": "Wellness"},
+    {"id": "events",     "label": "Events"},
+    {"id": "auto",       "label": "Auto"},
+    {"id": "property",   "label": "Property"},
+    {"id": "education",  "label": "Education"},
+    {"id": "premium",    "label": "Premium"},
 ]
 
 _CATEGORY_LABELS = {c["id"]: c["label"] for c in PRIVILEGE_CATEGORIES}

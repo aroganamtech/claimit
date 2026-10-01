@@ -70,6 +70,36 @@ class BillService {
     if (response.statusCode == 409) {
       throw const BillAlreadyScannedException();
     }
+    // 422 carries a structured reason the user can act on. Without this the
+    // caller fell through to "Unable to submit bill. Please try again.", which
+    // tells someone who is 110 points short precisely nothing.
+    if (response.statusCode == 422) {
+      final d = response.data;
+      final detail = (d is Map && d['detail'] is Map)
+          ? (d['detail'] as Map).cast<String, dynamic>()
+          : const <String, dynamic>{};
+      final code = (detail['code'] ?? '').toString();
+      final msg  = (detail['message'] ?? '').toString();
+
+      if (code == 'insufficient_points') {
+        throw InsufficientPointsException(
+          message:   msg,
+          required:  (detail['required']  as num?)?.toDouble() ?? 0,
+          available: (detail['available'] as num?)?.toDouble() ?? 0,
+          shortfall: (detail['shortfall'] as num?)?.toDouble() ?? 0,
+        );
+      }
+      if (code == 'amount_mismatch') {
+        throw AmountMismatchException(
+          message: msg,
+          claimed: (detail['claimed_amount'] as num?)?.toDouble() ?? 0,
+          scanned: (detail['scanned_amount'] as num?)?.toDouble() ?? 0,
+        );
+      }
+      // shop_mismatch and anything else the server adds later — show its words
+      // rather than swallowing them.
+      if (msg.isNotEmpty) throw BillRejectedException(msg);
+    }
     AppError.friendly(Exception('Bill scan HTTP ${response.statusCode}'), '', context: 'BillScan');
     throw Exception('Unable to submit bill. Please try again.');
   }
@@ -260,4 +290,48 @@ class BillAlreadyScannedException implements Exception {
   const BillAlreadyScannedException();
   @override
   String toString() => 'BillAlreadyScannedException';
+}
+
+/// The server refused the scan and said why, in words meant for the user.
+class BillRejectedException implements Exception {
+  final String message;
+  const BillRejectedException(this.message);
+  @override
+  String toString() => message;
+}
+
+/// Redeem bill, and the wallet cannot cover the discount in full.
+///
+/// One point is worth ₹1, so a 10% discount on a ₹2,000 bill costs 200 points.
+/// The discount is all-or-nothing: a user who is short pays nothing and gets
+/// nothing, and [shortfall] is what they still need.
+class InsufficientPointsException implements Exception {
+  final String message;
+  final double required;
+  final double available;
+  final double shortfall;
+  const InsufficientPointsException({
+    required this.message,
+    required this.required,
+    required this.available,
+    required this.shortfall,
+  });
+  @override
+  String toString() => message;
+}
+
+/// The server read a different total on the photo than the app sent.
+/// Not an accusation — bills are hard to read — so the app should offer
+/// manual review rather than a dead end.
+class AmountMismatchException implements Exception {
+  final String message;
+  final double claimed;
+  final double scanned;
+  const AmountMismatchException({
+    required this.message,
+    required this.claimed,
+    required this.scanned,
+  });
+  @override
+  String toString() => message;
 }

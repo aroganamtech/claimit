@@ -231,3 +231,85 @@ class SelEmptyState extends StatelessWidget {
     );
   }
 }
+
+/// The feature's own four destinations, as a compact strip that sits directly
+/// under the AppBar.
+///
+/// They used to be the bottom bar, but the bottom of every screen now carries
+/// the app-wide [ClaimitBottomBar] — the same one the home page shows — so
+/// these moved up here rather than competing for the same edge. Implements
+/// PreferredSizeWidget so it drops straight into `AppBar(bottom: ...)`.
+class SelectTopNav extends StatelessWidget implements PreferredSizeWidget {
+  final int current;
+  const SelectTopNav({super.key, required this.current});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(44);
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({IconData icon, String label, String route})>[
+      (icon: Icons.home_rounded,      label: 'Home',     route: '/select'),
+      (icon: Icons.event_note_rounded,label: 'Bookings', route: '/select/bookings'),
+      (icon: Icons.chat_rounded,      label: 'Messages', route: '/select/messages'),
+      (icon: Icons.person_rounded,    label: 'Profile',  route: '/profile'),
+    ];
+
+    return Container(
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: kSelLine)),
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < items.length; i++)
+            Expanded(
+              child: InkWell(
+                onTap: () {
+                  if (i == current) return;
+                  context.go(items[i].route);
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(items[i].icon,
+                            size: 15,
+                            color: i == current ? kSelAccent : kSelMuted),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              items[i].label,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: i == current
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: i == current ? kSelAccent : kSelMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Container(
+                      height: 2,
+                      width: 26,
+                      color: i == current ? kSelAccent : Colors.transparent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

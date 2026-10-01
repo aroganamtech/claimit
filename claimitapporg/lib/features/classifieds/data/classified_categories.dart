@@ -199,11 +199,13 @@ class ClassifiedTopCategory {
   });
 }
 
-/// "Local Classified" tab — top-level posting categories, matching the
-/// Local Classifieds design (Buy & Sell, Vehicles, Property, Jobs, Services,
-/// Electronics, Pets, Education, Events, Fashion, Agriculture, Living).
-/// iconAsset images are cropped directly from the client's design artwork.
-const List<ClassifiedTopCategory> localClassifiedCategories = [
+/// Categories that existed before the 26 Sep 2026 redesign.
+///
+/// NOT offered anywhere in the UI any more — the client cut the list to five.
+/// It is kept only so [classifiedCategoryLabel] can still put a readable name
+/// on an ad that was posted under one of them; without it such an ad would
+/// show its raw stored value ("agriculture") on the card.
+const List<ClassifiedTopCategory> classifiedLegacyCategories = [
   ClassifiedTopCategory(id: 'buy_sell',    name: 'Buy & Sell',  icon: Icons.shopping_bag_rounded,    iconAsset: 'assets/images/lc_buy_sell.png',    category: 'buy_sell'),
   ClassifiedTopCategory(id: 'vehicle',     name: 'Vehicles',    icon: Icons.directions_car_rounded,  iconAsset: 'assets/images/lc_vehicle.png',     category: 'vehicle'),
   ClassifiedTopCategory(id: 'property',    name: 'Property',    icon: Icons.apartment_rounded,       iconAsset: 'assets/images/lc_property.png',    category: 'property'),
@@ -217,6 +219,25 @@ const List<ClassifiedTopCategory> localClassifiedCategories = [
   ClassifiedTopCategory(id: 'agriculture', name: 'Agriculture', icon: Icons.agriculture_rounded,      iconAsset: 'assets/images/lc_agriculture.png', category: 'agriculture'),
   ClassifiedTopCategory(id: 'living',      name: 'Living',      icon: Icons.weekend_rounded,          iconAsset: 'assets/images/lc_living.png',      category: 'living'),
 ];
+
+/// The five Local Classifieds categories, in the order of the client's design.
+///
+/// This is the ONLY list the UI offers — the home row, the posting flow, the
+/// browse screens and the list filters all read it, so the other twelve are
+/// hidden everywhere rather than just off the home page. More are expected;
+/// adding one here is the whole change, because every grid sizes itself from
+/// the list length.
+const List<ClassifiedTopCategory> localClassifiedCategories = [
+  ClassifiedTopCategory(id: 'buy_sell',  name: 'Buy & Sell', icon: Icons.shopping_bag_rounded, iconAsset: 'assets/images/lc_buy_sell.png',  category: 'buy_sell'),
+  ClassifiedTopCategory(id: 'jobs',      name: 'Jobs',       icon: Icons.work_rounded,         iconAsset: 'assets/images/lc_jobs.png',      category: 'jobs'),
+  ClassifiedTopCategory(id: 'services',  name: 'Services',   icon: Icons.handyman_rounded,     iconAsset: 'assets/images/lc_services.png',  category: 'services'),
+  ClassifiedTopCategory(id: 'property',  name: 'Property',   icon: Icons.apartment_rounded,    iconAsset: 'assets/images/lc_property.png',  category: 'property'),
+  ClassifiedTopCategory(id: 'community', name: 'Community',  icon: Icons.groups_rounded,       iconAsset: 'assets/images/lc_community.png', category: 'community'),
+];
+
+/// Alias kept so the home screen reads as what it draws.
+const List<ClassifiedTopCategory> localClassifiedHomeCategories =
+    localClassifiedCategories;
 
 /// "Local Helpers" tab — every existing service subcategory flattened into
 /// one grid (no nested "view all" grouping). Reuses the existing nested
@@ -350,7 +371,7 @@ const List<LocalFindZone> localFindZones = [
   LocalFindZone(
     id: 'fitness',
     label: 'Fitness',                       // stored — do not change
-    displayLabel: 'Fitness & Wellness',
+    displayLabel: 'Fitness',
     icon: Icons.fitness_center_rounded,
     iconAsset: 'assets/images/lf_fitness.png',
     subcategories: [
@@ -379,7 +400,7 @@ const List<LocalFindZone> localFindZones = [
   LocalFindZone(
     id: 'services',
     label: 'Services',                      // stored — do not change
-    displayLabel: 'Home Services',
+    displayLabel: 'Services',
     icon: Icons.handyman_rounded,
     iconAsset: 'assets/images/lf_services.png',
     subcategories: [
@@ -433,8 +454,10 @@ const List<LocalFindZone> localFindZones = [
   ),
   LocalFindZone(
     id: 'entertain',
-    label: 'Entertain',                     // stored — do not change
-    displayLabel: 'Entertainment',
+    // Stored label, renamed Entertain -> Leisure on 26 Sep 2026 with the
+    // listing data re-uploaded against it. The id stays `entertain` — it is
+    // only used in this file and in the asset filename, never stored.
+    label: 'Leisure',
     icon: Icons.theaters_rounded,
     iconAsset: 'assets/images/lf_entertain.png',
     subcategories: [
@@ -492,7 +515,8 @@ const List<LocalFindZone> localFindZones = [
     label: 'Professional Services',
     icon: Icons.business_center_rounded,
     subcategories: [
-      ClassifiedSubcategory(name: 'Lawyers',                icon: Icons.gavel_rounded),
+      ClassifiedSubcategory(name: 'Lawyers',                icon: Icons.gavel_rounded),   // professional zone
+
       ClassifiedSubcategory(name: 'Chartered Accountants',  icon: Icons.calculate_rounded),
       ClassifiedSubcategory(name: 'Architects',             icon: Icons.architecture_rounded),
       ClassifiedSubcategory(name: 'Consultants',            icon: Icons.business_center_rounded),
@@ -503,3 +527,25 @@ const List<LocalFindZone> localFindZones = [
     ],
   ),
 ];
+
+/// The ten zones the Local Finder HOME grid shows, in the client's order.
+///
+/// `localFindZones` above still holds all thirteen. `stay`, `living` and
+/// `professional` stay defined and remain reachable from the Categories
+/// screen — deleting them would leave every business already filed under
+/// those zones showing a blank category and unreachable in the app.
+///
+/// So this is a display shortlist, not a data change. Reorder it freely; add
+/// or remove ids here and only the home grid changes.
+const List<String> kLocalFindHomeZoneIds = [
+  'shop', 'eat', 'beauty', 'health', 'fitness',
+  'services', 'edu', 'auto', 'fin', 'entertain',
+];
+
+List<LocalFindZone> get localFindHomeZones {
+  final byId = {for (final z in localFindZones) z.id: z};
+  return [
+    for (final id in kLocalFindHomeZoneIds)
+      if (byId.containsKey(id)) byId[id]!,
+  ];
+}

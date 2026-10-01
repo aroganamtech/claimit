@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../models/select_chat.dart';
 import '../services/select_service.dart';
 import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — Messages tab.
@@ -49,7 +51,12 @@ class _SelectMessagesScreenState extends State<SelectMessagesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kSelBg,
-      bottomNavigationBar: const SelectBottomNav(current: 2),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: Column(
         children: [
           _blueHeader(),

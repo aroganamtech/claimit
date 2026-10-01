@@ -35,52 +35,67 @@ class PrivilegeCategory {
   });
 }
 
-/// The nine categories, in the order the 3x3 home grid draws them.
-/// Ids match PRIVILEGE_CATEGORIES in the backend's routes/privilege.py.
+/// The ten categories, in the order the home grid draws them.
+///
+/// Ids match PRIVILEGE_CATEGORIES in the backend's routes/privilege.py and
+/// CATEGORY_IDS in the web backend's utils/privilege_bulk.py. All three lists
+/// must agree — a category missing from any one of them reads as a zero count
+/// on the home grid even when partners exist under it.
+///
+/// Ids were renamed to match the labels on 26 Sep 2026 (hotels -> stay,
+/// jewellery -> premium, and so on). That is only safe because all partner
+/// data is being re-uploaded against the new ids. Renaming an id WITHOUT
+/// re-uploading detaches every partner filed under the old one: still in the
+/// database, invisible in the app.
 const List<PrivilegeCategory> kPrivilegeCategories = [
   PrivilegeCategory(
-    id: 'hotels', label: 'Hotels & Resorts',
-    iconAsset: 'assets/images/priv_hotels.jpeg',
+    id: 'stay', label: 'Stay',
+    iconAsset: 'assets/images/priv_stay.png',
     icon: Icons.apartment_rounded, color: Color(0xFFF59E0B),
   ),
   PrivilegeCategory(
-    id: 'travel', label: 'Tours, Travel & Packages',
-    iconAsset: 'assets/images/priv_travel.jpeg',
+    id: 'travel', label: 'Travel',
+    iconAsset: 'assets/images/priv_travel.png',
     icon: Icons.flight_takeoff_rounded, color: Color(0xFF3B82F6),
   ),
   PrivilegeCategory(
-    id: 'events', label: 'Wedding & Events',
-    iconAsset: 'assets/images/priv_events.jpeg',
-    icon: Icons.celebration_rounded, color: Color(0xFFEC4899),
+    id: 'dine', label: 'Dine',
+    iconAsset: 'assets/images/priv_dine.png',
+    icon: Icons.restaurant_rounded, color: Color(0xFFF97316),
   ),
   PrivilegeCategory(
-    id: 'interiors', label: 'Interiors & Furniture',
-    iconAsset: 'assets/images/priv_interiors.jpeg',
+    id: 'home', label: 'Home',
+    iconAsset: 'assets/images/priv_home.png',
     icon: Icons.chair_rounded, color: Color(0xFFEF4444),
   ),
   PrivilegeCategory(
-    id: 'health', label: 'Healthcare, Dental & Wellness',
-    iconAsset: 'assets/images/priv_health.jpeg',
+    id: 'wellness', label: 'Wellness',
+    iconAsset: 'assets/images/priv_wellness.png',
     icon: Icons.medical_services_rounded, color: Color(0xFF10B981),
   ),
   PrivilegeCategory(
-    id: 'auto', label: 'Cars, Bikes & Auto Services',
-    iconAsset: 'assets/images/priv_auto.jpeg',
+    id: 'events', label: 'Events',
+    iconAsset: 'assets/images/priv_events.png',
+    icon: Icons.celebration_rounded, color: Color(0xFFEC4899),
+  ),
+  PrivilegeCategory(
+    id: 'auto', label: 'Auto',
+    iconAsset: 'assets/images/priv_auto.png',
     icon: Icons.directions_car_rounded, color: Color(0xFF06B6D4),
   ),
   PrivilegeCategory(
-    id: 'education', label: 'Education & Overseas Studies',
-    iconAsset: 'assets/images/priv_education.jpeg',
-    icon: Icons.school_rounded, color: Color(0xFFEAB308),
-  ),
-  PrivilegeCategory(
-    id: 'property', label: 'Real Estate & Property',
-    iconAsset: 'assets/images/priv_property.jpeg',
+    id: 'property', label: 'Property',
+    iconAsset: 'assets/images/priv_property.png',
     icon: Icons.home_work_rounded, color: Color(0xFFA16207),
   ),
   PrivilegeCategory(
-    id: 'jewellery', label: 'Jewellery & Premium Retail',
-    iconAsset: 'assets/images/priv_jewellery.jpeg',
+    id: 'education', label: 'Education',
+    iconAsset: 'assets/images/priv_education.png',
+    icon: Icons.school_rounded, color: Color(0xFFEAB308),
+  ),
+  PrivilegeCategory(
+    id: 'premium', label: 'Premium',
+    iconAsset: 'assets/images/priv_premium.png',
     icon: Icons.diamond_rounded, color: Color(0xFFD946EF),
   ),
 ];

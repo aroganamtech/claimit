@@ -66,7 +66,10 @@ class _SuccessScreenState extends State<SuccessScreen>
     // Navigate away after 2 seconds
     Future.delayed(const Duration(seconds: 2), () {
       if (!mounted) return;
-      context.go('/location');
+      // The new app-wide picker (Near Me / search / Recent / Saved), not the
+      // older '/location' screen — whatever is chosen here is the location
+      // every feature then searches around.
+      context.go('/location/pick');
     });
   }
 
