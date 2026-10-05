@@ -15,11 +15,10 @@ import '../services/classified_service.dart';
 import '../widgets/local_finder_bottom_bar.dart';
 import '../../../core/widgets/claimit_bottom_bar.dart';
 import '../../../features/home/screens/home_screen.dart';
-import '../../../core/widgets/spot_promo_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local Finds — "Discover Local Businesses" home. Banner + Register, a 12-zone
-// category grid (See All → Categories screen), and a Spot Promos list.
+// category grid (See All → Categories screen), and a Nearby Businesses list.
 // Kept as LocalFindsScreen so existing routing is unaffected.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -286,7 +285,7 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
               // matched, because cutting search results at 10 silently hides
               // the thing the user was looking for.
               ...(_query.trim().isEmpty ? _visible.take(10) : _visible)
-                  .map(_promoCard),
+                  .map((b) => _businessCard(context, b)),
             const SizedBox(height: 14),
             _registerButton(context),
           ],
@@ -394,14 +393,14 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
     );
   }
 
-  /// "Spot Promos" with the red underline from the design.
+  /// "Nearby Businesses" with the red underline from the design.
   Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GestureDetector(
             onTap: () => context.push('/local-finds/categories'),
             child: const Text(
-              'Spot Promos',
+              'Nearby Businesses',
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w800, color: kLfBlue),
             ),
@@ -440,6 +439,123 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
         ],
       );
 
+  // ── Nearby business card (image + name + location + chips + heart) ──────────
+  Widget _businessCard(BuildContext context, ClassifiedPost b) {
+    final name = b.businessName.isNotEmpty ? b.businessName : b.title;
+    final id = b.id.isNotEmpty ? b.id : name;
+    final liked = _liked.contains(id);
+    final dist = lfDistanceLabel(_me, b.latitude, b.longitude);
+    final cat = b.subcategory.isNotEmpty ? b.subcategory : b.category;
+    return GestureDetector(
+      onTap: () => context.push('/classified/detail', extra: b),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFEEF1F5)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
+              child: _thumb(b),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 15.5, fontWeight: FontWeight.w700, color: kLfInk)),
+                        ),
+                        GestureDetector(
+                          onTap: () => setState(() =>
+                              liked ? _liked.remove(id) : _liked.add(id)),
+                          child: Icon(
+                              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                              size: 20, color: liked ? Colors.redAccent : kLfBlue),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                        b.address.isNotEmpty
+                            ? b.address
+                            : (b.area.isNotEmpty ? b.area : cat),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, color: kLfMuted)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (dist != null) _chip(dist, accent: true),
+                        _chip(cat),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, {bool accent = false}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: accent ? const Color(0xFFE3EEFC) : const Color(0xFFEFF3F8),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11.5,
+                color: accent ? kLfBlue : kLfInk,
+                fontWeight: FontWeight.w500)),
+      );
+
+  Widget _thumb(ClassifiedPost b) {
+    if (b.photos.isNotEmpty) {
+      final raw = b.photos.first;
+      // Two kinds of photo live in this field: a listing posted from the app
+      // stores base64, while an admin bulk upload stores an S3 image the API
+      // hands back as a URL. Only base64 used to be handled, so every
+      // bulk-uploaded business showed the grey placeholder instead of its
+      // picture.
+      if (raw.startsWith('http')) {
+        return Image.network(raw,
+            width: 108, height: 108, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _thumbFallback());
+      }
+      try {
+        return Image.memory(base64Decode(raw),
+            width: 108, height: 108, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _thumbFallback());
+      } catch (_) {}
+    }
+    return _thumbFallback();
+  }
+
+  Widget _thumbFallback() => Container(
+      width: 108, height: 108, color: const Color(0xFFEFF3F8),
+      child: const Icon(Icons.storefront_rounded, color: kLfBlue, size: 34));
+
   Widget _emptyNearby() => Container(
         padding: const EdgeInsets.all(24),
         alignment: Alignment.center,
@@ -462,34 +578,6 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
           ),
         ),
       );
-
-  /// One Spot Promo, drawn by the shared card so this list is identical to
-  /// Nearby Deals. A Local Finder listing has no explicit offer field, so the
-  /// plan tier stands in when the business has paid for one.
-  Widget _promoCard(ClassifiedPost b) {
-    final name = b.businessName.isNotEmpty ? b.businessName : b.title;
-    final id   = b.id.isNotEmpty ? b.id : name;
-    final dist = lfDistanceLabel(_me, b.latitude, b.longitude);
-    return SpotPromoCard(
-      promo: SpotPromo(
-        id:       id,
-        name:     name,
-        location: b.address.isNotEmpty ? b.address : b.area,
-        offer:    b.plan == 'premium'
-            ? 'Premium partner'
-            : (b.plan == 'standard' ? 'Verified partner' : ''),
-        distance: dist ?? '',
-        category: b.subcategory.isNotEmpty ? b.subcategory : b.category,
-        image:    b.photos.isNotEmpty ? b.photos.first : '',
-        fallbackIcon: Icons.storefront_rounded,
-      ),
-      accent:      kLfBlue,
-      isFavourite: _liked.contains(id),
-      onFavourite: () => setState(() =>
-          _liked.contains(id) ? _liked.remove(id) : _liked.add(id)),
-      onTap: () => context.push('/classified/detail', extra: b),
-    );
-  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -679,5 +767,4 @@ class LfCategoriesGrid extends StatelessWidget {
         decoration: const BoxDecoration(color: kLfBanner, shape: BoxShape.circle),
         child: Icon(z.icon, size: size * 0.5, color: kLfBlue),
       );
-
 }

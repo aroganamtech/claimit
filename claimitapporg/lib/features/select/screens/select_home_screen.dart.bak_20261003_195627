@@ -11,7 +11,6 @@ import '../services/select_service.dart';
 import '../widgets/select_common.dart';
 import '../../../core/widgets/claimit_bottom_bar.dart';
 import '../../../features/home/screens/home_screen.dart';
-import '../../../core/widgets/spot_promo_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — home.
@@ -180,7 +179,7 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
             else if (_nearby.isEmpty)
               _emptyNearby()
             else
-              ..._nearby.map(_promoCard),
+              ..._nearby.map(_nearbyCard),
             const SizedBox(height: 14),
             _registerButton(context),
           ],
@@ -336,13 +335,13 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
         ),
       );
 
-  /// "Spot Promos" — same header treatment as Local Finder and
+  /// "Nearby Businesses" — same header treatment as Local Finder and
   /// Privilege, in Select's own colour.
   Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Spot Promos',
+            'Nearby Businesses',
             style: TextStyle(
                 fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent),
           ),
@@ -357,6 +356,124 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
         child: const Text('No professionals here yet.',
             style: TextStyle(color: kSelMuted)),
       );
+
+  /// Compact row. The full card with photo, tags and Call/View buttons lives
+  /// on the list screen — this is a summary, not a second list.
+  // ── Nearby card ─────────────────────────────────────────────────────────
+  // Deliberately the same card Local Finder draws: 108px photo on the left,
+  // name + favourite on the first line, address underneath, then chips for the
+  // distance and the role. Tapping it opens the landing page.
+  Widget _nearbyCard(SelectProfessional p) {
+    final liked = _liked.contains(p.id);
+    return GestureDetector(
+      onTap: () => context.push('/select/professional', extra: p.id),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFEEF1F5)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)
+          ],
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(14),
+                    bottomLeft: Radius.circular(14)),
+                child: _thumb(p),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(p.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: kSelInk)),
+                          ),
+                          GestureDetector(
+                            onTap: () => setState(() => liked
+                                ? _liked.remove(p.id)
+                                : _liked.add(p.id)),
+                            child: Icon(
+                                liked
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                size: 20,
+                                color: liked ? Colors.redAccent : kSelAccent),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(p.address.isNotEmpty
+                              ? p.address
+                              : [p.area, p.city].where((e) => e.isNotEmpty).join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, color: kSelMuted)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          if (p.distance.isNotEmpty)
+                            _chip(p.distance, accent: true),
+                          _chip(p.role.isNotEmpty ? p.role : p.categoryLabel),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, {bool accent = false}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: accent ? const Color(0xFFFFF4D6) : const Color(0xFFEFF3F8),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11.5,
+                color: accent ? kSelAccent : kSelInk,
+                fontWeight: FontWeight.w500)),
+      );
+
+  Widget _thumb(SelectProfessional p) {
+    final url = p.photoUrl;
+    if (url.isNotEmpty) {
+      return Image.network(url,
+          width: 108, height: 108, fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _thumbFallback());
+    }
+    return _thumbFallback();
+  }
+
+  Widget _thumbFallback() => Container(
+      width: 108,
+      height: 108,
+      color: const Color(0xFFEFF3F8),
+      child: const Icon(Icons.person_rounded, color: kSelAccent, size: 34));
 
   /// draw, so the ten categories sit in two even rows.
   Widget _categoryGrid() {
@@ -412,26 +529,4 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
           .toList(),
     );
   }
-
-  /// One Spot Promo — the same card Nearby Deals draws.
-  Widget _promoCard(SelectProfessional p) => SpotPromoCard(
-        promo: SpotPromo(
-          id:       p.id,
-          name:     p.name,
-          location: p.address.isNotEmpty
-              ? p.address
-              : [p.area, p.city].where((e) => e.isNotEmpty).join(', '),
-          offer:    p.offerText.isNotEmpty ? p.offerText : p.role,
-          distance: p.distance,
-          category: p.categoryLabel,
-          image:    p.photoUrl,
-          fallbackIcon: Icons.person_rounded,
-        ),
-        accent:      kSelAccent,
-        isFavourite: _liked.contains(p.id),
-        onFavourite: () => setState(() => _liked.contains(p.id)
-            ? _liked.remove(p.id)
-            : _liked.add(p.id)),
-        onTap: () => context.push('/select/professional', extra: p.id),
-      );
 }

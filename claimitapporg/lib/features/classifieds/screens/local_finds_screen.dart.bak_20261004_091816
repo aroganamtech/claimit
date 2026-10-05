@@ -462,34 +462,6 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
           ),
         ),
       );
-
-  /// One Spot Promo, drawn by the shared card so this list is identical to
-  /// Nearby Deals. A Local Finder listing has no explicit offer field, so the
-  /// plan tier stands in when the business has paid for one.
-  Widget _promoCard(ClassifiedPost b) {
-    final name = b.businessName.isNotEmpty ? b.businessName : b.title;
-    final id   = b.id.isNotEmpty ? b.id : name;
-    final dist = lfDistanceLabel(_me, b.latitude, b.longitude);
-    return SpotPromoCard(
-      promo: SpotPromo(
-        id:       id,
-        name:     name,
-        location: b.address.isNotEmpty ? b.address : b.area,
-        offer:    b.plan == 'premium'
-            ? 'Premium partner'
-            : (b.plan == 'standard' ? 'Verified partner' : ''),
-        distance: dist ?? '',
-        category: b.subcategory.isNotEmpty ? b.subcategory : b.category,
-        image:    b.photos.isNotEmpty ? b.photos.first : '',
-        fallbackIcon: Icons.storefront_rounded,
-      ),
-      accent:      kLfBlue,
-      isFavourite: _liked.contains(id),
-      onFavourite: () => setState(() =>
-          _liked.contains(id) ? _liked.remove(id) : _liked.add(id)),
-      onTap: () => context.push('/classified/detail', extra: b),
-    );
-  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -680,4 +652,31 @@ class LfCategoriesGrid extends StatelessWidget {
         child: Icon(z.icon, size: size * 0.5, color: kLfBlue),
       );
 
+  /// One Spot Promo, drawn by the shared card so this list is identical to
+  /// Nearby Deals. A Local Finder listing has no explicit offer field, so the
+  /// plan tier stands in when the business has paid for one.
+  Widget _promoCard(ClassifiedPost b) {
+    final name = b.businessName.isNotEmpty ? b.businessName : b.title;
+    final id   = b.id.isNotEmpty ? b.id : name;
+    final dist = lfDistanceLabel(_me, b.latitude, b.longitude);
+    return SpotPromoCard(
+      promo: SpotPromo(
+        id:       id,
+        name:     name,
+        location: b.address.isNotEmpty ? b.address : b.area,
+        offer:    b.plan == 'premium'
+            ? 'Premium partner'
+            : (b.plan == 'standard' ? 'Verified partner' : ''),
+        distance: dist ?? '',
+        category: b.subcategory.isNotEmpty ? b.subcategory : b.category,
+        image:    b.photos.isNotEmpty ? b.photos.first : '',
+        fallbackIcon: Icons.storefront_rounded,
+      ),
+      accent:      kLfBlue,
+      isFavourite: _liked.contains(id),
+      onFavourite: () => setState(() =>
+          _liked.contains(id) ? _liked.remove(id) : _liked.add(id)),
+      onTap: () => context.push('/classified/detail', extra: b),
+    );
+  }
 }
