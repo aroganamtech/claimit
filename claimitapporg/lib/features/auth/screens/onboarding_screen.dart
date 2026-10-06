@@ -380,19 +380,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardingSlide(
       title: 'SHOP',
       description:
-          'Shop at Claimit affiliates to earn\n100% Reward Points plus 1% Cashback\non your daily purchases.',
-      imageAsset: 'assets/images/onb1.jpeg',
+          'Shop at Claimit affiliates to earn\nReward Points worth 100% of your bill\nplus 2% Cashback on daily purchases.',
+      imageAsset: 'assets/images/onb1.png',
     ),
     _OnboardingSlide(
       title: 'SCAN',
       description:
-          'Scan your paper bill in the app\nto instantly collect your points and cash\ndirectly into your digital wallets.',
+          'Scan your paper bill in the app\nto instantly receive Reward Points and\n2% Cashback in your digital wallets.',
       imageAsset: 'assets/images/onb2.jpeg',
     ),
     _OnboardingSlide(
       title: 'ENJOY',
       description:
-          'Enjoy Exclusive, Unbeatable Discounts\n+1% extra Cashback by using your reward\npoints at nearby affiliated businesses.',
+          'Use your Reward Points at nearby\naffiliate businesses for exclusive\ndiscounts plus 2% extra Cashback.',
       imageAsset: 'assets/images/onb3.jpeg',
     ),
   ];
