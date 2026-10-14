@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Admin → Create Ad. Lets an admin publish the same 4 ad types as advertisers
+// Admin → Create Ad. Lets an admin publish the same ad types as advertisers
 // WITHOUT payment. Uploads media directly to S3 (presigned URL) exactly like
 // the advertiser flow, then POSTs /admin/ads/create.
 // ─────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,14 @@ const AD_TYPES = [
   { key: 'brand_deals',  label: 'Brand Deals Ad',     note: 'Thumbnail + details',                        price: '₹700/week' },
   { key: 'nearby_deals', label: 'Nearby Deals Ad',    note: 'Thumbnail + details',                        price: '₹1050/week (premium)' },
   { key: 'promo_reelz',  label: 'Promo Reelz Ad',     note: 'Video / static thumbnail',                   price: '₹700/week' },
+  { key: 'spot_promos',  label: 'Spot Promos Ad',     note: 'One card, shown on ALL 3 pages — Local Finder, Select & Privilege', price: '₹1050/week (premium)' },
+  { key: 'special_cards', label: 'Special Card Ad',   note: 'Recorded now; app placement comes later',    price: '₹700/week' },
+  { key: 'notification', label: 'Push Notification',  note: 'Sent once to every app user near the pincode', price: '₹150/send' },
 ]
+
+// Types that use the deal card fields. Grouped so adding another card
+// product is one edit rather than four.
+const CARD_TYPES = ['brand_deals', 'nearby_deals', 'spot_promos', 'special_cards']
 
 // Admin-only run lengths. An advertiser always buys the weekly cycle; admin
 // is not selling anything, so admin can also start immediately or never stop.
@@ -28,6 +35,9 @@ const label = { fontSize: 13, fontWeight: 600, color: '#333' }
 
 export default function AdminCreateAd() {
   const [adType, setAdType] = useState('home_banner')
+  // "Also announce this ad by push." Never offered on the notification ad
+  // itself, which already IS a push.
+  const [withNotification, setWithNotification] = useState(false)
   const [tier, setTier] = useState('standard')
   // Empty, not '000000'. The old placeholder was a real value that sailed
   // through and left the ad unplaceable on the map — now the admin must pick.
@@ -56,7 +66,20 @@ export default function AdminCreateAd() {
 
   const submit = async () => {
     setMsg(null)
-    if (!creative) { setMsg({ ok: false, text: 'Please attach the creative (image/video).' }); return }
+    // A notification ad's image is genuinely optional — the message is the
+    // product — so only the placement types require a creative.
+    if (!creative && adType !== 'notification') {
+      setMsg({ ok: false, text: 'Please attach the creative (image/video).' }); return
+    }
+    if (adType === 'notification' && !(form.notify_title || '').trim()) {
+      setMsg({ ok: false, text: 'Please enter the notification title.' }); return
+    }
+    if (withNotification) {
+      const t = (form.notify_title || '').trim(), b = (form.notify_body || '').trim()
+      if ((t && !b) || (b && !t)) {
+        setMsg({ ok: false, text: 'For the push, fill BOTH title and message — or leave both blank to reuse the ad text.' }); return
+      }
+    }
     // Without a real pincode the ad has no position, so the 5 km search can
     // never return it — the ad would be paid for and invisible.
     if (!/^\d{6}$/.test(String(pincode || '')) || pincode === '000000') {
@@ -65,9 +88,12 @@ export default function AdminCreateAd() {
     if (duration === 'date' && !scheduledDate) {
       setMsg({ ok: false, text: 'Please pick a start date, or choose a different option.' }); return
     }
-    const isVideo = adType === 'promo_reelz' || (creative.type && creative.type.startsWith('video/'))
+    const isVideo = adType === 'promo_reelz' || !!(creative && creative.type && creative.type.startsWith('video/'))
     try {
-      setBusy(isVideo ? 'Uploading video…' : 'Uploading image…')
+      // uploadToS3 already returns null for a missing file; skipping the
+      // status message keeps a notification-only ad from claiming it is
+      // uploading something.
+      if (creative) setBusy(isVideo ? 'Uploading video…' : 'Uploading image…')
       const creativeKey = await uploadToS3(creative, isVideo ? 'ads-video' : 'ads')
       let thumbnailKey = null
       if (thumbnail) { setBusy('Uploading thumbnail…'); thumbnailKey = await uploadToS3(thumbnail, 'ads-video/thumbnails') }
@@ -75,7 +101,7 @@ export default function AdminCreateAd() {
       // Carousel photos — deals only, and uploaded one at a time so a single
       // bad file reports its own error instead of failing the whole batch.
       const galleryKeys = []
-      if (isDeal && gallery.length) {
+      if (hasGallery && gallery.length) {
         for (let i = 0; i < gallery.length; i++) {
           setBusy(`Uploading photo ${i + 2} of ${gallery.length + 1}…`)
           const k = await uploadToS3(gallery[i], 'ads')
@@ -96,6 +122,7 @@ export default function AdminCreateAd() {
         creative_key: creativeKey,
         thumbnail_key: thumbnailKey,
         gallery_keys: galleryKeys,
+        with_notification: withNotification,
         ...form,
       }
       const res = await api.admin.createAd(payload)
@@ -115,13 +142,16 @@ export default function AdminCreateAd() {
     }
   }
 
-  const isDeal = adType === 'brand_deals' || adType === 'nearby_deals'
+  const isDeal = CARD_TYPES.includes(adType)
+  // Spot Promos and Special Cards use the deal FIELDS but have no landing
+  // page carousel, so the extra-photos uploader stays on the two deal types.
+  const hasGallery = adType === 'brand_deals' || adType === 'nearby_deals'
 
   return (
     <div style={{ maxWidth: 720 }}>
       <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Create Ad (No Payment)</h2>
       <p style={{ color: '#666', fontSize: 13.5, marginBottom: 20 }}>
-        Publish any of the 4 ad types directly. No payment is charged — the ad goes live in the app immediately.
+        Publish any ad type directly. No payment is charged — the ad goes live in the app immediately.
       </p>
 
       {/* Ad type picker */}
@@ -166,12 +196,68 @@ export default function AdminCreateAd() {
           <div style={label}>Address</div><input style={input} value={form.address || ''} onChange={set('address')} />
           <div style={label}>Phone</div><input style={input} value={form.phone || ''} onChange={set('phone')} />
           <div style={label}>Timing</div><input style={input} value={form.timing || ''} onChange={set('timing')} />
-          <div style={label}>Cashback</div><input style={input} value={form.cashback || ''} onChange={set('cashback')} placeholder="1% Cashback" />
+          {hasGallery && (<>
+            <div style={label}>Cashback</div><input style={input} value={form.cashback || ''} onChange={set('cashback')} placeholder="1% Cashback" />
+          </>)}
           <div style={label}>Distance (optional)</div><input style={input} value={form.distance || ''} onChange={set('distance')} />
           <div style={label}>Tags (comma separated)</div><input style={input} value={form.tags || ''} onChange={set('tags')} placeholder="food, offers" />
         </>)}
 
-        {/* Tier — only for deals */}
+        {/* Notification ad — the message IS the product here. */}
+        {adType === 'notification' && (<>
+          <div style={label}>Notification title</div>
+          <input style={input} maxLength={120} value={form.notify_title || ''} onChange={set('notify_title')}
+            placeholder="e.g. 25% off at Super Saravana Store" />
+          <div style={label}>Notification message</div>
+          <textarea style={{ ...input, resize: 'vertical' }} rows={3} maxLength={300}
+            value={form.notify_body || ''} onChange={set('notify_body')}
+            placeholder="e.g. Valid this week only at our Anna Nagar branch." />
+          <div style={label}>Link (optional)</div>
+          <input style={input} value={form.cta_link || ''} onChange={set('cta_link')} placeholder="https://…" />
+        </>)}
+
+        {/* The +push add-on, on every type except the notification ad itself
+            — that one already IS a push, and the backend refuses to charge or
+            send twice for one message. */}
+        {adType !== 'notification' && (
+          <div style={{
+            border: `1.5px solid ${withNotification ? '#1a237e' : '#e0e0e0'}`,
+            background: withNotification ? '#eef0fb' : '#fff',
+            borderRadius: 10, padding: '12px 14px', margin: '4px 0 14px', cursor: 'pointer',
+          }} onClick={() => setWithNotification(v => !v)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" checked={withNotification} readOnly />
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                Also announce this ad by push notification
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: '#666', marginTop: 6, marginLeft: 26 }}>
+              Sent when the ad goes live, to every app user inside the radius below.
+              Leave the title and message blank to reuse the ad&rsquo;s own text.
+            </div>
+          </div>
+        )}
+
+        {(adType === 'notification' || withNotification) && (<>
+          {withNotification && (<>
+            <div style={label}>Notification title (optional)</div>
+            <input style={input} maxLength={120} value={form.notify_title || ''} onChange={set('notify_title')} />
+            <div style={label}>Notification message (optional)</div>
+            <textarea style={{ ...input, resize: 'vertical' }} rows={2} maxLength={300}
+              value={form.notify_body || ''} onChange={set('notify_body')} />
+          </>)}
+          <div style={label}>Notification radius</div>
+          {/* 5 km and 10 km only — they are what the app searches by default
+              and what its "expand radius" button does. The backend clamps
+              anything else, so these two are the whole product. */}
+          <select style={input} value={String(form.notify_radius_km || 5)}
+            onChange={(e) => setForm(f => ({ ...f, notify_radius_km: Number(e.target.value) }))}>
+            <option value="5">Every app user within 5 km of the pincode</option>
+            <option value="10">Every app user within 10 km of the pincode</option>
+          </select>
+        </>)}
+
+        {/* Tier — only for the card types */}
         {isDeal && (<>
           <div style={label}>Tier</div>
           <select style={input} value={tier} onChange={(e) => setTier(e.target.value)}>
@@ -187,7 +273,7 @@ export default function AdminCreateAd() {
         </div>
 
         {/* Media */}
-        <div style={label}>{adType === 'promo_reelz' ? 'Video creative' : adType === 'home_banner' ? 'Image or video creative' : 'Image creative'}</div>
+        <div style={label}>{adType === 'promo_reelz' ? 'Video creative' : adType === 'home_banner' ? 'Image or video creative' : adType === 'notification' ? 'Notification image (optional)' : 'Image creative'}</div>
         <input style={input} type="file"
           accept={adType === 'promo_reelz' ? 'video/*' : adType === 'home_banner' ? 'image/*,video/*' : 'image/*'}
           onChange={(e) => setCreative(e.target.files?.[0] || null)} />
@@ -201,7 +287,7 @@ export default function AdminCreateAd() {
             extra slides on the deal's landing page, exactly like a shop's
             photo gallery. Sliced to 3 here as well as on the server, so the
             admin sees the cap rather than silently losing the 4th file. */}
-        {isDeal && (<>
+        {hasGallery && (<>
           <div style={label}>Extra photos for the landing page (optional, up to 3)</div>
           <input style={input} type="file" accept="image/*" multiple
             onChange={(e) => setGallery(Array.from(e.target.files || []).slice(0, 3))} />

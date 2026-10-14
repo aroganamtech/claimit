@@ -42,21 +42,33 @@ class CreateLinkRequest(BaseModel):
     # internal TestPayment.jsx page), `amount` is used as-is.
     ad_type: Optional[str] = None
     tier: Optional[str] = None
+    # The "+ announce by push" add-on. It has to be known HERE as well as at
+    # /advertiser/ads/create, because this is the call that decides how much
+    # Cashfree actually collects — if the add-on were only priced at ad
+    # creation, every advertiser who ticked the box would be charged the base
+    # price and get the add-on for free.
+    with_notification: bool = False
 
 
-async def _authoritative_ad_amount(ad_type: str, tier: str) -> int:
-    """Same pricing source/mapping as routers/advertiser.py's _ad_price —
-    duplicated rather than imported to avoid a router-to-router import; both
-    read the same utils.pricing.get_pricing() store so they can never
-    disagree with what /advertiser/ads/create actually records."""
-    from utils.pricing import get_pricing
-    pricing = await get_pricing()
-    if ad_type == "home_banner":
-        return pricing["ad_home_banner"]
-    key = f"ad_{ad_type}_{(tier or 'standard').strip().lower()}"
-    if key in pricing:
-        return pricing[key]
-    raise HTTPException(status_code=400, detail=f"Unknown ad_type/tier: {ad_type}/{tier}")
+async def _authoritative_ad_amount(ad_type: str, tier: str,
+                                   with_notification: bool = False) -> int:
+    """The price Cashfree will charge for this booking.
+
+    Imported straight from routers.advertiser rather than reimplemented: this
+    number and the one recorded on the ad MUST be identical, and the previous
+    hand-copied version of this mapping is exactly the kind of duplication
+    that drifts the first time a new ad type or an add-on is introduced.
+
+    The import is local to the function so neither router imports the other
+    at module load.
+    """
+    from routers.advertiser import _ad_price, KNOWN_AD_TYPES
+
+    ad_type = (ad_type or "").strip().lower()
+    if ad_type not in KNOWN_AD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown ad_type: {ad_type}")
+    return await _ad_price(ad_type, (tier or "standard").strip().lower(),
+                           with_notification)
 
 
 @router.post("/create-link")
@@ -65,7 +77,8 @@ async def create_link(
     current_user: dict = Depends(get_current_user),
 ):
     if body.ad_type:
-        amount = await _authoritative_ad_amount(body.ad_type, body.tier or "standard")
+        amount = await _authoritative_ad_amount(
+            body.ad_type, body.tier or "standard", body.with_notification)
     else:
         amount = body.amount
 

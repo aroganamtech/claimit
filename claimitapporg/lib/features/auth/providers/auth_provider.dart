@@ -246,11 +246,40 @@ class AuthProvider extends ChangeNotifier {
 
   /// Save the selected location to backend and update local user object
   /// so the dashboard header reflects the change instantly.
-  Future<void> updateLocation(String location) async {
+  /// [lat], [lng] and [pincode] are optional but should be sent whenever the
+  /// app knows them. The server stores them as a geo point on the user, which
+  /// is what makes "everyone within 5 km of this pincode" possible — a place
+  /// name on its own cannot be measured against a radius.
+  /// Update ONLY the local user model's location — no network call.
+  ///
+  /// LocationProvider owns the app-wide location and posts it to the server
+  /// itself. Without this, that post updated the SERVER but left this
+  /// provider's cached `_user` holding the old name, so the Profile screen
+  /// (which renders `user?.location`) kept showing the previous location
+  /// until the next full profile fetch. LocationProvider calls this through
+  /// a callback wired up in main.dart.
+  void applyLocationLocally(String location) {
+    if (_user == null) return;
+    if (_user!.location == location) return;
+    _user = _user!.copyWith(location: location);
+    notifyListeners();
+  }
+
+  Future<void> updateLocation(
+    String location, {
+    double? lat,
+    double? lng,
+    String? pincode,
+  }) async {
     try {
       await _apiClient.post(
         AppConstants.updateLocation,
-        data: {'location': location},
+        data: {
+          'location': location,
+          if (lat != null && lng != null) 'lat': lat,
+          if (lat != null && lng != null) 'lng': lng,
+          if (pincode != null && pincode.isNotEmpty) 'pincode': pincode,
+        },
       );
       // Update local model without a full refetch
       if (_user != null) {

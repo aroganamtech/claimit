@@ -1,0 +1,469 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/location_reload_mixin.dart';
+import '../../../core/services/location_service.dart';
+import '../models/select_category.dart';
+import '../models/select_professional.dart';
+import '../services/select_service.dart';
+import '../widgets/select_common.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
+import '../../../core/widgets/spot_promo_card.dart';
+import '../../../core/widgets/spot_promo_sheet.dart';
+import '../../../core/services/spot_promo_service.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claimit Select — home.
+//
+// Yellow branded header (wordmark + bell + location + search) over a 3-column
+// grid of the 12 professional categories. Tapping a category opens the
+// professionals list for it.
+//
+// Every text element here is overflow-guarded (Flexible/Expanded + maxLines +
+// ellipsis, FittedBox on the wordmark) so a long location name or a large
+// system font size can't produce a RenderFlex overflow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SelectHomeScreen extends StatefulWidget {
+  const SelectHomeScreen({super.key});
+
+  @override
+  State<SelectHomeScreen> createState() => _SelectHomeScreenState();
+}
+
+class _SelectHomeScreenState extends State<SelectHomeScreen>
+    with LocationReloadMixin {
+  final _searchCtrl = TextEditingController();
+
+  // ── Nearby professionals ──────────────────────────────────────────────────
+  // Same shape as Local Finder and Privilege, so the three features read as
+  // one product rather than three. The backend already sorts by distance and
+  // falls back when the radius is empty, so nothing new was needed server-side.
+  List<SelectProfessional> _nearby = const [];
+  bool _loadingNearby = true;
+
+  /// Paid Spot Promos. The SAME list shows on Local Finder and Claimit
+  /// Privilege — one booking, three pages — so this comes from the shared
+  /// SpotPromoService rather than anything Select-specific. They sit above
+  /// the organic professionals because that placement is what was paid for.
+  List<SpotPromoDto> _paidPromos = const [];
+
+  /// Favourites, per session — same affordance as the Local Finder card.
+  final Set<String> _liked = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNearby();
+  }
+
+  @override
+  void onLocationChanged() => _loadNearby();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadNearby() async {
+    // A pull-to-refresh must actually reach the network: the promo cache
+    // would otherwise serve the same list straight back for 3 minutes.
+    SpotPromoService.instance.invalidate();
+    setState(() => _loadingNearby = true);
+    // Kick both off before awaiting either, so the paid strip does not make
+    // the page wait any longer than it already does for the professionals.
+    final itemsFuture = SelectService.instance.fetchProfessionals(
+      sort: 'nearby',
+      lat: LocationService.selectedLat,
+      lng: LocationService.selectedLng,
+      radiusKm: LocationService.radiusKm,
+    );
+    final promosFuture = SpotPromoService.instance.fetch();
+    final items = await itemsFuture;
+    final promos = await promosFuture;
+    if (!mounted) return;
+    setState(() {
+      _nearby = items.take(6).toList();
+      _paidPromos = promos;
+      _loadingNearby = false;
+    });
+  }
+
+  // Both entry points hand the list screen the same shaped map, so it never
+  // has to guess what `extra` is.
+  void _openCategory(SelectCategory c) {
+    context.push('/select/list', extra: {'category': c});
+  }
+
+  void _submitSearch() {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    // Search runs across all categories.
+    context.push('/select/list', extra: {'search': q});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      // Identical header to Local Finder and Privilege — logo, hairline
+      // divider, then the feature name in that feature's own colour. Select is
+      // gold; kSelYellow itself is unreadable as text on white, so the deeper
+      // kSelAccent carries the wordmark and kSelYellow the underline.
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: kSelAccent, size: 20),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+        ),
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/images/home_main_logo.png',
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Text('claimit',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1565C0))),
+            ),
+            const SizedBox(width: 8),
+            Container(width: 1.5, height: 20, color: const Color(0xFFD7DEE8)),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Select',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: kSelAccent,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'My Bookings',
+            icon: const Icon(Icons.event_note_rounded,
+                color: kSelAccent, size: 22),
+            onPressed: () => context.push('/select/bookings'),
+          ),
+        ],
+      ),
+      // The dashboard's centre button, docked into the shared bar's notch —
+      // without it the bar has a 72px hole where the button should be.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
+      body: RefreshIndicator(
+        onRefresh: _loadNearby,
+        color: kSelAccent,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          children: [
+            _locationField(),
+            // Tightened at the client's request: the three stacked controls
+            // and the banner were sitting too far apart, pushing the cards
+            // below the fold.
+            const SizedBox(height: 6),
+            _searchField(),
+            const SizedBox(height: 8),
+            _banner(),
+            const SizedBox(height: 10),
+            _sectionHeader(
+                'Categories', () => context.push('/select/coverage')),
+            const SizedBox(height: 6),
+            _categoryGrid(),
+            const SizedBox(height: 6),
+            _nearbyHeader(),
+            const SizedBox(height: 10),
+            if (_loadingNearby)
+              const Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(
+                      child: CircularProgressIndicator(color: kSelAccent)))
+            else if (_nearby.isEmpty && _paidPromos.isEmpty)
+              _emptyNearby()
+            else ...[
+              // Paid placements first — that is what the advertiser bought.
+              ..._paidPromos.map(_paidPromoCard),
+              ..._nearby.map(_promoCard),
+            ],
+            const SizedBox(height: 14),
+            _registerButton(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Location ────────────────────────────────────────────────────────────
+  Widget _locationField() {
+    final label = context.select<LocationProvider, String>(
+      (l) => l.selected?.display ?? 'Select location',
+    );
+    return InkWell(
+      onTap: () => context.push('/location/pick'),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 18, color: kSelAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      color: kSelInk,
+                      fontWeight: FontWeight.w500)),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: kSelMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Search — Select professionals only ──────────────────────────────────
+  Widget _searchField() => Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD7DEE8)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search_rounded, size: 19, color: kSelMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _submitSearch(),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Search trusted professionals',
+                  hintStyle: TextStyle(fontSize: 13.5, color: kSelMuted),
+                ),
+                style: const TextStyle(fontSize: 14, color: kSelInk),
+              ),
+            ),
+            GestureDetector(
+              onTap: _submitSearch,
+              child: const Icon(Icons.arrow_forward_rounded,
+                  size: 19, color: kSelAccent),
+            ),
+          ],
+        ),
+      );
+
+  Widget _sectionHeader(String title, VoidCallback onSeeAll) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent)),
+          GestureDetector(
+            onTap: onSeeAll,
+            child: const Text('See All',
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: kSelAccent)),
+          ),
+        ],
+      );
+
+  Widget _registerButton(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => context.push('/select/register'),
+          icon: const Icon(Icons.person_add_alt_1_rounded),
+          label: const Text('List Yourself'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kSelYellow,
+            foregroundColor: kSelOnYellow,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+
+  Widget _banner() => ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.asset(
+          'assets/images/select_banner.png',
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            height: 132,
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                colors: [kSelYellow, Color(0xFFFFD233)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Find',
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: kSelOnYellow,
+                        height: 1.1)),
+                Text('trusted professionals\nnear you.',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: kSelOnYellow,
+                        height: 1.25)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  /// "Spot Promos" — same header treatment as Local Finder and
+  /// Privilege, in Select's own colour.
+  Widget _nearbyHeader() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Spot Promos',
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent),
+          ),
+          const SizedBox(height: 4),
+          Container(width: 104, height: 2.5, color: kSelYellow),
+        ],
+      );
+
+  Widget _emptyNearby() => Container(
+        padding: const EdgeInsets.symmetric(vertical: 26),
+        alignment: Alignment.center,
+        child: const Text('No professionals here yet.',
+            style: TextStyle(color: kSelMuted)),
+      );
+
+  /// draw, so the ten categories sit in two even rows.
+  Widget _categoryGrid() {
+    final iconSize = (MediaQuery.of(context).size.width / 6).clamp(52.0, 80.0);
+    return GridView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 5,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 6,
+        // Height stated outright rather than derived from the cell WIDTH:
+        // childAspectRatio made the tile shorter than the icon on a 360dp
+        // phone (overflow) and taller than it needed on a wide one (the gap
+        // under the labels). icon + 4 gap + ~15 label + 1 slack.
+        mainAxisExtent: iconSize + 20,
+      ),
+      children: kSelectCategories
+          .map((c) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openCategory(c),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      c.iconAsset,
+                      width: iconSize,
+                      height: iconSize,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: const BoxDecoration(
+                            color: Color(0xFFFFF4D6), shape: BoxShape.circle),
+                        child: Icon(c.icon,
+                            size: iconSize * 0.5, color: kSelAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(c.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: kSelInk)),
+                    ),
+                  ],
+                ),
+              ))
+          .toList(),
+    );
+  }
+
+  /// One Spot Promo — the same card Nearby Deals draws.
+  Widget _promoCard(SelectProfessional p) => SpotPromoCard(
+        promo: SpotPromo(
+          id:       p.id,
+          name:     p.name,
+          location: p.address.isNotEmpty
+              ? p.address
+              : [p.area, p.city].where((e) => e.isNotEmpty).join(', '),
+          offer:    p.offerText.isNotEmpty ? p.offerText : p.role,
+          distance: p.distance,
+          category: p.categoryLabel,
+          image:    p.photoUrl,
+          fallbackIcon: Icons.person_rounded,
+        ),
+        accent:      kSelAccent,
+        isFavourite: _liked.contains(p.id),
+        onFavourite: () => setState(() => _liked.contains(p.id)
+            ? _liked.remove(p.id)
+            : _liked.add(p.id)),
+        onTap: () => context.push('/select/professional', extra: p.id),
+      );
+
+  /// One paid Spot Promo. Identical card, identical sheet, on all three
+  /// pages — the mapping lives on the DTO so it cannot diverge between them.
+  Widget _paidPromoCard(SpotPromoDto p) => SpotPromoCard(
+        promo:       p.toCard(),
+        accent:      kSelAccent,
+        isFavourite: _liked.contains(p.id),
+        onFavourite: () => setState(() => _liked.contains(p.id)
+            ? _liked.remove(p.id)
+            : _liked.add(p.id)),
+        onTap: () => showSpotPromoSheet(context, p, accent: kSelAccent),
+      );
+}

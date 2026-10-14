@@ -1563,6 +1563,18 @@ const PRICING_FIELDS = [
       { key: 'ad_brand_deals_standard',  label: 'Brand Deals — Standard' },
       { key: 'ad_promo_reelz_premium',   label: 'Promo Reelz — Premium' },
       { key: 'ad_promo_reelz_standard',  label: 'Promo Reelz — Standard' },
+      { key: 'ad_spot_promos_premium',   label: 'Spot Promos — Premium' },
+      { key: 'ad_spot_promos_standard',  label: 'Spot Promos — Standard' },
+      { key: 'ad_special_cards_premium', label: 'Special Card — Premium' },
+      { key: 'ad_special_cards_standard', label: 'Special Card — Standard' },
+    ],
+  },
+  {
+    section: 'Advertiser — Push Notification Ads',
+    note: 'A Push Notification Ad is sold on its own and is sent once, to every app user inside the chosen radius of the advertiser’s pincode — it is not a 7-day placement, which is why it is priced per send. The add-on is the "also announce my ad by push" tick box available on every other ad type, and is charged on top of that ad’s own price.',
+    fields: [
+      { key: 'ad_notification',       label: 'Push Notification Ad (per send)' },
+      { key: 'ad_notification_addon', label: 'Add-on: +push on any ad' },
     ],
   },
   {

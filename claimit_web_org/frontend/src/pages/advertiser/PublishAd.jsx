@@ -8,6 +8,9 @@ const AD_LABELS = {
   promo_reelz: 'Promo Reelz Ad',
   brand_deals: 'Brand Deals Ad',
   nearby_deals: 'Nearby Deals Ad',
+  spot_promos: 'Spot Promos Ad',
+  special_cards: 'Special Card Ad',
+  notification: 'Push Notification Ad',
 }
 
 // Fallback pricing shown only until GET /advertiser/pricing resolves. The
@@ -20,20 +23,37 @@ const DEFAULT_AD_PRICES = {
   nearby_deals: { premium: 1050, standard: 700 },
   brand_deals:  { premium: 700,  standard: 700 },
   promo_reelz:  { premium: 700,  standard: 700 },
+  spot_promos:   { premium: 1050, standard: 700 },
+  special_cards: { premium: 700,  standard: 700 },
+  notification:  { standard: 150 },
 }
+
+// The +push add-on's fallback price. Like the table above this is cosmetic —
+// /payments/create-link recomputes the authoritative total from
+// { ad_type, tier, with_notification } and ignores whatever the client says.
+const DEFAULT_NOTIFICATION_ADDON = 100
 
 export default function PublishAd() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const adType = searchParams.get('type') || 'nearby_deals'
+  // Carried from the details step. `notification` ads already ARE a push, so
+  // the add-on never applies — matching the backend's own rule.
+  const withNotification = searchParams.get('notify') === '1' && adType !== 'notification'
   const [publishOption, setPublishOption] = useState('today')
   const [scheduleDate, setScheduleDate] = useState('')
   const [loading, setLoading] = useState(false)
   const [adPrices, setAdPrices] = useState(DEFAULT_AD_PRICES)
+  const [addonPrice, setAddonPrice] = useState(DEFAULT_NOTIFICATION_ADDON)
 
   useEffect(() => {
-    api.advertiser.getPricing().then(setAdPrices).catch(() => {})
+    api.advertiser.getPricing()
+      .then(p => {
+        setAdPrices(p)
+        if (p.notification_addon != null) setAddonPrice(p.notification_addon)
+      })
+      .catch(() => {})
   }, [])
 
   // Files were passed via router state from AdDetails
@@ -101,19 +121,26 @@ export default function PublishAd() {
         scheduled_date: publishOption === 'schedule' ? scheduleDate : undefined,
         creative_key: creativeKey,
         thumbnail_key: thumbnailKey,
+        // Read from the URL rather than only the draft, so a reload of this
+        // step can't silently drop the add-on the advertiser is paying for.
+        with_notification: withNotification,
       }
       Object.entries(draft).forEach(([k, v]) => {
         if (!skip.has(k) && v !== undefined && v !== null) payload[k] = v
       })
 
       const tier = draft.tier || 'standard'
-      const amount = (adPrices[adType] || {})[tier] ?? Object.values(adPrices[adType] || { standard: 700 })[0]
+      const base = (adPrices[adType] || {})[tier] ?? Object.values(adPrices[adType] || { standard: 700 })[0]
+      const amount = base + (withNotification ? addonPrice : 0)
 
       sessionStorage.setItem('pending_ad_payload', JSON.stringify({
         payload,
         amount,
         adType,
         tier,
+        // The payment page forwards this to /payments/create-link, which is
+        // what makes the charge include the add-on.
+        withNotification,
         adTypeLabel: AD_LABELS[adType],
       }))
       sessionStorage.removeItem('ad_draft')
@@ -221,6 +248,12 @@ export default function PublishAd() {
                       <span style={{ fontWeight: 600, color: '#222', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {withNotification && (
+                <div style={{ background: '#e3f2fd', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#1565C0', marginBottom: 12, fontWeight: 600 }}>
+                  🔔 Push notification included (+₹{addonPrice})
                 </div>
               )}
 

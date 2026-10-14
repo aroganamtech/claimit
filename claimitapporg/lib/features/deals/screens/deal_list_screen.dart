@@ -9,6 +9,9 @@ import '../../profile/providers/profile_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/providers/location_provider.dart';
 import '../../../core/providers/location_reload_mixin.dart';
+import '../../../core/services/spot_promo_service.dart';
+import '../../../core/widgets/spot_promo_card.dart';
+import '../../../core/widgets/spot_promo_sheet.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DealListScreen
@@ -40,6 +43,14 @@ class _DealListScreenState extends State<DealListScreen>
   List<DealDto> _all = [];
   bool _isLoading = true;
   String? _error;
+
+  // ── Spot Promos, shown AFTER the last deal ────────────────────────────────
+  // Paid placement that the user reaches by scrolling through every real deal
+  // first. Same ads as the Spot Promos strip on Local Finder, Select and
+  // Privilege — the shared SpotPromoService is reused rather than fetching
+  // again, so one booking shows everywhere it should and nowhere twice.
+  List<SpotPromoDto> _promos = const [];
+  final Set<String> _promoLiked = <String>{};
 
   // ── Search ────────────────────────────────────────────────────────────────
   bool _showSearch = false;
@@ -102,11 +113,24 @@ class _DealListScreenState extends State<DealListScreen>
 
   Future<void> _loadDeals() async {
     setState(() { _isLoading = true; _error = null; });
+    // A pull-to-refresh has to actually reach the network; the promo cache
+    // would otherwise hand back the same list for three minutes.
+    SpotPromoService.instance.invalidate();
     try {
+      // Both requests start before either is awaited, so the promo strip
+      // costs the page no extra waiting.
+      final promosFuture = SpotPromoService.instance.fetch();
       final deals = widget.dealGroup == 'brand'
           ? await DealService.instance.fetchBrandDeals()
           : await DealService.instance.fetchNearbyDeals();
-      if (mounted) setState(() { _all = deals; _isLoading = false; });
+      final promos = await promosFuture;
+      if (mounted) {
+        setState(() {
+          _all = deals;
+          _promos = promos;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
     }
@@ -448,16 +472,34 @@ class _DealListScreenState extends State<DealListScreen>
                         : RefreshIndicator(
                             onRefresh: _loadDeals,
                             color: const Color(0xFF2563EB),
+                            // Deals first, then a "Spot Promos" heading, then
+                            // the paid promos — so the user only reaches the
+                            // ads after scrolling past every real deal.
+                            //
+                            // One ListView rather than a Column of two: a
+                            // nested scroll view inside a scroll view is what
+                            // produces the "infinite height" error, and it
+                            // would also give the promos their own scrollbar.
+                            // The index is partitioned instead.
                             child: ListView.builder(
                               padding: const EdgeInsets.fromLTRB(
                                   16, 12, 16, 20),
-                              itemCount: deals.length,
-                              itemBuilder: (_, i) => _DealCard(
-                                deal: deals[i],
-                                onTap: () => context.push(
-                                    '/deal-detail',
-                                    extra: _toData(deals[i])),
-                              ),
+                              itemCount: deals.length +
+                                  (_promos.isEmpty ? 0 : _promos.length + 1),
+                              itemBuilder: (_, i) {
+                                if (i < deals.length) {
+                                  return _DealCard(
+                                    deal: deals[i],
+                                    onTap: () => context.push(
+                                        '/deal-detail',
+                                        extra: _toData(deals[i])),
+                                  );
+                                }
+                                // First index past the deals is the heading.
+                                final pi = i - deals.length;
+                                if (pi == 0) return _spotPromoHeader();
+                                return _spotPromoCard(_promos[pi - 1]);
+                              },
                             ),
                           ),
           ),
@@ -465,6 +507,55 @@ class _DealListScreenState extends State<DealListScreen>
       ),
     );
   }
+
+  /// Divider + title that separates the real deals from the paid promos.
+  /// Labelled so the user can tell which is which — an ad sitting under a
+  /// list of genuine deals has to say what it is.
+  Widget _spotPromoHeader() => Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const SizedBox(height: 16),
+            Row(
+              children: const [
+                Text(
+                  'Spot Promos',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF2563EB)),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Sponsored',
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(width: 104, height: 2.5, color: const Color(0xFFE23744)),
+            const SizedBox(height: 12),
+          ],
+        ),
+      );
+
+  /// One paid promo — the same shared card and sheet the three feature home
+  /// pages use, so a promo looks and behaves identically wherever it appears.
+  Widget _spotPromoCard(SpotPromoDto p) => SpotPromoCard(
+        promo: p.toCard(),
+        accent: const Color(0xFF2563EB),
+        isFavourite: _promoLiked.contains(p.id),
+        onFavourite: () => setState(() => _promoLiked.contains(p.id)
+            ? _promoLiked.remove(p.id)
+            : _promoLiked.add(p.id)),
+        onTap: () => showSpotPromoSheet(context, p,
+            accent: const Color(0xFF2563EB)),
+      );
 
   Widget _buildError() => Center(
         child: Column(

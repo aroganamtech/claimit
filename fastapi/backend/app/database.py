@@ -162,11 +162,27 @@ async def connect_db():
     #
     # Wrapped individually: a collection that doesn't exist yet, or an index
     # that already exists with different options, must not stop start-up.
-    for _geo_coll in ("deals", "reels", "classifieds", "banners"):
+    # `users` is in this list for notification ads: "send this to everyone
+    # within 5 km of that pincode" is a $geoNear over users, and without the
+    # index it fails exactly the same silent way the searches did.
+    # `spot_promos` is the shared collection behind the "Spot Promos" strip on
+    # Local Finder, Claimit Select and Claimit Privilege — one paid booking
+    # appears in all three, so it is read by a $geoNear exactly like deals.
+    for _geo_coll in ("deals", "reels", "classifieds", "banners", "users",
+                      "spot_promos"):
         try:
             await db[_geo_coll].create_index([("geo", "2dsphere")])
         except Exception as e:
             print(f"[db] 2dsphere index on {_geo_coll} skipped: {e}")
+    # Spot Promos — paid cards shown on all three feature home pages.
+    await db.spot_promos.create_index("status")
+    await db.spot_promos.create_index("tier")
+    await db.spot_promos.create_index("created_at")
+    # Paid notification-ad queue. The web portal enqueues, the background
+    # loop in utils/ad_push.py claims due jobs — this compound index is what
+    # that claim query runs on, so it must exist or every poll is a scan.
+    await db.ad_notifications.create_index([("status", 1), ("send_at", 1)])
+    await db.ad_notifications.create_index("web_ad_id")
     # Banners
     await db.banners.create_index("status")
     await db.banners.create_index("created_at")

@@ -24,6 +24,7 @@ Business rules (must stay in sync with BillRewardProvider in Flutter):
 """
 
 import asyncio
+import base64
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
@@ -383,9 +384,53 @@ async def _get_or_create_wallet(db, uid: str) -> tuple:
 # Tolerance is the larger of 2% and ₹5, which absorbs rounding and a misread
 # paise digit while still catching an invented amount.
 async def _verify_total_with_ai(image_base64: Optional[str]) -> Optional[float]:
-    """The AI's reading of the bill total, or None when it could not check."""
+    """The server's own reading of the bill total, or None when it could not read it.
+
+    The ENGINE is AWS Textract AnalyzeExpense (utils/textract_ocr.py), chosen
+    because it returns *labelled* fields: TOTAL comes back tagged TOTAL,
+    SUBTOTAL as SUBTOTAL, cash tendered as AMOUNT_PAID. The long-standing
+    "₹257 read as something else" bug was mostly not bad digit recognition —
+    it was picking the wrong NUMBER off a bill that prints five of them. A
+    labelled lookup removes that guess entirely.
+
+    `BILL_VERIFY_ENGINE` selects the engine, so this is reversible without a
+    code change:
+        textract        → Textract only (what we now run)
+        gemini / unset  → the previous Gemini path, byte-for-byte unchanged
+
+    Returns None on any failure, which preserves this function's existing
+    contract: the caller treats None as "could not verify" and the scan
+    proceeds on the client's figure rather than blocking a real customer
+    because our OCR provider is having a bad day.
+    """
     if not image_base64:
         return None
+
+    engine = os.getenv("BILL_VERIFY_ENGINE", "gemini").strip().lower()
+
+    if engine == "textract":
+        try:
+            from ..utils.textract_ocr import extract_bill
+
+            raw = base64.b64decode(image_base64, validate=False)
+            res = await asyncio.wait_for(extract_bill(raw), timeout=20.0)
+        except Exception as exc:  # noqa: BLE001 — verification must never 500
+            print(f"⚠️  bill verify (textract) failed: {type(exc).__name__}: {exc}")
+            return None
+
+        if not res.ok:
+            # Logged, not silent: this is the line that explains a bill that
+            # went to manual review, and it costs nothing to keep.
+            print(f"ℹ️  textract could not read total: {res.rejected_reason} "
+                  f"| fields={res.all_fields}")
+            return None
+
+        print(f"✅ textract total={res.total} from {res.total_source} "
+              f"@{res.total_confidence}% | vendor={res.vendor!r} "
+              f"date={res.bill_date!r} no={res.bill_number!r}")
+        return res.total
+
+    # ── Previous engine, untouched ───────────────────────────────────────────
     try:
         # Short timeout and a single attempt: this sits in the user's path and
         # /bill/ocr has already done the patient version before we got here.

@@ -43,8 +43,52 @@ class ApiClient {
         }
         return handler.next(options);
       },
+      // ── Token refresh happens HERE, in onResponse — not in onError ──────
+      //
+      // THIS IS WHY USERS WERE LOGGED OUT AFTER A DAY.
+      //
+      // `validateStatus` above accepts every status below 500, which means
+      // Dio treats a 401 as a perfectly good response and NEVER raises a
+      // DioException for it. The refresh logic used to live in `onError`,
+      // so it simply never ran. The access token expires after 24 hours,
+      // every call started coming back 401, nothing refreshed, and the app
+      // behaved as though the user had been signed out — even though the
+      // refresh token was valid for weeks.
+      //
+      // Moving the check to onResponse fixes it without touching
+      // validateStatus, which has to keep passing 4xx through: callers rely
+      // on reading 409 and 422 as ordinary responses (duplicate bill,
+      // insufficient points), and making those throw would break them.
+      onResponse: (response, handler) async {
+        final reqPath = response.requestOptions.path;
+        final alreadyRetried = response.requestOptions.extra['_retried'] == true;
+
+        if (response.statusCode == 401 &&
+            !reqPath.startsWith('/auth/refresh') &&
+            !reqPath.startsWith('/auth/') &&
+            !alreadyRetried) {
+          final refreshed = await _refreshToken();
+          if (refreshed) {
+            final token = await _storage.read(key: AppConstants.tokenKey);
+            response.requestOptions.headers['Authorization'] = 'Bearer $token';
+            response.requestOptions.extra['_retried'] = true;
+            try {
+              final retried = await _dio.fetch(response.requestOptions);
+              return handler.resolve(retried);
+            } catch (_) {
+              // Fall through and hand back the original 401.
+            }
+          }
+          // Refresh genuinely failed (no refresh token, or the server
+          // rejected it). Tokens are NOT wiped here: a network blip or a
+          // server restart must not sign a user out. The session is only
+          // cleared when they tap Logout.
+        }
+        return handler.next(response);
+      },
       onError: (error, handler) async {
-        // Avoid infinite loop on /auth/refresh itself.
+        // Kept for transport-level failures that do surface as exceptions,
+        // e.g. a 5xx or a timeout on a request whose token had just expired.
         final reqPath = error.requestOptions.path;
         final alreadyRetried = error.requestOptions.extra['_retried'] == true;
 
@@ -62,10 +106,8 @@ class ApiClient {
             } catch (_) {
               // fall through
             }
-          } else {
-            // Refresh failed — wipe tokens; user will be redirected to login.
-            await clearTokens();
           }
+          // Deliberately NOT clearing tokens here either — see above.
         }
         return handler.next(error);
       },
@@ -87,6 +129,17 @@ class ApiClient {
         final newToken = response.data['access_token'];
         if (newToken is String) {
           await _storage.write(key: AppConstants.tokenKey, value: newToken);
+
+          // The server now rotates the refresh token on every refresh, so
+          // store the new one when it sends one. This is what keeps an
+          // active user signed in indefinitely: each refresh pushes the
+          // expiry further out. Older builds of the server return only an
+          // access token, so this stays optional.
+          final rotated = response.data['refresh_token'];
+          if (rotated is String && rotated.isNotEmpty) {
+            await _storage.write(
+                key: AppConstants.refreshTokenKey, value: rotated);
+          }
           return true;
         }
       }

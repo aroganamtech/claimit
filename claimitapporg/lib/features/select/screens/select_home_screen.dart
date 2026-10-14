@@ -12,6 +12,8 @@ import '../widgets/select_common.dart';
 import '../../../core/widgets/claimit_bottom_bar.dart';
 import '../../../features/home/screens/home_screen.dart';
 import '../../../core/widgets/spot_promo_card.dart';
+import '../../../core/widgets/spot_promo_sheet.dart';
+import '../../../core/services/spot_promo_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimit Select — home.
@@ -43,6 +45,12 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
   List<SelectProfessional> _nearby = const [];
   bool _loadingNearby = true;
 
+  /// Paid Spot Promos. The SAME list shows on Local Finder and Claimit
+  /// Privilege — one booking, three pages — so this comes from the shared
+  /// SpotPromoService rather than anything Select-specific. They sit above
+  /// the organic professionals because that placement is what was paid for.
+  List<SpotPromoDto> _paidPromos = const [];
+
   /// Favourites, per session — same affordance as the Local Finder card.
   final Set<String> _liked = <String>{};
 
@@ -62,16 +70,25 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
   }
 
   Future<void> _loadNearby() async {
+    // A pull-to-refresh must actually reach the network: the promo cache
+    // would otherwise serve the same list straight back for 3 minutes.
+    SpotPromoService.instance.invalidate();
     setState(() => _loadingNearby = true);
-    final items = await SelectService.instance.fetchProfessionals(
+    // Kick both off before awaiting either, so the paid strip does not make
+    // the page wait any longer than it already does for the professionals.
+    final itemsFuture = SelectService.instance.fetchProfessionals(
       sort: 'nearby',
       lat: LocationService.selectedLat,
       lng: LocationService.selectedLng,
       radiusKm: LocationService.radiusKm,
     );
+    final promosFuture = SpotPromoService.instance.fetch();
+    final items = await itemsFuture;
+    final promos = await promosFuture;
     if (!mounted) return;
     setState(() {
       _nearby = items.take(6).toList();
+      _paidPromos = promos;
       _loadingNearby = false;
     });
   }
@@ -177,10 +194,18 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
                   padding: EdgeInsets.all(28),
                   child: Center(
                       child: CircularProgressIndicator(color: kSelAccent)))
-            else if (_nearby.isEmpty)
+            else if (_nearby.isEmpty && _paidPromos.isEmpty)
               _emptyNearby()
-            else
+            else ...[
               ..._nearby.map(_promoCard),
+              // ── Spot Promos — AFTER the organic list ────────────────────
+              // Identical on Local Finder, Select and Privilege: one booking,
+              // one collection, one endpoint. Hidden when nothing is booked.
+              if (_paidPromos.isNotEmpty) ...[
+                _spotPromoHeader(),
+                ..._paidPromos.map(_paidPromoCard),
+              ],
+            ],
             const SizedBox(height: 14),
             _registerButton(context),
           ],
@@ -336,19 +361,52 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
         ),
       );
 
-  /// "Spot Promos" — same header treatment as Local Finder and
-  /// Privilege, in Select's own colour.
+  /// The ORGANIC professionals section. Named for what it actually contains.
+  ///
+  /// Previously titled "Spot Promos", which is why the client saw different
+  /// Spot Promos on each page — the heading named the ad section but the list
+  /// under it was this page's own professionals. Paid promos now have their
+  /// own section (_spotPromoHeader) and are identical across all three pages.
   Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Spot Promos',
+            'Nearby Professionals',
             style: TextStyle(
                 fontSize: 16, fontWeight: FontWeight.w800, color: kSelAccent),
           ),
           const SizedBox(height: 4),
           Container(width: 104, height: 2.5, color: kSelYellow),
         ],
+      );
+
+  /// Heading for the PAID section, labelled so a sponsored card is never
+  /// mistaken for an organic listing.
+  Widget _spotPromoHeader() => Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const SizedBox(height: 16),
+            Row(
+              children: const [
+                Text('Spot Promos',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800,
+                        color: kSelAccent)),
+                SizedBox(width: 8),
+                Text('Sponsored',
+                    style: TextStyle(
+                        fontSize: 10.5, fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(width: 104, height: 2.5, color: kSelYellow),
+            const SizedBox(height: 4),
+          ],
+        ),
       );
 
   Widget _emptyNearby() => Container(
@@ -433,5 +491,17 @@ class _SelectHomeScreenState extends State<SelectHomeScreen>
             ? _liked.remove(p.id)
             : _liked.add(p.id)),
         onTap: () => context.push('/select/professional', extra: p.id),
+      );
+
+  /// One paid Spot Promo. Identical card, identical sheet, on all three
+  /// pages — the mapping lives on the DTO so it cannot diverge between them.
+  Widget _paidPromoCard(SpotPromoDto p) => SpotPromoCard(
+        promo:       p.toCard(),
+        accent:      kSelAccent,
+        isFavourite: _liked.contains(p.id),
+        onFavourite: () => setState(() => _liked.contains(p.id)
+            ? _liked.remove(p.id)
+            : _liked.add(p.id)),
+        onTap: () => showSpotPromoSheet(context, p, accent: kSelAccent),
       );
 }

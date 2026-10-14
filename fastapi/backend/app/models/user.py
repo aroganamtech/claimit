@@ -30,7 +30,21 @@ class UserUpdate(BaseModel):
 
 
 class LocationUpdate(BaseModel):
+    """What the app sends when the user picks a location.
+
+    `location` (the display name) is all this used to carry, which meant the
+    server knew a user was in "Anna Nagar" but not WHERE that is. Nothing
+    could be targeted by distance as a result — no "everyone within 5 km",
+    which is what a paid notification ad is sold on.
+
+    lat/lng/pincode are all optional so an older build of the app keeps
+    working unchanged: it simply sends the name, exactly as before, and the
+    user gets no coordinates until they update.
+    """
     location: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    pincode: Optional[str] = None
 
 
 class UserResponse(BaseModel):

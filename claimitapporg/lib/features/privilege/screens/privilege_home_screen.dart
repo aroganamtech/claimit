@@ -10,6 +10,8 @@ import '../widgets/privilege_common.dart';
 import '../../../core/widgets/claimit_bottom_bar.dart';
 import '../../../features/home/screens/home_screen.dart';
 import '../../../core/widgets/spot_promo_card.dart';
+import '../../../core/widgets/spot_promo_sheet.dart';
+import '../../../core/services/spot_promo_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen 1 — Claimit Privilege home.
@@ -38,6 +40,12 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
   List<PrivilegePartner> _nearby = const [];
   bool _loadingNearby = true;
 
+  /// Paid Spot Promos. The SAME list shows on Local Finder and Claimit Select
+  /// — one booking, three pages — so this comes from the shared
+  /// SpotPromoService rather than anything Privilege-specific. They sit above
+  /// the organic partners because that placement is what was paid for.
+  List<SpotPromoDto> _paidPromos = const [];
+
   /// Favourites, per session — same affordance as the Local Finder card.
   final Set<String> _liked = <String>{};
   bool _showingNearest = false;
@@ -65,15 +73,24 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
   }
 
   Future<void> _loadNearby() async {
+    // A pull-to-refresh must actually reach the network: the promo cache
+    // would otherwise serve the same list straight back for 3 minutes.
+    SpotPromoService.instance.invalidate();
     setState(() => _loadingNearby = true);
-    final page = await PrivilegeService.instance.fetchPartners(
-      sort: 'distance',
-      limit: 6,
-    );
+    // Kick both off before awaiting either, so the paid strip does not make
+    // the page wait any longer than it already does for the partner list.
+    // (Future.wait would work too, but on two different result types it
+    // collapses to List<Object?> and needs casting back.)
+    final partnersFuture =
+        PrivilegeService.instance.fetchPartners(sort: 'distance', limit: 6);
+    final promosFuture = SpotPromoService.instance.fetch();
+    final page = await partnersFuture;
+    final promos = await promosFuture;
     if (!mounted) return;
     setState(() {
       _nearby = page.partners;
       _showingNearest = page.showingNearest;
+      _paidPromos = promos;
       _loadingNearby = false;
     });
   }
@@ -179,12 +196,12 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
                   padding: EdgeInsets.all(28),
                   child:
                       Center(child: CircularProgressIndicator(color: kPrivBlue)))
-            else if (_nearby.isEmpty)
+            else if (_nearby.isEmpty && _paidPromos.isEmpty)
               _emptyNearby()
             else ...[
               // Told, not hidden: if nothing fell inside the radius, the list
               // is the nearest partners anywhere.
-              if (_showingNearest)
+              if (_showingNearest && _nearby.isNotEmpty)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 10),
                   child: Text(
@@ -196,6 +213,14 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
                   ),
                 ),
               ..._nearby.map(_promoCard),
+              // ── Spot Promos — AFTER the organic list ────────────────────
+              // Identical on Local Finder, Select and Privilege: one booking,
+              // one collection, one endpoint. Hidden entirely when nothing is
+              // booked, so an empty heading never shows.
+              if (_paidPromos.isNotEmpty) ...[
+                _spotPromoHeader(),
+                ..._paidPromos.map(_paidPromoCard),
+              ],
             ],
             const SizedBox(height: 14),
             _registerButton(context),
@@ -400,18 +425,54 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
         ),
       );
 
-  /// "Spot Promos" with the underline used across the app's new design.
+  /// The ORGANIC partners section. Named for what it actually contains.
+  ///
+  /// This used to be titled "Spot Promos", which is why the client saw
+  /// "different Spot Promos on each page": the heading was the ad section's
+  /// name but the list under it was this page's own partners, which of course
+  /// differ from Select's professionals and Local Finder's businesses. Paid
+  /// promos now live in their own section (see _spotPromoHeader) and are
+  /// identical on all three pages.
   Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Spot Promos',
+            'Nearby Partners',
             style: TextStyle(
                 fontSize: 16, fontWeight: FontWeight.w800, color: kPrivBlue),
           ),
           const SizedBox(height: 4),
           Container(width: 104, height: 2.5, color: kPrivYellow),
         ],
+      );
+
+  /// Heading for the PAID section. Labelled "Sponsored" because a paid card
+  /// sitting among organic listings has to say what it is.
+  Widget _spotPromoHeader() => Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const SizedBox(height: 16),
+            Row(
+              children: const [
+                Text('Spot Promos',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800,
+                        color: kPrivBlue)),
+                SizedBox(width: 8),
+                Text('Sponsored',
+                    style: TextStyle(
+                        fontSize: 10.5, fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(width: 104, height: 2.5, color: kPrivYellow),
+            const SizedBox(height: 4),
+          ],
+        ),
       );
 
   Widget _emptyNearby() => Container(
@@ -442,5 +503,17 @@ class _PrivilegeHomeScreenState extends State<PrivilegeHomeScreen>
             ? _liked.remove(p.id)
             : _liked.add(p.id)),
         onTap: () => context.push('/privilege/detail', extra: p.id),
+      );
+
+  /// One paid Spot Promo. Identical card, identical sheet, on all three
+  /// pages — the mapping lives on the DTO so it cannot diverge between them.
+  Widget _paidPromoCard(SpotPromoDto p) => SpotPromoCard(
+        promo:       p.toCard(),
+        accent:      kPrivBlue,
+        isFavourite: _liked.contains(p.id),
+        onFavourite: () => setState(() => _liked.contains(p.id)
+            ? _liked.remove(p.id)
+            : _liked.add(p.id)),
+        onTap: () => showSpotPromoSheet(context, p, accent: kPrivBlue),
       );
 }

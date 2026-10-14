@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../models/learn_item.dart';
 import '../services/learn_service.dart';
 import 'learn_video_screen.dart';
+import '../../../core/widgets/claimit_bottom_bar.dart';
+import '../../../features/home/screens/home_screen.dart';
 
 /// "Learn Claimit" — list of how-to-use-the-app questions. Admin adds these
 /// (question + video) from the web panel; tapping a question opens its
@@ -50,6 +52,17 @@ class _LearnListScreenState extends State<LearnListScreen> {
         title: const Text('Learn Claimit'),
         elevation: 0,
       ),
+      // The SHARED bottom bar — the same widget Home, Local Finder, Select and
+      // Privilege use. Deliberately not a Learn-specific copy: three separate
+      // bars are exactly how they drifted out of sync before.
+      //
+      // The centre FAB has to be declared here too. centerDocked docks it into
+      // the bottomNavigationBar, so without it the bar renders with a 72px
+      // hole where the button belongs.
+      floatingActionButton:
+          ClaimitCenterFab(onTap: () => showClaimitFeaturedZones(context)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: const ClaimitBottomBar(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty

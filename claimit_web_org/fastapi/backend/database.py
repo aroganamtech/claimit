@@ -43,6 +43,16 @@ app_shops_collection        = app_db["shops"]
 # with no own photo show a random image from their category).
 category_images_collection  = app_db["category_images"]
 app_banners_collection      = app_db["banners"]
+# Spot Promos — ONE paid booking that appears in the "Spot Promos" strip on
+# all three app feature pages (Local Finder, Claimit Select, Claimit
+# Privilege). Deliberately a single shared collection rather than three, so
+# the advertiser buys one placement and all three pages show the same ad.
+app_spot_promos_collection  = app_db["spot_promos"]
+# Queue for paid notification ads. This backend only ever WRITES jobs here;
+# the app backend's background loop (app/utils/ad_push.py) is what resolves
+# the audience and sends the pushes, because the user coordinates and the
+# device tokens live on that side.
+app_ad_notifications_collection = app_db["ad_notifications"]
 app_bill_reviews_collection = app_db["bill_manual_reviews"]
 app_notifications_collection = app_db["notifications"]
 # "Learn Claimit" — admin-curated question + how-to video lessons shown in

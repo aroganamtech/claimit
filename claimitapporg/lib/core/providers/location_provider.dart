@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/app_constants.dart';
+import '../network/api_client.dart';
 import '../services/location_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,8 +287,79 @@ class LocationProvider extends ChangeNotifier {
       LocationService.lastPincode = _selected!.pincode;
       LocationService.selectedLat = _selected!.lat;
       LocationService.selectedLng = _selected!.lng;
+      unawaited(_syncToServer(_selected!));
     }
     LocationService.radiusKm = _radiusKm;
+  }
+
+  // ── Telling the server where the user is ──────────────────────────────────
+  //
+  // Everything above keeps the location on the DEVICE, which is all the app
+  // itself needs: the feature services read the statics and search that 5 km.
+  // A notification ad is the opposite direction — the server has to decide,
+  // with no app running, who is within 5 km of a pincode. That is impossible
+  // unless the user's point is stored server-side, so the selection is
+  // mirrored to POST /users/location here.
+  //
+  // Rules this follows deliberately:
+  //  • fire-and-forget: a failed sync must never block or break the picker,
+  //    so it is unawaited and every error is swallowed.
+  //  • only when signed in: no token means the call would just 401, and the
+  //    location picker is reachable before login.
+  //  • deduplicated: _publish() also runs on every radius change and on each
+  //    cold start, and re-posting the same point each time would be pure
+  //    noise. Compared on the rounded point, so a few metres of GPS drift
+  //    doesn't trigger a write either.
+  String? _lastSyncedKey;
+
+  /// Called with the display name after the location reaches the server.
+  ///
+  /// Wired in main.dart to AuthProvider.applyLocationLocally. Without it the
+  /// server knew the new location but AuthProvider's cached user did not, so
+  /// the Profile screen kept rendering the OLD location until a full profile
+  /// refetch. A callback rather than a direct AuthProvider reference keeps
+  /// this provider free of any feature-level dependency.
+  void Function(String location)? onLocationSynced;
+
+  /// Push the current selection to the server now.
+  ///
+  /// Needed because the sync inside [_publish] is skipped while nobody is
+  /// signed in, and a user who logs in and never touches the location picker
+  /// would otherwise never get a point stored. The home screen calls this
+  /// once it is built, which only happens after login. Deduplication means
+  /// calling it repeatedly costs nothing.
+  Future<void> pushLocationToServer() async {
+    final place = _selected;
+    if (place == null) return;
+    await _syncToServer(place);
+  }
+
+  Future<void> _syncToServer(ClaimitPlace place) async {
+    if (place.lat == 0 && place.lng == 0) return;
+
+    final key = '${place.lat.toStringAsFixed(4)},'
+        '${place.lng.toStringAsFixed(4)},${place.display}';
+    if (key == _lastSyncedKey) return;
+
+    try {
+      final api = ApiClient();
+      final token = await api.getToken();
+      if (token == null || token.isEmpty) return;
+
+      await api.post(AppConstants.updateLocation, data: {
+        'location': place.display,
+        'lat': place.lat,
+        'lng': place.lng,
+        if (place.pincode.isNotEmpty) 'pincode': place.pincode,
+      });
+      _lastSyncedKey = key;
+      // Keep the cached user model in step, so Profile shows the new place.
+      onLocationSynced?.call(place.display);
+    } catch (e) {
+      // Offline, or the server is down. The device still has the location;
+      // the next selection (or the next cold start) retries on its own.
+      debugPrint('LocationProvider server sync skipped: $e');
+    }
   }
 
   void _addRecent(ClaimitPlace place) {

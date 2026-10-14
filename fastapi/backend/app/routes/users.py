@@ -82,13 +82,40 @@ async def update_location(
     data: LocationUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    """Save the user's selected location (area / locality)."""
+    """Save the user's selected location (area / locality), and its position.
+
+    The coordinates are what make distance targeting possible — "notify every
+    user within 5 km of this pincode" needs a point on the user, not a place
+    name. Stored as a GeoJSON Point in `geo` so the same `$geoNear` the shop
+    and deal searches already use works on the users collection too.
+
+    Remember the ORDER: GeoJSON is [longitude, latitude], not [lat, lng].
+    Getting it the wrong way round puts every Indian user in the Indian Ocean
+    and the radius query silently returns nobody.
+    """
     db = get_db()
     user_id = current_user.get("_id") or current_user.get("id")
 
+    update = {"location": data.location, "updated_at": datetime.utcnow()}
+
+    # Only write coordinates when we actually have them. An older app build
+    # sends the name alone, and must not wipe a position already stored.
+    if data.lat is not None and data.lng is not None:
+        try:
+            lat, lng = float(data.lat), float(data.lng)
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and not (lat == 0 and lng == 0):
+                update["lat"] = lat
+                update["lng"] = lng
+                update["geo"] = {"type": "Point", "coordinates": [lng, lat]}
+                update["location_updated_at"] = datetime.utcnow()
+        except (TypeError, ValueError):
+            pass
+    if data.pincode:
+        update["pincode"] = str(data.pincode).strip()[:6]
+
     await db.users.update_one(
         {"_id": ObjectId(str(user_id))},
-        {"$set": {"location": data.location, "updated_at": datetime.utcnow()}},
+        {"$set": update},
     )
 
     updated_user = await db.users.find_one({"_id": ObjectId(str(user_id))})

@@ -1,0 +1,30 @@
+[Unit]
+Description=Claimit Scan Service (bill reading)
+# Starts after the database, but nothing else depends on IT starting.
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/claimit_scan
+EnvironmentFile=/home/ubuntu/claimit_scan/.env
+ExecStart=/home/ubuntu/claimit_scan/venv/bin/uvicorn app.main:app \
+          --host 127.0.0.1 --port 8003 --workers 1 --proxy-headers
+Restart=always
+RestartSec=5
+
+# ── Hardening. A compromised scan process should reach nothing. ──────────
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/claimit_scan
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

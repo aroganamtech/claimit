@@ -71,6 +71,11 @@ class _ClaimitAppState extends State<ClaimitApp> {
     // it, and only then tries GPS in the background. It never blocks start-up
     // and never asks for a permission the user has already declined.
     _locationProvider = LocationProvider();
+    // When the picked location reaches the server, mirror it into the cached
+    // user model too — otherwise the Profile screen keeps showing the old
+    // place until the next full profile fetch, because it renders
+    // AuthProvider's `user.location`, not LocationProvider's selection.
+    _locationProvider.onLocationSynced = _authProvider.applyLocationLocally;
     _locationProvider.init();
 
     // ── Auto-load bill wallet + history whenever the user authenticates ──────

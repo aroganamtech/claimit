@@ -36,6 +36,25 @@ const DEFAULT_AD_TYPES = [
     desc: 'Video  /  Static Thumbnail',
     tiers: { premium: 700, standard: 700 },
   },
+  {
+    key: 'spot_promos',
+    title: 'Spot Promos Ad',
+    // The selling point, stated plainly: one booking, three placements.
+    desc: 'One card shown in Spot Promos on ALL 3 app pages — Local Finder, Select & Privilege',
+    tiers: { premium: 1050, standard: 700 },
+  },
+  {
+    key: 'special_cards',
+    title: 'Special Card Ad',
+    desc: 'Thumbnail + Details of the Ad',
+    tiers: { premium: 700, standard: 700 },
+  },
+  {
+    key: 'notification',
+    title: 'Push Notification Ad',
+    desc: 'A push notification to every app user near your pincode — sent once, right after payment',
+    tiers: { standard: 150 },
+  },
 ]
 
 // "?" info icon with a hover tooltip — explains the Premium vs Standard cost
@@ -123,6 +142,10 @@ export default function ChooseAdType() {
   // step) we only know the admin-configured cap, not the live remaining count.
   const [slotInfo, setSlotInfo] = useState({})
   const [adTypes, setAdTypes] = useState(DEFAULT_AD_TYPES)
+  // "Also announce my ad by push." Available on every type except the
+  // notification ad itself, which already IS a push.
+  const [withNotification, setWithNotification] = useState(false)
+  const [addonPrice, setAddonPrice] = useState(100)
 
   useEffect(() => {
     ['nearby_deals', 'brand_deals'].forEach(adType => {
@@ -134,14 +157,27 @@ export default function ChooseAdType() {
 
   useEffect(() => {
     api.advertiser.getPricing()
-      .then(pricing => setAdTypes(prev => prev.map(ad => ({
-        ...ad,
-        tiers: pricing[ad.key] || ad.tiers,
-      }))))
+      .then(pricing => {
+        setAdTypes(prev => prev.map(ad => ({
+          ...ad,
+          tiers: pricing[ad.key] || ad.tiers,
+        })))
+        // Never hardcoded in the UI: the add-on price comes from the same
+        // admin-configured store the backend charges from.
+        if (pricing.notification_addon != null) setAddonPrice(pricing.notification_addon)
+      })
       .catch(() => {}) // keep DEFAULT_AD_TYPES on failure
   }, [])
 
   const currentTier = (ad) => tierByType[ad.key] || Object.keys(ad.tiers)[0]
+
+  // The selected type's own price, plus the add-on when ticked. Shown so the
+  // advertiser sees the real total BEFORE the details step, not for the first
+  // time at checkout.
+  const selectedAd = adTypes.find(a => a.key === selected)
+  const addonApplies = !!selectedAd && selectedAd.key !== 'notification' && withNotification
+  const selectedBase = selectedAd ? selectedAd.tiers[currentTier(selectedAd)] : 0
+  const selectedTotal = selectedBase + (addonApplies ? addonPrice : 0)
 
   const handleNext = () => {
     if (!selected) return
@@ -155,7 +191,8 @@ export default function ChooseAdType() {
       alert(`All ${info.max} Premium slots for ${ad.title} are fully booked right now. Please choose Standard.`)
       return
     }
-    navigate(`/advertiser/create-ad/details?type=${selected}&tier=${tier}`)
+    const addon = ad.key !== 'notification' && withNotification ? '1' : '0'
+    navigate(`/advertiser/create-ad/details?type=${selected}&tier=${tier}&notify=${addon}`)
   }
 
   return (
@@ -218,6 +255,59 @@ export default function ChooseAdType() {
             )
           })}
         </div>
+
+        {/* ── The +push add-on ───────────────────────────────────────────
+            Deliberately one panel below the grid rather than a checkbox on
+            every card: it is a single decision that applies to whichever
+            type is chosen, and repeating it eight times would read as eight
+            different options. Hidden entirely for the notification ad,
+            because that type IS a push and the backend refuses to charge
+            twice for one send. */}
+        {selectedAd && selectedAd.key !== 'notification' && (
+          <div style={{
+            maxWidth: 900, marginTop: 24, background: '#fff', borderRadius: 12,
+            border: `2px solid ${withNotification ? '#1565C0' : '#eee'}`,
+            padding: 20, display: 'flex', alignItems: 'center', gap: 16,
+            cursor: 'pointer',
+          }} onClick={() => setWithNotification(v => !v)}>
+            <div style={{
+              width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+              border: `2px solid ${withNotification ? '#1565C0' : '#bbb'}`,
+              background: withNotification ? '#1565C0' : '#fff',
+              color: '#fff', fontSize: 14, fontWeight: 800,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{withNotification ? '✓' : ''}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
+                Also promote this ad by push notification
+              </div>
+              <div style={{ color: '#888', fontSize: 13 }}>
+                Every app user near your pincode gets a notification when your
+                ad goes live — sent together with the ad, not before it.
+              </div>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 18, color: '#1565C0', flexShrink: 0 }}>
+              + ₹{addonPrice}
+            </div>
+          </div>
+        )}
+
+        {/* Running total, so the amount at checkout is never a surprise. */}
+        {selectedAd && (
+          <div style={{
+            maxWidth: 900, marginTop: 16, background: '#e8f0fe',
+            borderRadius: 12, padding: '16px 20px', display: 'flex',
+            alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <div style={{ fontSize: 13, color: '#1565C0', fontWeight: 600 }}>
+              {selectedAd.title}
+              {addonApplies ? ` + push notification (₹${selectedBase} + ₹${addonPrice})` : ''}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#1565C0' }}>
+              ₹{selectedTotal}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 32, textAlign: 'right', maxWidth: 900 }}>
           <button

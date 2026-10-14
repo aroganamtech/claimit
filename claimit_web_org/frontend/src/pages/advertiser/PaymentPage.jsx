@@ -120,7 +120,12 @@ export default function PaymentPage() {
         amount: pending.amount,
         ad_type: pending.adType,
         tier: pending.tier,
-        purpose: `Claimit ${pending.adTypeLabel} — 7 day campaign`,
+        // Without this the server prices the base ad only, and every
+        // advertiser who ticked the add-on would be charged ₹100 too little.
+        with_notification: !!pending.withNotification,
+        purpose: pending.adType === 'notification'
+          ? `Claimit ${pending.adTypeLabel}`
+          : `Claimit ${pending.adTypeLabel} — 7 day campaign${pending.withNotification ? ' + push' : ''}`,
         return_url: returnUrl,
       })
       if (!link.payment_link_url) throw new Error('No payment link returned')

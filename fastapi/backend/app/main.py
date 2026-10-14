@@ -16,10 +16,12 @@ from .routes import (
     policies, locations, deals, shops, rewards,
     redeem, reels, classifieds, admin, bill, banners, advertiser,
     feedback, payments, learn, select, search, campaign, privilege,
+    spot_promos,
 )
 
 
 from .utils.daily_push import daily_push_loop
+from .utils.ad_push import ad_notification_loop
 
 
 @asynccontextmanager
@@ -45,8 +47,15 @@ async def lifespan(app: FastAPI):
         print(f"⚠️  shop-flag normalization skipped: {_e}")
     # Daily engagement push (random time 10:00–20:00 IST) — background task
     push_task = asyncio.create_task(daily_push_loop())
+    # Paid notification ads. The web portal only queues a job into
+    # claimit_db.ad_notifications when an advertiser buys one; this loop is
+    # what actually works out who is inside the radius and sends the push,
+    # at the time the ad goes live. See utils/ad_push.py for why the split
+    # falls here.
+    ad_push_task = asyncio.create_task(ad_notification_loop())
     yield
     push_task.cancel()
+    ad_push_task.cancel()
     await disconnect_db()
 
 
@@ -101,6 +110,8 @@ app.include_router(select.router)
 app.include_router(privilege.router)
 # One geo-search API across all nine features (the client's location brief).
 app.include_router(search.router)
+# Spot Promos — ONE paid strip read by Local Finder, Select AND Privilege.
+app.include_router(spot_promos.router)
 
 
 @app.get("/")

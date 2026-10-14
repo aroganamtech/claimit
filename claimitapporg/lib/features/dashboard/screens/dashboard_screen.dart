@@ -1488,19 +1488,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Fetch unread notification count for the bell badge
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationProvider>().fetchNotifications();
+      // Make sure the server knows where this user is. The location picker
+      // syncs on every change, but only while signed in — and it can be used
+      // before login. Home is only ever built after login, so this covers the
+      // user who logs in and never re-picks a location. It deduplicates
+      // internally, so being called on every Home rebuild is free.
+      context.read<LocationProvider>().pushLocationToServer();
     });
   }
 
-  // Banner sits at the very top of the page (AspectRatio 16/9, full width).
-  // Once the user scrolls down past roughly half its height, pause it —
-  // mirroring how feeds like Instagram/Twitter pause inline video that's
-  // scrolled out of view — and resume it once scrolled back near the top.
+  // The banner is PINNED above the scroll view, so it is on screen for as
+  // long as Home is — scroll position no longer tells us anything about
+  // whether it can be seen.
+  //
+  // This used to pause the banner video once the page scrolled past half the
+  // banner's height, which was right when the banner scrolled away with the
+  // content. Keeping that now would pause a video the user is still looking
+  // at. Visibility is handled entirely by the route observer
+  // (`homeShellCovered`), which is the only thing that can hide it.
   void _onScroll() {
-    final bannerHeight = MediaQuery.of(context).size.width * 9 / 16;
-    final visible = _scrollCtrl.offset < bannerHeight * 0.5;
-    if (visible != _bannerVisible) {
-      setState(() => _bannerVisible = visible);
-    }
+    if (!_bannerVisible) setState(() => _bannerVisible = true);
   }
 
   List<_BannerData> get _activeBanners =>
@@ -1942,23 +1949,17 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       appBar: _buildAppBar(),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait([
-            _loadDeals(),
-            _loadNearbyShopsFromGPS(),
-          ]);
-        },
-        color: const Color(0xFF1565C0),
-        child: SingleChildScrollView(
-          controller: _scrollCtrl,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Banner carousel with dots overlaid ──────────────────────
+      // ── Banner pinned, everything below it scrolls ──────────────────
+      // The banner used to be the first child INSIDE the scroll view, so it
+      // scrolled away with the page. It now sits above the scroll view as a
+      // fixed row of the body Column, and only the content beneath moves.
+      //
+      // The carousel itself is untouched: same PageView, same auto-advance,
+      // same dots. Only its position in the widget tree changed.
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+            // ── Banner carousel with dots overlaid — PINNED ─────────────
             AspectRatio(
               aspectRatio: 16 / 9,
               child: Stack(
@@ -2017,6 +2018,24 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
+            // ── Everything below the banner scrolls ─────────────────────
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await Future.wait([
+                    _loadDeals(),
+                    _loadNearbyShopsFromGPS(),
+                  ]);
+                },
+                color: const Color(0xFF1565C0),
+                child: SingleChildScrollView(
+                  controller: _scrollCtrl,
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
             // ── Explore Claimit ──────────────────────────────────────────
             // The ten product zones, five at a time. These used to be hidden
             // behind the centre button, which the client found hard to
@@ -2147,10 +2166,13 @@ class _DashboardScreenState extends State<DashboardScreen>
             ],
 
             const SizedBox(height: 90),
-          ],
-        ),
-      ),       // closes SingleChildScrollView
-    ),         // closes RefreshIndicator
+                    ],
+                  ),             // closes inner Column
+                ),               // closes SingleChildScrollView
+              ),                 // closes RefreshIndicator
+            ),                   // closes Expanded
+        ],
+      ),                         // closes body Column
     );
   }
 }

@@ -1,0 +1,1082 @@
+"""
+Bill scan / wallet / history / manual-review endpoints.
+
+Routes:
+  POST /bill/scan                        — record a scanned bill, award cashback + points
+  GET  /bill/wallet                      — current wallet totals for the logged-in user
+  GET  /bill/history                     — last 100 scans, newest first
+  POST /bill/manual-review               — submit bill for manual staff review
+  GET  /bill/my-reviews                  — user's own manual review submissions
+  GET  /bill/manual-reviews              — admin: list all reviews (filter by status)
+  POST /bill/manual-reviews/{id}/action  — admin: approve/reject → credit wallet + notify
+
+Business rules (must stay in sync with BillRewardProvider in Flutter):
+  • Cashback and reward points are a PERCENTAGE of the bill total, and both
+    percentages are admin-configurable — app_config {"key": "bill_rates"},
+    edited from the web admin panel. Defaults: 1 % cashback, 10 % points.
+    The app reads GET /bill/rates so its pre-submit preview matches what is
+    actually credited.
+  • New users get a welcome bonus on wallet creation — configurable by admin:
+      new_user_reward_points (default 1000 pts) + new_user_cashback (default ₹10)
+  • Config is stored in app_config collection; falls back to env vars / hard defaults.
+  • Duplicate detection: fingerprint = "shop|date|HH:MM|amount" (with time)
+                        or           "shop|date|amount"         (without time)
+"""
+
+import asyncio
+import os
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
+from pydantic import BaseModel, Field
+from bson import ObjectId
+
+from ..database import get_db
+from ..utils.auth import get_current_user, decode_token
+from ..utils.helpers import serialize_doc
+from ..utils.s3 import upload_base64, generate_presigned_url
+from ..utils.notify import notify_user
+
+
+def _require_admin(x_admin_key: Optional[str] = Header(None)):
+    secret = os.getenv("ADMIN_SECRET_KEY", "claimit-admin-secret")
+    if x_admin_key != secret:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+router = APIRouter(prefix="/bill", tags=["Bill"])
+
+
+# ── New-user bonus config ──────────────────────────────────────────────────────
+async def _get_new_user_config(db) -> dict:
+    """
+    Read new-user bonus settings from the app_config collection.
+    Falls back to env vars, then to hard-coded defaults (1000 pts / ₹10 cashback).
+    """
+    default_pts = int(os.getenv("NEW_USER_REWARD_POINTS", "1000"))
+    default_cb  = float(os.getenv("NEW_USER_CASHBACK", "10.0"))
+    try:
+        cfg = await db.app_config.find_one({"key": "new_user_bonus"})
+        if cfg:
+            return {
+                "reward_points": int(cfg.get("reward_points", default_pts)),
+                "cashback":      float(cfg.get("cashback", default_cb)),
+            }
+    except Exception:
+        pass
+    return {"reward_points": default_pts, "cashback": default_cb}
+
+
+# Launch rules. These are only the fallback — the live values come from the
+# app_config document below, which the web admin panel edits.
+DEFAULT_CASHBACK_PERCENT = 1.0    # ₹1 back per ₹100 spent
+DEFAULT_POINTS_PERCENT   = 10.0   # 10 points per ₹100 spent
+
+# Hard ceiling on cashback, enforced here as well as in the admin form.
+# A typo in the panel ("20" for "2") would otherwise pay out ten times the
+# intended amount on every bill until somebody noticed the wallet totals.
+# Points are not capped by this — they run at 10% by design.
+MAX_CASHBACK_PERCENT = 5.0
+
+# IST, because "this month" means the user's month, not UTC's. Scans are
+# stored in UTC, so the month boundary has to be converted (1 Sep 00:00 IST
+# is 31 Aug 18:30 UTC) — comparing against a UTC month start would credit
+# the last 5.5 hours of the previous month to this one.
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _month_start_utc(now: Optional[datetime] = None) -> datetime:
+    """First instant of the current IST calendar month, as UTC."""
+    moment = (now or datetime.now(timezone.utc)).astimezone(_IST)
+    first = moment.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return first.astimezone(timezone.utc)
+
+
+def _default_tiers(base: float) -> list:
+    """The starting ladder, derived from the base rate rather than hard-coded.
+
+    Deriving matters: an admin who has already moved the base rate to 2%
+    would be silently DROPPED to a hard-coded 1% first tier the moment this
+    feature deployed. Building tier 1 from the current base means switching
+    this on never reduces anyone's cashback.
+    """
+    return [
+        {"min_scans": 0,  "cashback_percent": base},
+        {"min_scans": 15, "cashback_percent": min(base + 1, MAX_CASHBACK_PERCENT)},
+        {"min_scans": 50, "cashback_percent": min(base + 2, MAX_CASHBACK_PERCENT)},
+    ]
+
+
+def _clean_tiers(raw, base: float) -> list:
+    """Sanitise stored tiers: valid rows only, sorted, capped, always non-empty.
+
+    A malformed config must never stop users earning, so anything unusable
+    falls back to the derived default ladder.
+    """
+    tiers = []
+    for row in (raw or []):
+        try:
+            mn = int(row.get("min_scans", 0))
+            pc = float(row.get("cashback_percent", base))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if mn < 0:
+            continue
+        tiers.append({"min_scans": mn,
+                      "cashback_percent": min(max(0.0, pc), MAX_CASHBACK_PERCENT)})
+    if not tiers:
+        return _default_tiers(base)
+    tiers.sort(key=lambda t: t["min_scans"])
+    # There must be a tier covering a user's first scan, or someone with 3
+    # scans this month would match nothing and earn zero.
+    if tiers[0]["min_scans"] > 0:
+        tiers.insert(0, {"min_scans": 0, "cashback_percent": base})
+    return tiers
+
+
+def tier_for(scan_number: int, tiers: list) -> dict:
+    """The highest tier this scan qualifies for.
+
+    `scan_number` counts the scan being made right now, so a user on 14 scans
+    making their 15th matches the 15-scan tier — which is what "scan 15 times
+    and your rate goes up" means to the person doing it.
+    """
+    chosen = tiers[0]
+    for t in tiers:
+        if scan_number >= t["min_scans"]:
+            chosen = t
+        else:
+            break
+    return chosen
+
+
+async def _scans_this_month(db, uid: str) -> int:
+    """How many bills this user has already had recorded this IST month.
+
+    Counted from bill_history, which is permanent. bill_scans carries a 24-hour
+    TTL for duplicate detection, so counting that would reset everyone's tier
+    every day.
+    """
+    try:
+        return await db.bill_history.count_documents(
+            {"user_id": uid, "scanned_at": {"$gte": _month_start_utc()}}
+        )
+    except Exception:
+        return 0
+
+
+async def _rates_for_user(db, uid: Optional[str]) -> dict:
+    """Rates with the user's monthly tier applied to cashback.
+
+    Points are deliberately untouched: they feed the redeem discount at
+    partner shops, so raising them would change what shops effectively pay.
+    """
+    rates = await _get_bill_rates(db)
+    tiers = rates["tiers"]
+    if not uid:
+        return {**rates, "scan_number": 0, "tier": tiers[0],
+                "cashback_percent": tiers[0]["cashback_percent"]}
+
+    prior = await _scans_this_month(db, uid)
+    scan_number = prior + 1          # the scan being made now
+    tier = tier_for(scan_number, tiers)
+
+    nxt = next((t for t in tiers if t["min_scans"] > scan_number), None)
+    return {
+        **rates,
+        "cashback_percent": tier["cashback_percent"],
+        "scans_this_month": prior,
+        "scan_number": scan_number,
+        "tier": tier,
+        "next_tier": (
+            {**nxt, "scans_needed": nxt["min_scans"] - scan_number} if nxt else None
+        ),
+    }
+
+
+async def _get_bill_rates(db) -> dict:
+    """The cashback % and reward-point % awarded on a scanned bill.
+
+    These used to be hard-coded as `total * 0.01` and `total / 10`, so
+    changing the offer meant a code change and a redeploy. They now live in
+    app_config {"key": "bill_rates"}, which the web admin panel edits — the
+    same mechanism new_user_bonus and pricing already use.
+
+    Read once per request rather than cached, so an admin's change applies to
+    the very next scan with no restart and no stale-cache window.
+
+    A missing or unreadable config falls back to the launch rates, so a bad
+    config document can never stop users earning.
+    """
+    cb, pts, raw_tiers = DEFAULT_CASHBACK_PERCENT, DEFAULT_POINTS_PERCENT, None
+    try:
+        cfg = await db.app_config.find_one({"key": "bill_rates"})
+        if cfg:
+            cb = float(cfg.get("cashback_percent", cb))
+            pts = float(cfg.get("points_percent", pts))
+            raw_tiers = cfg.get("tiers")
+    except Exception:
+        pass
+    # A negative rate would silently debit the user; 0 is legitimate (offer
+    # switched off), so only negatives are corrected. The cap is applied here
+    # too, so a value written straight into Mongo can't bypass the admin form.
+    cb = min(max(0.0, cb), MAX_CASHBACK_PERCENT)
+    return {
+        "cashback_percent": cb,
+        "points_percent":   max(0.0, pts),
+        # Monthly scan-count ladder. Always non-empty, always sorted.
+        "tiers":            _clean_tiers(raw_tiers, cb),
+    }
+
+
+def _earned(total: float, rates: dict) -> tuple:
+    """(cashback, points) for a bill total, at the given rates.
+
+    One place, so /bill/scan and the manual-review approval can never drift
+    apart — they used to hold two separate copies of the same arithmetic.
+    Points keep one decimal (₹1,564 → 156.4 pts), matching the existing rule.
+    """
+    cb = round(total * rates["cashback_percent"] / 100, 2)
+    pts = round(total * rates["points_percent"] / 100, 1)
+    return cb, pts
+
+
+# ── Optional auth ─────────────────────────────────────────────────────────────
+async def _resolve_user(request: Request, body_uid: Optional[str]) -> Optional[str]:
+    """Return user_id string or None. Never raises — callers decide if 401 needed."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[len("Bearer "):]
+        try:
+            payload = decode_token(token)
+            uid = payload.get("sub")
+            if uid:
+                return uid
+        except Exception:
+            pass
+    return body_uid
+
+
+# ── Request models ─────────────────────────────────────────────────────────────
+class BillScanRequest(BaseModel):
+    total_amount:  float          = Field(..., gt=0)
+    reward_points: Optional[int]  = None
+    shop_name:     Optional[str]  = None
+    shop_id:       Optional[str]  = None   # Redeem/Reward shop — enables server-side calc
+    scan_type:     Optional[str]  = None   # "redeem" | "reward" — see _resolve_scan_type
+    bill_number:   Optional[str]  = None
+    bill_date:     Optional[str]  = None
+    bill_time:     Optional[str]  = None
+    image_base64:  Optional[str]  = None
+    user_id:       Optional[str]  = None
+
+
+class ManualReviewRequest(BaseModel):
+    total_amount:  float  = Field(..., gt=0)
+    image_base64:  str    = Field(..., description="Base64-encoded bill image")
+    shop_name:     Optional[str] = None
+    shop_id:       Optional[str] = None   # Redeem/Reward shop — enables admin-side calc
+    scan_type:     Optional[str] = None   # "redeem" | "reward" — see _resolve_scan_type
+    bill_number:   Optional[str] = None
+    bill_date:     Optional[str] = None
+    bill_time:     Optional[str] = None
+    manual_reason: Optional[str] = "missing_fields"
+    user_id:       Optional[str] = None
+
+
+class ReviewActionRequest(BaseModel):
+    action:        Literal["approve", "reject"]
+    reward_points: Optional[int]   = None
+    cashback:      Optional[float] = None
+    admin_note:    Optional[str]   = None
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def _dup_key(shop: str, bill_date: str, amount: float,
+             bill_time: Optional[str] = None) -> str:
+    import re as _re
+    # Lowercase + alphanumerics only — "Fresh Basket" and "FreshBasket"
+    # must produce the SAME fingerprint (mirrors the Flutter client).
+    s   = _re.sub(r"[^a-z0-9]", "", shop.lower())
+    amt = f"{amount:.0f}"
+    t   = (bill_time or "").strip()
+    if t:
+        return f"{s}|{bill_date}|{t}|{amt}"
+    return f"{s}|{bill_date}|{amt}"
+
+
+def _resolve_scan_type(raw: Optional[str], shop_id: Optional[str]) -> str:
+    """
+    Normalize scan_type to "redeem" or "reward".
+
+      • Redeem Bill — spends existing reward points against a shop's
+        registered discount % AND earns 1 % cashback + 10 % points on the
+        bill total (redeem shops act as redeem + reward).
+      • Reward Bill — earns 1 % cashback + 10 % points on the bill total.
+        No discount is applied / no points are deducted.
+
+    Back-compat: older clients that don't send scan_type are treated as
+    "redeem" when a shop_id is present (matches the original Redeem Zone
+    behaviour) and "reward" otherwise (a plain scan with no shop context).
+    """
+    t = (raw or "").strip().lower()
+    if t in ("redeem", "reward"):
+        return t
+    return "redeem" if shop_id else "reward"
+
+
+def _names_match(expected: Optional[str], scanned: Optional[str]) -> bool:
+    """
+    Lenient shop-name match — mirrors BillRewardProvider.matchesExpectedShop
+    on the Flutter client. Normalizes both names to lowercase alphanumerics
+    and checks bidirectional substring containment, so OCR noise (extra
+    branch/address words, punctuation, case) doesn't trip a false mismatch.
+    Returns True when there's no expected name to check against.
+    """
+    if not expected or not expected.strip():
+        return True
+    if not scanned or not scanned.strip():
+        return False
+    import re
+    norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+    e, s = norm(expected), norm(scanned)
+    if not e or not s:
+        return False
+    return e in s or s in e
+
+
+async def _get_or_create_wallet(db, uid: str) -> tuple:
+    """
+    Return (wallet_doc, is_new) where is_new=True if the wallet was just created.
+    New wallets receive the configurable welcome bonus (points + cashback).
+    """
+    wallet = await db.user_wallets.find_one({"user_id": uid})
+    if wallet is None:
+        bonus = await _get_new_user_config(db)
+        wallet = {
+            "user_id":           uid,
+            "reward_points":     bonus["reward_points"],
+            "cashback_wallet":   bonus["cashback"],
+            "lifetime_cashback": bonus["cashback"],
+            "total_scans":       0,
+            "created_at":        datetime.now(timezone.utc),
+        }
+        await db.user_wallets.insert_one(wallet)
+        return wallet, True
+    return wallet, False
+
+
+# ── Server-side amount verification ───────────────────────────────────────────
+# `total_amount` arrives from the phone, so on its own it is a number the user
+# controls: anyone who can post to this endpoint could claim a ₹90,000 bill and
+# mint the points for it. When the app sends the bill photo (it does, for any
+# image under 2 MB) the server reads the total itself and compares.
+#
+# Two deliberate choices:
+#   • FAIL OPEN. If the AI is down, rate-limited or slow, the scan proceeds on
+#     the client's figure. Blocking real customers because our OCR provider is
+#     having a bad day is worse than the fraud this prevents.
+#   • MISMATCH ≠ REJECT. A disagreement routes the scan to the manual-review
+#     queue that already exists, rather than calling the user a liar. Bills are
+#     genuinely hard to read; a human settles it.
+#
+# Tolerance is the larger of 2% and ₹5, which absorbs rounding and a misread
+# paise digit while still catching an invented amount.
+async def _verify_total_with_ai(image_base64: Optional[str]) -> Optional[float]:
+    """The AI's reading of the bill total, or None when it could not check."""
+    if not image_base64:
+        return None
+    try:
+        # Short timeout and a single attempt: this sits in the user's path and
+        # /bill/ocr has already done the patient version before we got here.
+        ai = await asyncio.wait_for(
+            ai_bill_ocr(BillOcrRequest(image_base64=image_base64)),
+            timeout=8.0,
+        )
+    except Exception:
+        return None
+    if not isinstance(ai, dict) or not ai.get("success"):
+        return None
+    got = ai.get("total_amount")
+    return float(got) if isinstance(got, (int, float)) and got > 0 else None
+
+
+def _amounts_agree(claimed: float, seen: float) -> bool:
+    return abs(claimed - seen) <= max(claimed * 0.02, 5.0)
+
+
+# ── POST /bill/scan ────────────────────────────────────────────────────────────
+@router.post("/scan")
+async def scan_bill(data: BillScanRequest, request: Request):
+    uid = await _resolve_user(request, data.user_id)
+    if not uid:
+        raise HTTPException(status_code=401,
+                            detail="Authentication required — send Bearer token or user_id")
+
+    db    = get_db()
+    total = data.total_amount
+
+    wallet, is_new = await _get_or_create_wallet(db, uid)
+    is_first = is_new or wallet.get("total_scans", 0) == 0
+
+    bill_date = data.bill_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = _dup_key(
+        shop      = data.shop_name or "",
+        bill_date = bill_date,
+        amount    = total,
+        bill_time = data.bill_time,
+    )
+    if await db.bill_scans.find_one({"user_id": uid, "dup_key": key}):
+        raise HTTPException(status_code=409, detail="Bill already scanned")
+
+    # Does the photo actually say what the app claims it says?
+    seen = await _verify_total_with_ai(data.image_base64)
+    if seen is not None and not _amounts_agree(total, seen):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "amount_mismatch",
+                "message": "We read a different total on this bill. "
+                           "Send it for review and we'll check it by hand.",
+                "claimed_amount": total,
+                "scanned_amount": seen,
+            },
+        )
+
+    scan_type = _resolve_scan_type(data.scan_type, data.shop_id)
+
+    # ── Look up merchant + verify the scanned shop matches the one selected ──
+    discount_pct = 0
+    if data.shop_id:
+        try:
+            shop_doc = await db.shops.find_one({"_id": ObjectId(data.shop_id)})
+        except Exception:
+            shop_doc = None
+
+        # Safety net — the client already checks this before submitting, but
+        # the server re-checks in case the client check was bypassed/stale.
+        # A clear mismatch is rejected; the app then routes the user to
+        # manual review instead of silently auto-crediting the wrong shop.
+        # Applies to BOTH Redeem and Reward shops.
+        expected_name = (shop_doc or {}).get("name")
+        if expected_name and not _names_match(expected_name, data.shop_name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":          "shop_mismatch",
+                    "message":       f"Scanned shop name does not match the "
+                                     f"selected shop ({expected_name}).",
+                    "expected_shop": expected_name,
+                    "scanned_shop":  data.shop_name,
+                },
+            )
+
+        # Discount % only ever applies on the Redeem path.
+        if scan_type == "redeem":
+            discount_pct = (shop_doc or {}).get("discount") or 0
+
+    # ── BOTH scan types earn cashback + points on the bill total. ────────────
+    # A Redeem Bill ADDITIONALLY spends existing points against the shop's
+    # discount (below) — i.e. a redeem shop acts as redeem AND reward:
+    # the user gets the discount from their points, then still earns
+    # cashback + points on the bill amount, exactly like a reward shop.
+    # Rates are admin-configurable, and the cashback % additionally depends on
+    # how many bills this user has scanned THIS MONTH — the more they use the
+    # app, the higher their rate. Points keep one decimal, e.g. ₹1,564 →
+    # 156.4 pts, NOT rounded to an int.
+    _rates = await _rates_for_user(db, uid)
+    earned_cb, earned_pts = _earned(total, _rates)
+
+    # ── Redeem Bill: deduct existing points based on the shop's discount %. ──
+    # Reward Bill: never deducts — discount_pct is 0 above so this is skipped.
+    # e.g. 1000 pts wallet, 10% discount shop, ₹2000 bill →
+    # discount value = ₹200 → 200 pts deducted → 800 pts left.
+    discount_value  = 0.0
+    deducted_points = 0
+    if scan_type == "redeem" and discount_pct:
+        discount_value = round(total * discount_pct / 100, 2)
+
+        # One point is worth ₹1, so the discount in rupees IS the points price.
+        required_points = discount_value
+        available       = float(wallet["reward_points"])
+
+        # The user must be able to pay for the discount IN FULL.
+        #
+        # This used to be `min(required_points, available)`, which deducted
+        # whatever the user had and still granted the whole discount: a user
+        # with 90 points walked out with ₹200 off and the shop absorbed the
+        # other ₹110. Short users are now turned away with the exact shortfall
+        # so they know how much more they need, and no points are spent.
+        # Half a point of grace. Points carry one decimal (₹1,564 → 156.4 pts),
+        # so a wallet can land on 224.9 against a 225.0 price purely through
+        # rounding. Turning that user away would be indefensible; a rupee of
+        # slack is not.
+        if available < required_points - 0.5:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":      "insufficient_points",
+                    "message":   f"You need {round(required_points - available, 1)} more "
+                                 f"points to redeem {discount_pct}% off this "
+                                 f"₹{total:,.0f} bill.",
+                    "required":  round(required_points, 1),
+                    "available": round(available, 1),
+                    "shortfall": round(required_points - available, 1),
+                    "discount_percent": discount_pct,
+                    "discount_value":   discount_value,
+                },
+            )
+
+        # Never spend more than the wallet holds — with the grace above, a
+        # 224.9 wallet paying a 225.0 price must land on 0, not −0.1.
+        deducted_points = min(required_points, available)
+
+    new_pts       = wallet["reward_points"]     - deducted_points + earned_pts
+    new_cb_wallet = wallet["cashback_wallet"]   + earned_cb
+    new_lifetime  = wallet["lifetime_cashback"] + earned_cb
+    new_scans     = wallet.get("total_scans", 0) + 1
+
+    await db.user_wallets.update_one(
+        {"user_id": uid},
+        {"$set": {
+            "reward_points":     new_pts,
+            "cashback_wallet":   new_cb_wallet,
+            "lifetime_cashback": new_lifetime,
+            "total_scans":       new_scans,
+            "updated_at":        datetime.now(timezone.utc),
+        }},
+    )
+
+    shop_name = (data.shop_name or "Shop").strip()
+    scan_doc = {
+        "user_id":         uid,
+        "dup_key":         key,
+        "scan_type":       scan_type,
+        "shop_name":       shop_name,
+        "shop_id":         data.shop_id,
+        "total_amount":    total,
+        "earned_cashback": earned_cb,
+        "earned_points":   earned_pts,
+        "discount_percent": discount_pct,
+        "discount_value":  discount_value,
+        "deducted_points": deducted_points,
+        "bill_number":     data.bill_number,
+        "bill_date":       bill_date,
+        "bill_time":       data.bill_time,
+        "scanned_at":      datetime.now(timezone.utc),
+    }
+    res = await db.bill_scans.insert_one(scan_doc)
+
+    # Permanent history record — no TTL, shown to user in the app.
+    # bill_scans is deleted after 24 h (dup-detection only); bill_history is kept forever.
+    await db.bill_history.insert_one({
+        "user_id":         uid,
+        "scan_type":       scan_type,
+        "shop_name":       shop_name,
+        "shop_id":         data.shop_id,
+        "total_amount":    total,
+        "earned_cashback": earned_cb,
+        "earned_points":   earned_pts,
+        "discount_percent": discount_pct,
+        "discount_value":  discount_value,
+        "deducted_points": deducted_points,
+        "bill_number":     data.bill_number,
+        "bill_date":       bill_date,
+        "bill_time":       data.bill_time,
+        "scanned_at":      scan_doc["scanned_at"],
+    })
+
+    # Get bonus values for response (already applied to wallet)
+    bonus = await _get_new_user_config(db) if is_first else {"reward_points": 0, "cashback": 0.0}
+
+    return {
+        "ok":               True,
+        "scan_id":          str(res.inserted_id),
+        "scan_type":        scan_type,
+        "shop_name":        shop_name,
+        # Earned this scan (always 0 / 0.0 for a Redeem Bill)
+        "earned_cashback":  earned_cb,
+        "earned_points":    earned_pts,
+        # Which monthly tier this scan earned at, and what the next one needs.
+        # Lets the success screen say "2% — 3 more scans this month for 3%"
+        # instead of a bare number the user can't act on.
+        "cashback_percent": _rates["cashback_percent"],
+        "scan_number":      _rates.get("scan_number", 0),
+        "next_tier":        _rates.get("next_tier"),
+        # Discount audit (always 0 / 0.0 for a Reward Bill)
+        "discount_percent": discount_pct,
+        "discount_value":   discount_value,
+        "deducted_points":  deducted_points,
+        "is_new_user_bonus": is_first,
+        "bonus_points":     bonus["reward_points"] if is_first else 0,
+        "bonus_cashback":   bonus["cashback"]      if is_first else 0.0,
+        "reward_points":    new_pts,
+        "cashback_wallet":  new_cb_wallet,
+        "lifetime_cashback": new_lifetime,
+    }
+
+
+# ── GET /bill/wallet ──────────────────────────────────────────────────────────
+@router.get("/rates")
+async def get_bill_rates(current_user: dict = Depends(get_current_user)):
+    """THIS user's live cashback / reward-point percentages.
+
+    The app shows what a bill will earn BEFORE it is submitted. That preview
+    was computing 1% and 10% locally, so the moment an admin changed the offer
+    the app would promise one figure and the wallet would credit another —
+    with the user watching. This endpoint is what keeps the two honest.
+
+    It is per-user, not global: cashback rises with how many bills the user has
+    scanned this month, so the only correct answer to "what will I earn"
+    depends on who is asking. `next_tier` is what lets the app say "3 more
+    scans this month and you move to 3%" — the whole point of the ladder is
+    that the user can see it coming.
+    """
+    db = get_db()
+    uid = str(current_user["_id"])
+    r = await _rates_for_user(db, uid)
+    return {
+        "cashback_percent": r["cashback_percent"],   # this user's rate, now
+        "points_percent":   r["points_percent"],
+        "base_cashback_percent": r["tiers"][0]["cashback_percent"],
+        "scans_this_month": r.get("scans_this_month", 0),
+        "tiers":            r["tiers"],
+        "next_tier":        r.get("next_tier"),
+        "max_cashback_percent": MAX_CASHBACK_PERCENT,
+    }
+
+
+@router.get("/wallet")
+async def get_wallet(current_user: dict = Depends(get_current_user)):
+    db     = get_db()
+    uid    = str(current_user["_id"])
+    wallet, _ = await _get_or_create_wallet(db, uid)
+    return {
+        "reward_points":     wallet["reward_points"],
+        "cashback_wallet":   wallet["cashback_wallet"],
+        "lifetime_cashback": wallet["lifetime_cashback"],
+        "total_scans":       wallet.get("total_scans", 0),
+    }
+
+
+# ── GET /bill/history ─────────────────────────────────────────────────────────
+@router.get("/history")
+async def bill_history(current_user: dict = Depends(get_current_user)):
+    db    = get_db()
+    uid   = str(current_user["_id"])
+    # Read from bill_history (permanent) — NOT bill_scans (expires in 24 h)
+    records = await db.bill_history.find({"user_id": uid}).sort("scanned_at", -1).to_list(200)
+    return [
+        {
+            "id":              str(r["_id"]),
+            # Older records (scanned before this field existed) are inferred
+            # from whether a discount was applied.
+            "scan_type":       r.get("scan_type")
+                                or ("redeem" if r.get("discount_percent") else "reward"),
+            "shop_name":       r.get("shop_name", ""),
+            "total_amount":    r.get("total_amount", 0),
+            "earned_cashback": r.get("earned_cashback", 0),
+            "earned_points":   r.get("earned_points", 0),
+            "discount_percent": r.get("discount_percent", 0),
+            "discount_value":  r.get("discount_value", 0),
+            "deducted_points": r.get("deducted_points", 0),
+            "bill_number":     r.get("bill_number"),
+            "bill_date":       r.get("bill_date"),
+            "bill_time":       r.get("bill_time"),
+            "scanned_at":      r["scanned_at"].isoformat() if r.get("scanned_at") else "",
+        }
+        for r in records
+    ]
+
+
+# ── POST /bill/manual-review ──────────────────────────────────────────────────
+@router.post("/manual-review", status_code=201)
+async def submit_manual_review(data: ManualReviewRequest, request: Request):
+    uid = await _resolve_user(request, data.user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    db = get_db()
+    parsed_date = None
+    if data.bill_date:
+        try:
+            parsed_date = datetime.strptime(data.bill_date, "%Y-%m-%d")
+        except ValueError:
+            pass
+
+    # ── Duplicate check ────────────────────────────────────────────────────
+    # Manual-review submissions previously had NO duplicate protection at
+    # all, unlike /bill/scan. That let the same physical bill be resubmitted
+    # for review over and over (each rescan created a brand-new pending
+    # review). Compute the same fingerprint /bill/scan uses and block a
+    # resubmit if this exact bill was already scanned normally, already
+    # approved via manual review, or is still sitting in the review queue.
+    dup_key = None
+    if data.shop_name and data.bill_date:
+        dup_key = _dup_key(
+            shop      = data.shop_name,
+            bill_date = data.bill_date,
+            amount    = data.total_amount,
+            bill_time = data.bill_time,
+        )
+        if await db.bill_scans.find_one({"user_id": uid, "dup_key": dup_key}):
+            raise HTTPException(status_code=409, detail="This bill has already been scanned/claimed.")
+        existing_review = await db.bill_manual_reviews.find_one(
+            {"user_id": uid, "dup_key": dup_key, "status": {"$in": ["pending", "approved"]}}
+        )
+        if existing_review:
+            if existing_review.get("status") == "approved":
+                raise HTTPException(status_code=409, detail="This bill has already been approved.")
+            raise HTTPException(status_code=409, detail="This bill is already pending review — no need to resubmit.")
+
+    doc = {
+        "user_id":       uid,
+        "scan_type":     _resolve_scan_type(data.scan_type, data.shop_id),
+        "total_amount":  round(data.total_amount, 2),
+        "shop_name":     (data.shop_name or "").strip() or None,
+        "shop_id":       data.shop_id,
+        "bill_number":   (data.bill_number or "").strip() or None,
+        "bill_date":     parsed_date,
+        "bill_time":     (data.bill_time or "").strip() or None,
+        "manual_reason": data.manual_reason or "missing_fields",
+        "has_image":     bool(data.image_base64),
+        "image_s3_key":  (await upload_base64(data.image_base64, "bill-reviews")
+                  if data.image_base64 else None),
+        "dup_key":       dup_key,
+        "status":        "pending",
+        "created_at":    datetime.now(timezone.utc),
+        "reviewed_at":   None,
+        "review_note":   None,
+    }
+    result = await db.bill_manual_reviews.insert_one(doc)
+    return {
+        "success":   True,
+        "review_id": str(result.inserted_id),
+        "message":   "Your bill has been submitted for review. Our team will verify it within 24 hours.",
+    }
+
+
+# ── GET /bill/my-reviews ──────────────────────────────────────────────────────
+@router.get("/my-reviews")
+async def my_reviews(current_user: dict = Depends(get_current_user)):
+    db  = get_db()
+    uid = str(current_user["_id"])
+    cursor = db.bill_manual_reviews.find({"user_id": uid}, {"image_s3_key": 0}).sort("created_at", -1)
+    docs = await cursor.to_list(length=100)
+    return {"success": True, "reviews": [serialize_doc(d) for d in docs], "total": len(docs)}
+
+
+# ── GET /bill/manual-reviews  (admin) ────────────────────────────────────────
+@router.get("/manual-reviews")
+async def admin_list_reviews(
+    status: Optional[str] = Query(None),
+    _: None = Depends(_require_admin),
+):
+    db    = get_db()
+    query = {} if not status or status == "all" else {"status": status}
+    cursor = db.bill_manual_reviews.find(query).sort("created_at", -1)
+    docs   = await cursor.to_list(length=500)
+    result = []
+    for d in docs:
+        s = serialize_doc(d)
+        s.setdefault("submitted_at", s.get("created_at"))
+        s3_key = s.pop("image_s3_key", None)
+        s["image_url"] = await generate_presigned_url(s3_key) if s3_key else None
+        result.append(s)
+    return result
+
+
+# ── POST /bill/manual-reviews/{id}/action  (admin) ───────────────────────────
+@router.post("/manual-reviews/{review_id}/action")
+async def admin_action_review(
+    review_id: str,
+    data: ReviewActionRequest,
+    _: None = Depends(_require_admin),
+):
+    db = get_db()
+    try:
+        oid = ObjectId(review_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid review ID")
+
+    review = await db.bill_manual_reviews.find_one({"_id": oid})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Review already {review.get('status')}")
+
+    now       = datetime.now(timezone.utc)
+    uid       = review.get("user_id", "")
+    amount    = float(review.get("total_amount", 0))
+    shop_name = review.get("shop_name") or "Shop"
+    shop_id   = review.get("shop_id")
+    scan_type = _resolve_scan_type(review.get("scan_type"), shop_id)
+
+    # BOTH scan types earn cashback + points (same rule and the same
+    # admin-configurable rates as /bill/scan) — a Redeem Bill additionally
+    # spends points against the shop's discount. An admin reviewing the bill
+    # may override either figure by hand; only the automatic path uses rates.
+    # The user's own monthly tier applies here too — a bill that needed manual
+    # review must not earn less than the same bill scanned cleanly would.
+    _rates = await _rates_for_user(db, uid)
+    _auto_cb, _auto_pts = _earned(amount, _rates)
+    pts = data.reward_points if data.reward_points is not None else _auto_pts
+    cb  = data.cashback      if data.cashback      is not None else _auto_cb
+
+    # ── Redeem Bill: look up merchant's registered discount % (if any) ───────
+    discount_pct = 0
+    if shop_id and scan_type == "redeem":
+        try:
+            shop_doc = await db.shops.find_one({"_id": ObjectId(shop_id)})
+        except Exception:
+            shop_doc = None
+        discount_pct = (shop_doc or {}).get("discount") or 0
+
+    # Same direct-percentage formula as /bill/scan — discount value is the
+    # shop's discount % applied straight to the bill total (see scan_bill).
+    discount_value = 0.0
+    if discount_pct:
+        discount_value = round(amount * discount_pct / 100, 2)
+
+    update_fields = {"status": data.action, "reviewed_at": now, "review_note": data.admin_note or ""}
+    if data.action == "approve":
+        update_fields["reward_points"] = pts
+        update_fields["cashback"]      = cb
+    await db.bill_manual_reviews.update_one({"_id": oid}, {"$set": update_fields})
+
+    deducted_points = 0
+    if data.action == "approve":
+        wallet, _ = await _get_or_create_wallet(db, uid)
+        deducted_points = min(discount_value, wallet["reward_points"]) if discount_value else 0
+        net_pts         = pts - deducted_points
+        await db.user_wallets.update_one(
+            {"user_id": uid},
+            {"$set": {
+                "reward_points":     wallet["reward_points"]     + net_pts,
+                "cashback_wallet":   wallet["cashback_wallet"]   + cb,
+                "lifetime_cashback": wallet["lifetime_cashback"] + cb,
+                "updated_at":        now,
+            }},
+        )
+        scan_now = now
+        await db.bill_scans.insert_one({
+            "user_id": uid, "dup_key": f"review|{review_id}",
+            "scan_type": scan_type,
+            "shop_name": shop_name, "shop_id": shop_id, "total_amount": round(amount, 2),
+            "earned_cashback": cb, "earned_points": pts,
+            "discount_percent": discount_pct, "discount_value": discount_value,
+            "deducted_points": deducted_points,
+            "bill_number": review.get("bill_number"),
+            "bill_date":   str(review.get("bill_date", "")),
+            "bill_time":   review.get("bill_time"),
+            "source": "manual_review", "review_id": review_id, "scanned_at": scan_now,
+        })
+        # Also write to permanent bill_history so it shows in the app
+        await db.bill_history.insert_one({
+            "user_id":         uid,
+            "scan_type":       scan_type,
+            "shop_name":       shop_name,
+            "shop_id":         shop_id,
+            "total_amount":    round(amount, 2),
+            "earned_cashback": cb,
+            "earned_points":   pts,
+            "discount_percent": discount_pct,
+            "discount_value":  discount_value,
+            "deducted_points": deducted_points,
+            "bill_number":     review.get("bill_number"),
+            "bill_date":       str(review.get("bill_date", "")),
+            "bill_time":       review.get("bill_time"),
+            "source":          "manual_review",
+            "scanned_at":      scan_now,
+        })
+
+    await notify_user(
+        db,
+        user_id=uid,
+        title=(
+            "🎉 Bill Approved — Rewards Added!" if data.action == "approve"
+            else "Bill Review Update"
+        ),
+        message=(
+            f"Your bill from {shop_name} (Rs.{int(amount)}) has been verified. "
+            f"Rs.{cb:.0f} cashback and {pts} reward points added to your wallet."
+        ) if data.action == "approve" else (
+            f"Your bill from {shop_name} (Rs.{int(amount)}) could not be verified"
+            + (f": {data.admin_note}" if data.admin_note else ".")
+        ),
+        type="bill_review_approved" if data.action == "approve" else "bill_review_rejected",
+        data={"review_id": review_id},
+    )
+
+    return {
+        "success": True, "action": data.action, "review_id": review_id,
+        "scan_type": scan_type,
+        "reward_points": pts if data.action == "approve" else 0,
+        "cashback":      cb  if data.action == "approve" else 0,
+        "discount_value":  discount_value  if data.action == "approve" else 0.0,
+        "deducted_points": deducted_points if data.action == "approve" else 0,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AI Bill OCR  —  POST /bill/ocr
+#
+# The Gemini Vision call used to live inside the Flutter app, which meant the
+# API key shipped inside the APK (extractable) and prompt/model changes needed
+# an app release. It now lives here: the app POSTs the bill image (base64) and
+# gets back the extracted fields. The app keeps its on-device ML Kit fallback
+# for when this endpoint is unreachable or returns nothing.
+#
+# Key: set GEMINI_API_KEY in fastapi/backend/.env  (new AI Studio "auth keys"
+# start with "AQ." and are sent via the x-goog-api-key header).
+# ══════════════════════════════════════════════════════════════════════════════
+
+import json as _json
+import httpx
+
+GEMINI_MODEL_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "gemini-2.5-flash:generateContent"
+)
+
+# TODO: move this default into fastapi/backend/.env as GEMINI_API_KEY=...
+_GEMINI_KEY_DEFAULT = "AQ.Ab8RN6IFWok-_JzuTJaKM0P05tF533XYuFRI_RbRhXZzsFX6uw"
+
+_OCR_PROMPT = """
+You are a bill/receipt OCR assistant. Carefully analyze the receipt image and extract:
+
+1. shop_name: The business/store name — usually the largest, bold, or logo text at the top of the receipt (before address, phone, GSTIN, or date). Example: "The Daily Grind Cafe", "DMart".
+   - NEVER return generic header words like "TAX INVOICE", "RETAIL INVOICE", "CASH MEMO", "RECEIPT", "BILL", "WELCOME", "CUSTOMER COPY", "THANK YOU" — the shop name is always an actual business name.
+   - If the top line is a header word like "TAX INVOICE", the real shop name is usually just above or below it.
+
+2. total_amount: The FINAL amount the customer actually PAID, after ALL discounts and taxes.
+   - Receipts often show Subtotal, Discount/Savings, Tax/GST/CGST/SGST lines, and then a final total. Always pick the final payable figure.
+   - The label may be "TOTAL", "TOTAL AMOUNT", "GRAND TOTAL", "NET TOTAL", "NET PAYABLE", "AMOUNT PAYABLE", "FINAL AMOUNT", "AMOUNT PAID", "BILL AMOUNT" — or there may be NO label at all, just a bold/large printed number. On some bills this final amount is printed at the TOP of the receipt, not the bottom.
+   - NEVER return: the discount value, savings amount, subtotal (pre-discount), a tax amount, cash tendered, change/balance returned, loyalty points, or an individual item price.
+   - Sanity check: when subtotal, discount and tax lines are visible, the total should equal subtotal - discount + tax.
+   - Return only the numeric value (no currency sign or commas).
+
+3. bill_date: The date on the receipt. Always return in DD/MM/YYYY format. For example, if the receipt shows "May 23, 2026" return "23/05/2026".
+
+4. bill_number: The receipt/invoice/bill number (e.g., "98432", "INV-001"). Strip any leading # symbol.
+
+Return ONLY a single valid JSON object with no markdown or explanation. Example:
+{"shop_name":"The Daily Grind Cafe","total_amount":2008.80,"bill_date":"23/05/2026","bill_number":"98432"}
+
+If a field cannot be confidently read, set it to null.
+"""
+
+
+class BillOcrRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64-encoded bill image (no data: prefix)")
+    mime_type: Optional[str] = "image/jpeg"
+
+
+@router.post("/ocr")
+async def ai_bill_ocr(data: BillOcrRequest):
+    """
+    Extract bill fields from an image using Gemini Vision (server-side).
+
+    Returns 200 with:
+      {"success": true,  "shop_name": ..., "total_amount": ...,
+       "bill_date": "DD/MM/YYYY", "bill_number": ..., "raw": "<gemini json>"}
+    or {"success": false, "detail": "..."} when the AI is unavailable — the app
+    then falls back to on-device ML Kit OCR.
+    """
+    key = os.getenv("GEMINI_API_KEY", _GEMINI_KEY_DEFAULT).strip()
+    if not key:
+        return {"success": False, "detail": "GEMINI_API_KEY not configured"}
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inlineData": {
+                    "mimeType": data.mime_type or "image/jpeg",
+                    "data": data.image_base64,
+                }},
+                {"text": _OCR_PROMPT},
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0,
+            "topP": 1,
+            "topK": 1,
+            "maxOutputTokens": 512,
+            "responseMimeType": "application/json",
+            # gemini-2.5-flash is a thinking model — disable thinking so
+            # reasoning tokens don't eat the output budget (faster + cheaper).
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+    last_error = "unknown"
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        # Up to 2 attempts — occasionally Gemini returns truncated/invalid
+        # JSON or a transient 503 "model overloaded". Those usually clear in
+        # a second or two, so pause briefly before the retry.
+        for attempt in (1, 2):
+            if attempt == 2:
+                await asyncio.sleep(2.0)
+            try:
+                resp = await client.post(
+                    GEMINI_MODEL_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": key,
+                    },
+                    json=payload,
+                )
+                if resp.status_code == 429:
+                    # Quota/rate limit — retrying immediately is pointless
+                    last_error = f"quota exceeded ({resp.status_code})"
+                    break
+                if resp.status_code != 200:
+                    last_error = f"gemini http {resp.status_code}"
+                    continue
+
+                body = resp.json()
+                candidates = body.get("candidates") or []
+                if not candidates:
+                    last_error = "no candidates"
+                    continue
+                parts = ((candidates[0].get("content") or {}).get("parts")) or []
+                if not parts:
+                    last_error = "no parts"
+                    continue
+                text = (parts[0].get("text") or "").strip()
+
+                # Strip markdown fences and isolate the first {...} block
+                text = text.removeprefix("```json").removesuffix("```").strip()
+                start, end = text.find("{"), text.rfind("}")
+                if start == -1 or end <= start:
+                    last_error = "no json block"
+                    continue
+                parsed = _json.loads(text[start:end + 1])
+
+                def _clean_str(v):
+                    if v is None:
+                        return None
+                    s = str(v).strip()
+                    return s if s and s.lower() != "null" else None
+
+                def _clean_num(v):
+                    if v is None:
+                        return None
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    try:
+                        return float(str(v).replace(",", "").replace("₹", "").strip())
+                    except ValueError:
+                        return None
+
+                return {
+                    "success":      True,
+                    "shop_name":    _clean_str(parsed.get("shop_name")),
+                    "total_amount": _clean_num(parsed.get("total_amount")),
+                    "bill_date":    _clean_str(parsed.get("bill_date")),
+                    "bill_number":  _clean_str(parsed.get("bill_number")),
+                    "raw":          text[start:end + 1],
+                }
+            except Exception as e:  # network error, bad JSON, timeout…
+                last_error = str(e)[:200]
+
+    return {"success": False, "detail": last_error}

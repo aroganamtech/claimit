@@ -198,14 +198,23 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 6),
+                        // The offer text is shown IN FULL, however long it is.
+                        //
+                        // It used to be maxLines: 2 + ellipsis, which cut a
+                        // long offer off as "xyz…" — the one thing on this
+                        // card the customer actually needs to read. There is
+                        // no fixed height on the container above (just
+                        // padding + an intrinsic Column), so dropping the
+                        // clamp makes the blue box grow to fit the text
+                        // instead of the text shrinking to fit the box.
+                        // Font size is unchanged at 18.
                         Text(
                           d.offer,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
+                            height: 1.3,   // breathing room once it wraps
                           ),
                         ),
                         const SizedBox(height: 4),

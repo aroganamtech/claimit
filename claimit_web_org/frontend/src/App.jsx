@@ -50,10 +50,12 @@ import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminCreateAd from './pages/admin/AdminCreateAd'
 import AdminBulkShops from './pages/admin/AdminBulkShops'
-import AdminBulkSelect from './pages/admin/AdminBulkSelect'
+import AdminBulkSelect from './pages/admin/bulk/AdminBulkSelect'
 import AdminWhatsAppCampaign from './pages/admin/AdminWhatsAppCampaign'
 import AdminPrivilege from './pages/admin/AdminPrivilege'
-import AdminBulkClassifieds from './pages/admin/AdminBulkClassifieds'
+import AdminBulkClassifieds from './pages/admin/bulk/AdminBulkClassifieds'
+import AdminBulkLocalFinder from './pages/admin/bulk/AdminBulkLocalFinder'
+import AdminBulkPrivilege from './pages/admin/bulk/AdminBulkPrivilege'
 import AdminFeatureCategoryImages from './pages/admin/AdminFeatureCategoryImages'
 import AdminTransactions from './pages/admin/AdminTransactions'
 import AdminShopDetail from './pages/admin/AdminShopDetail'
@@ -304,6 +306,8 @@ export default function App() {
             <Route path="/admin/bulk-select" element={<AdminBulkSelect />} />
             <Route path="/admin/whatsapp-campaign" element={<AdminWhatsAppCampaign />} />
             <Route path="/admin/bulk-classifieds" element={<AdminBulkClassifieds />} />
+            <Route path="/admin/bulk-local-finder" element={<AdminBulkLocalFinder />} />
+            <Route path="/admin/bulk-privilege" element={<AdminBulkPrivilege />} />
             <Route path="/admin/feature-category-images" element={<AdminFeatureCategoryImages />} />
             <Route path="/admin/category-images" element={<AdminCategoryImages />} />
             <Route path="/admin/learn-claimit" element={<AdminLearnClaimit />} />

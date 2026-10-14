@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AdvertiserSidebar from './AdvertiserSidebar'
 import api from '../../utils/api'
@@ -9,7 +9,14 @@ const AD_LABELS = {
   promo_reelz: 'Promo Reelz Ad',
   brand_deals: 'Brand Deals Ad',
   nearby_deals: 'Nearby Deals Ad',
+  spot_promos: 'Spot Promos Ad',
+  special_cards: 'Special Card Ad',
+  notification: 'Push Notification Ad',
 }
+
+// Ad types that use the same card fields as a deal. Grouped rather than
+// listed at each use site so adding another card product is one edit.
+const CARD_TYPES = ['brand_deals', 'nearby_deals', 'spot_promos', 'special_cards']
 
 // Pricing per "Claimit Advertising Packages (Weekly)" — kept in sync with
 // ChooseAdType.jsx and the backend's AD_PRICES in routers/advertiser.py.
@@ -18,6 +25,9 @@ const AD_PRICES = {
   nearby_deals: { premium: 1050, standard: 700 },
   brand_deals:  { premium: 700,  standard: 700 },
   promo_reelz:  { premium: 700,  standard: 700 },
+  spot_promos:   { premium: 1050, standard: 700 },
+  special_cards: { premium: 700,  standard: 700 },
+  notification:  { standard: 150 },
 }
 
 const TIER_LABELS = { premium: 'Premium', standard: 'Standard' }
@@ -266,6 +276,78 @@ function DealFields({ data, onChange }) {
   )
 }
 
+// ─── Notification fields ──────────────────────────────────────────────────────
+// Used both for the standalone Push Notification ad and for the +push add-on
+// on any other type. In the add-on case the copy is optional: left blank, the
+// backend falls back to the ad's own headline and offer rather than making
+// the advertiser write the same sentence twice.
+function NotificationFields({ data, onChange, optional }) {
+  const req = optional ? null : <span style={{ color: '#e53935' }}>*</span>
+  return (
+    <>
+      <div style={rowStyle}>
+        <label style={labelStyle}>Notification Title {req}</label>
+        <input
+          className="input-field"
+          maxLength={120}
+          placeholder="e.g. 25% off at Super Saravana Store"
+          value={data.notify_title || ''}
+          onChange={e => onChange('notify_title', e.target.value)}
+        />
+        <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+          {(data.notify_title || '').length}/120 — shown in bold on the phone's lock screen.
+        </p>
+      </div>
+      <div style={rowStyle}>
+        <label style={labelStyle}>Notification Message {req}</label>
+        <textarea
+          className="input-field"
+          maxLength={300}
+          rows={3}
+          placeholder="e.g. Valid this week only at our Anna Nagar branch. Tap to see the offer."
+          value={data.notify_body || ''}
+          onChange={e => onChange('notify_body', e.target.value)}
+          style={{ resize: 'vertical' }}
+        />
+        <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+          {(data.notify_body || '').length}/300
+          {optional ? ' — leave both blank to reuse your ad\'s headline and offer.' : ''}
+        </p>
+      </div>
+      <div style={rowStyle}>
+        <label style={labelStyle}>Who receives it</label>
+        {/* Only 5 km and 10 km are offered because they are what the app
+            itself searches by default and what its "expand radius" button
+            does — a radius the app never uses would be inventory we can't
+            actually describe to the advertiser. The backend clamps anything
+            else, so these two options are the whole product. */}
+        <select
+          className="input-field"
+          style={inputStyle}
+          value={String(data.notify_radius_km || 5)}
+          onChange={e => onChange('notify_radius_km', Number(e.target.value))}
+        >
+          <option value="5">Every app user within 5 km of my pincode</option>
+          <option value="10">Every app user within 10 km of my pincode</option>
+        </select>
+        <p style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+          Users who have never set a location in the app can't be reached by
+          distance, so they aren't counted.
+        </p>
+      </div>
+      <div style={rowStyle}>
+        <label style={labelStyle}>Link (optional)</label>
+        <input
+          className="input-field"
+          placeholder="https://…"
+          value={data.cta_link || ''}
+          onChange={e => onChange('cta_link', e.target.value)}
+        />
+      </div>
+    </>
+  )
+}
+
 // ─── Phone preview per type ───────────────────────────────────────────────────
 function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
   // Generate object URLs so we can show the actual uploaded image/video thumbnail
@@ -326,11 +408,20 @@ function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
             </div>
           )}
 
-          {(adType === 'nearby_deals' || adType === 'brand_deals') && (
+          {CARD_TYPES.includes(adType) && (
             <div style={{ padding: '12px 12px' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#1565C0', marginBottom: 10 }}>
-                {adType === 'nearby_deals' ? '📍 Nearby Deals' : '⭐ Brand Deals'}
+                {adType === 'nearby_deals' ? '📍 Nearby Deals'
+                  : adType === 'brand_deals' ? '⭐ Brand Deals'
+                  : adType === 'spot_promos' ? '✨ Spot Promos'
+                  : '🃏 Special Card'}
               </div>
+              {adType === 'spot_promos' && (
+                <div style={{ fontSize: 9, color: '#888', marginBottom: 8, lineHeight: 1.5 }}>
+                  This same card also appears in Spot Promos on Claimit Select
+                  and Claimit Privilege.
+                </div>
+              )}
               <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 10, display: 'flex', gap: 10, alignItems: 'center', border: '1.5px solid #e8f0fe' }}>
                 <div style={{ width: 60, height: 60, borderRadius: 8, background: '#e0e0e0', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
                   {creativePreview
@@ -359,6 +450,45 @@ function PhonePreview({ adType, data, creativeFile, thumbnailFile }) {
               ))}
             </div>
           )}
+
+          {adType === 'notification' && (
+            <div style={{ padding: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#1565C0', marginBottom: 10 }}>
+                🔔 Push Notification
+              </div>
+              {/* Drawn as a lock-screen notification rather than an in-app
+                  card, because that is where the user actually sees it. */}
+              <div style={{
+                background: '#f2f3f5', borderRadius: 14, padding: 12,
+                display: 'flex', gap: 10, boxShadow: 'inset 0 0 0 1px #e3e5e8',
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8, background: '#1565C0',
+                  color: '#fff', fontSize: 13, fontWeight: 800, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>c</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontSize: 9, color: '#888', fontWeight: 600 }}>Claimit</span>
+                    <span style={{ fontSize: 9, color: '#888' }}>now</span>
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 11.5, margin: '2px 0 2px' }}>
+                    {data.notify_title || 'Your notification title'}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#444', lineHeight: 1.45 }}>
+                    {data.notify_body || 'Your notification message appears here.'}
+                  </div>
+                  {creativePreview && (
+                    <img src={creativePreview} alt="notification"
+                      style={{ width: '100%', height: 70, objectFit: 'cover', borderRadius: 8, marginTop: 8 }} />
+                  )}
+                </div>
+              </div>
+              <div style={{ fontSize: 9.5, color: '#888', marginTop: 10, lineHeight: 1.6 }}>
+                Sent to every app user within {data.notify_radius_km || 5} km of your pincode.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -371,7 +501,26 @@ export default function AdDetails() {
   const [searchParams] = useSearchParams()
   const adType = searchParams.get('type') || 'nearby_deals'
   const tier = searchParams.get('tier') || Object.keys(AD_PRICES[adType] || { standard: 1 })[0] || 'standard'
-  const price = (AD_PRICES[adType] || {})[tier] ?? Object.values(AD_PRICES[adType] || { 0: 700 })[0]
+  const basePrice = (AD_PRICES[adType] || {})[tier] ?? Object.values(AD_PRICES[adType] || { 0: 700 })[0]
+  // Carried through the URL from the ad type picker. `notification` ads are
+  // already a push, so the add-on never applies to them — the same rule the
+  // backend enforces, mirrored here so the price shown matches what is charged.
+  const withNotification = searchParams.get('notify') === '1' && adType !== 'notification'
+  const [addonPrice, setAddonPrice] = useState(100)
+  const [livePrices, setLivePrices] = useState(null)
+  const liveBase = livePrices ? (livePrices[adType] || {})[tier] : undefined
+  const price = (liveBase ?? basePrice) + (withNotification ? addonPrice : 0)
+
+  // Prices come from the admin-configured store, not the fallback table
+  // above — so what the advertiser is told here is what Cashfree collects.
+  useEffect(() => {
+    api.advertiser.getPricing()
+      .then(p => {
+        setLivePrices(p)
+        if (p.notification_addon != null) setAddonPrice(p.notification_addon)
+      })
+      .catch(() => {})
+  }, [])
 
   // Generic fields (all types)
   const [pincode, setPincode] = useState('')
@@ -395,10 +544,25 @@ export default function AdDetails() {
       if (!extra.caption || !extra.offer) {
         setError('Please fill the reel caption and offer text'); return
       }
+    } else if (adType === 'notification') {
+      if (!extra.notify_title || !extra.notify_body) {
+        setError('Please fill the notification title and message'); return
+      }
     } else {
-      // brand_deals / nearby_deals
+      // brand_deals / nearby_deals / spot_promos / special_cards
       if (!extra.name || !extra.location || !extra.offer || !extra.description || !extra.type) {
         setError('Please fill all required fields (name, location, offer, description, category)'); return
+      }
+    }
+
+    // The add-on's copy is optional, but if the advertiser filled in only one
+    // of the two fields the notification would go out half-written.
+    if (withNotification) {
+      const t = (extra.notify_title || '').trim()
+      const b = (extra.notify_body || '').trim()
+      if ((t && !b) || (b && !t)) {
+        setError('For the push notification, fill BOTH the title and the message — or leave both blank to reuse your ad text')
+        return
       }
     }
 
@@ -412,6 +576,9 @@ export default function AdDetails() {
       adType,
       tier,
       pincode,
+      // Priced server-side from this flag, so it has to survive the hop to
+      // the publish + payment steps.
+      with_notification: withNotification,
       ...extra,
       // store creative filenames — actual files re-attached at publish
       _hasCreative: !!creative,
@@ -422,7 +589,7 @@ export default function AdDetails() {
     if (creative) sessionStorage.setItem('ad_creative_name', creative.name)
     if (thumbnail) sessionStorage.setItem('ad_thumb_name', thumbnail.name)
 
-    navigate(`/advertiser/create-ad/publish?type=${adType}`, {
+    navigate(`/advertiser/create-ad/publish?type=${adType}&notify=${withNotification ? '1' : '0'}`, {
       state: { creative, thumbnail }
     })
   }
@@ -450,13 +617,31 @@ export default function AdDetails() {
 
               {adType === 'home_banner' && <HomeBannerFields data={extra} onChange={updateExtra} />}
               {adType === 'promo_reelz' && <PromoReelzFields data={extra} onChange={updateExtra} />}
-              {(adType === 'brand_deals' || adType === 'nearby_deals') && <DealFields data={extra} onChange={updateExtra} />}
+              {CARD_TYPES.includes(adType) && <DealFields data={extra} onChange={updateExtra} />}
+              {adType === 'notification' && <NotificationFields data={extra} onChange={updateExtra} optional={false} />}
             </div>
+
+            {/* The +push add-on bought on the previous step. Its own card, so
+                it is obvious these fields belong to the notification and not
+                to the ad itself. */}
+            {withNotification && (
+              <div style={{ background: '#fff', borderRadius: 12, border: '2px solid #1565C0', padding: 24, marginBottom: 20 }}>
+                <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Push Notification (+₹{addonPrice})</h3>
+                <p style={{ color: '#888', fontSize: 13, marginBottom: 20 }}>
+                  Sent when your ad goes live, to every app user inside the radius you choose.
+                </p>
+                <NotificationFields data={extra} onChange={updateExtra} optional />
+              </div>
+            )}
 
             {/* Creative upload */}
             <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: 24, marginBottom: 20 }}>
               <h3 style={{ fontWeight: 600, marginBottom: 16 }}>
-                {(adType === 'promo_reelz' || adType === 'home_banner') ? 'Video / Image Upload' : 'Creative Upload'}
+                {(adType === 'promo_reelz' || adType === 'home_banner')
+                  ? 'Video / Image Upload'
+                  : adType === 'notification'
+                    ? 'Notification Image (optional)'
+                    : 'Creative Upload'}
               </h3>
               <UploadBox
                 accept={
@@ -508,7 +693,13 @@ export default function AdDetails() {
                 Price Summary {TIER_LABELS[tier] ? `· ${TIER_LABELS[tier]}` : ''}
               </div>
               <div style={{ fontSize: 28, fontWeight: 700 }}>₹{price}</div>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Price includes GST · 7-day campaign</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                Price includes GST ·{' '}
+                {adType === 'notification'
+                  ? 'one notification, sent right after payment'
+                  : '7-day campaign'}
+                {withNotification ? ` · includes +₹${addonPrice} push notification` : ''}
+              </div>
             </div>
 
             <button className="btn-primary" onClick={validateAndContinue}>Continue →</button>

@@ -306,8 +306,20 @@ async def refresh_token(request: RefreshTokenRequest):
             detail="User not found",
         )
 
+    # Issue a FRESH refresh token alongside the access token (rolling
+    # refresh). Without this the refresh token keeps its original expiry, so
+    # even an active user is signed out the moment it lapses — which is
+    # exactly what people were seeing. Rotating it on every refresh means
+    # anyone who opens the app at least once inside the window stays signed
+    # in indefinitely, and only an account genuinely untouched for the whole
+    # period has to log in again.
     access_token = create_access_token({"sub": user_id})
-    return {"access_token": access_token, "token_type": "bearer"}
+    new_refresh = create_refresh_token({"sub": user_id})
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
 
 
 @router.post("/social/login")

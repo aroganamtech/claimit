@@ -34,6 +34,7 @@ from database import (
     app_users_collection, app_feedback_collection, app_shops_collection,
     deleted_users_collection,
     app_banners_collection, app_deals_collection, app_reels_collection,
+    app_spot_promos_collection, app_ad_notifications_collection,
     category_images_collection, app_learn_collection,
 )
 from models.schemas import (
@@ -872,10 +873,16 @@ def _scope_categories(scope: str) -> dict:
         # Privilege do. They were the same string until 28 Sep 2026, which is
         # why this used to be one branch.
         return dict(CLASSIFIED_LABELS)
+    if scope == "privilege":
+        from utils.privilege_bulk import CATEGORY_LABELS
+        return dict(CATEGORY_LABELS)
     return {}
 
 
-FEATURE_SCOPES = ("select", "local_find", "classified")
+# Privilege was missing from this tuple, which is why the admin panel offered
+# category-image pools for three features and not the fourth. Its bulk importer
+# already looked up a pool; there was simply no way to fill one.
+FEATURE_SCOPES = ("select", "local_find", "classified", "privilege")
 
 
 async def _category_pool(scope: str) -> dict:
@@ -1407,7 +1414,7 @@ async def set_category_images(
 
 @router.get("/feature-category-images")
 async def list_feature_category_images(
-    scope: str = Query("select", description="select | local_find | classified"),
+    scope: str = Query("select", description="select | local_find | classified | privilege"),
     _admin=Depends(get_current_admin),
 ):
     """Every category in `scope`, each with its stored keys + presigned URLs."""
@@ -1979,6 +1986,12 @@ async def privilege_bulk_upload(
     if replace:
         await app_db["privilege_partners"].delete_many({})
 
+    # Same three-step image resolution the Select and Classifieds importers
+    # use: a named upload first, then the category's image pool, then nothing.
+    # Privilege previously stopped at step one, so a row without a named photo
+    # went in blank even when a pool existed.
+    cat_pool = await _category_pool("privilege")
+
     inserted, failed = 0, list(rejected)
     for p in partners:
         row = p.pop("_row", None)
@@ -1990,6 +2003,10 @@ async def privilege_bulk_upload(
 
         if image_name and body.images.get(image_name):
             doc["photo_s3_keys"] = [body.images[image_name]]
+        else:
+            _pool = cat_pool.get(doc.get("category"))
+            if _pool:
+                doc["photo_s3_keys"] = [random.choice(_pool)]
 
         # Resolve the pincode to a point. The parser already guaranteed six
         # digits; this can still fail if the pincode isn't a real one, and a
@@ -2314,6 +2331,8 @@ async def _admin_ad_price(ad_type: str, tier: str) -> int:
     pricing = await get_pricing()
     if ad_type == "home_banner":
         return pricing["ad_home_banner"]
+    if ad_type == "notification":
+        return pricing["ad_notification"]
     key = f"ad_{ad_type}_{tier}"
     if key in pricing:
         return pricing[key]
@@ -2646,6 +2665,12 @@ class AdminCreateAdRequest(BaseModel):
     tags: Optional[str] = None
     offer: Optional[str] = None
     title: Optional[str] = None
+    # Notification ad / +push add-on. Same field names the advertiser flow
+    # uses, so one payload shape works against either endpoint.
+    with_notification: bool = False
+    notify_radius_km: Optional[float] = None
+    notify_title: Optional[str] = None
+    notify_body: Optional[str] = None
 
 
 @router.post("/ads/create")
@@ -2785,6 +2810,37 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
             "title":        body.name or "",
         })
+    elif ad_type in ("spot_promos", "special_cards"):
+        # Same card shape as a deal. spot_promos is mirrored below so it shows
+        # in the Spot Promos strip on all three app pages; special_cards has
+        # no app placement yet and is recorded only.
+        ad_doc.update({
+            "name":         body.name or "",
+            "location":     body.location or "",
+            "offer":        body.offer or "",
+            "description":  body.description or "",
+            "address":      body.address or "",
+            "phone":        body.phone or "",
+            "timing":       body.timing or "",
+            "type":         body.type or "",
+            "distance":     body.distance or "",
+            "cta_link":     body.cta_link or "",
+            "tags":         parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "rating":       4.0,
+            "reviews":      0,
+            "title":        body.name or "",
+        })
+    elif ad_type == "notification":
+        ad_doc.update({
+            "notify_title": (body.notify_title or body.title or "").strip(),
+            "notify_body":  (body.notify_body or body.description or "").strip(),
+            "cta_link":     body.cta_link or "",
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "title":        (body.notify_title or body.title or "").strip(),
+        })
     else:
         raise HTTPException(status_code=400, detail=f"Unknown ad_type: {ad_type}")
 
@@ -2884,6 +2940,98 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
             "created_at":       datetime.utcnow(),
         })
 
+    elif ad_type == "spot_promos":
+        # ONE document, read by Local Finder, Select AND Privilege — that is
+        # the product. Written once, never once per feature.
+        await app_spot_promos_collection.insert_one({
+            "web_ad_id":  ad_id,
+            "tier":       tier,
+            "name":       ad_doc.get("name", ""),
+            "location":   ad_doc.get("location", ""),
+            "offer":      ad_doc.get("offer", ""),
+            "description": ad_doc.get("description", ""),
+            "address":    ad_doc.get("address", ""),
+            "phone":      ad_doc.get("phone", ""),
+            "timing":     ad_doc.get("timing", ""),
+            "category":   ad_doc.get("type", ""),
+            "type":       ad_doc.get("type", ""),
+            "distance":   ad_doc.get("distance", ""),
+            "cta_link":   ad_doc.get("cta_link", ""),
+            "tags":       parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":  creative_url,
+            "rating":     4.0,
+            "reviews":    0,
+            "pincode":    body.pincode,
+            "lat":        ad_lat,
+            "lng":        ad_lng,
+            "geo":        ad_geo,
+            "status":     ad_status,
+            "end_date":   end_date_str,
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at": pub_date,
+            "ends_at":    end_date,
+            "never_expires": end_date is None,
+            "created_at": datetime.utcnow(),
+        })
+
+    # special_cards is deliberately not mirrored — no app placement exists
+    # for it yet, and inventing a schema now would pre-empt the real screen.
+
+    # ── Queue the push, if one was asked for ─────────────────────────────────
+    # Identical mechanism to the advertiser flow: this backend only enqueues,
+    # and the app backend's background loop resolves the audience and sends.
+    # The user coordinates and device tokens never leave that side.
+    wants_notification = bool(body.with_notification) and ad_type != "notification"
+    if ad_type == "notification" or wants_notification:
+        notify_radius = 5.0
+        try:
+            requested = float(body.notify_radius_km or 5.0)
+            if requested in (5.0, 10.0):
+                notify_radius = requested
+        except (TypeError, ValueError):
+            pass
+        notify_title = (
+            body.notify_title or ad_doc.get("notify_title") or
+            ad_doc.get("headline") or ad_doc.get("name") or
+            ad_doc.get("shop_name") or ad_doc.get("title") or "Claimit"
+        )
+        notify_body = (
+            body.notify_body or ad_doc.get("notify_body") or
+            ad_doc.get("offer") or ad_doc.get("sub") or
+            ad_doc.get("caption") or ad_doc.get("description") or ""
+        )
+        try:
+            await app_ad_notifications_collection.insert_one({
+                "web_ad_id":  ad_id,
+                "user_id":    "admin",
+                "ad_type":    ad_type,
+                "title":      str(notify_title)[:120],
+                "body":       str(notify_body)[:300],
+                "image_url":  ad_doc.get("image_url", ""),
+                "cta_link":   ad_doc.get("cta_link", ""),
+                "pincode":    body.pincode,
+                "lat":        ad_lat,
+                "lng":        ad_lng,
+                "geo":        ad_geo,
+                "radius_km":  notify_radius,
+                # Admin ads can start "now", so this is the ad's own start
+                # time rather than a cycle date — the push and the ad go
+                # live together either way.
+                "send_at":    pub_date,
+                "status":     "pending",
+                "attempts":   0,
+                "created_at": datetime.utcnow(),
+            })
+        except Exception as exc:  # noqa: BLE001
+            # The ad exists already; a queue failure must not fail the whole
+            # request and have an admin create a duplicate.
+            print(f"⚠️  admin ad notification queue failed for ad {ad_id}: {exc}")
+            await ads_collection.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {"notification_queue_error": str(exc)[:300]}},
+            )
+
     return {
         "id":           ad_id,
         "ad_type":      ad_type,
@@ -2894,4 +3042,5 @@ async def admin_create_ad(body: AdminCreateAdRequest, _admin=Depends(get_current
         "created_by":   "admin",
         "duration":     mode,
         "never_expires": end_date is None,
+        "notification_queued": ad_type == "notification" or wants_notification,
     }

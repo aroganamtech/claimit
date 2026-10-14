@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from database import (
     ads_collection, transactions_collection,
     app_deals_collection, app_reels_collection, app_banners_collection,
+    app_spot_promos_collection, app_ad_notifications_collection,
     app_db,
 )
 from utils.dependencies import get_current_user
@@ -31,7 +32,35 @@ AD_PRICES = {
     "nearby_deals": {"premium": 1050, "standard": 700},
     "brand_deals":  {"premium": 700,  "standard": 700},
     "promo_reelz":  {"premium": 700,  "standard": 700},
+    # ── Newer products ───────────────────────────────────────────────────────
+    "spot_promos":   {"premium": 1050, "standard": 700},
+    "special_cards": {"premium": 700,  "standard": 700},
+    # Single send, not a weekly placement — no tier split.
+    "notification":  {"standard": 150},
 }
+
+# Ad types with no tier picker: one package, so a "premium" in the request is
+# meaningless and is normalised away rather than silently charged for.
+SINGLE_TIER_TYPES = ("home_banner", "notification")
+
+# Every ad type this endpoint accepts. Anything else is rejected outright
+# instead of being stored as an ad nobody can display — a tampered or stale
+# client previously could have created a record with an arbitrary ad_type.
+KNOWN_AD_TYPES = (
+    "home_banner", "brand_deals", "nearby_deals", "promo_reelz",
+    "spot_promos", "special_cards", "notification",
+)
+
+# The "+ announce by push" add-on, available on every ad type. `notification`
+# itself IS a push, so the add-on is meaningless there and is ignored (never
+# charged) rather than doubling the send.
+NOTIFICATION_ADDON_FALLBACK = 100
+
+# Radius options offered for notification targeting. 5 km matches what the app
+# searches by default; 10 km matches its "expand radius" option. Anything
+# outside this set is clamped to the default rather than trusted.
+ALLOWED_NOTIFY_RADII = (5.0, 10.0)
+DEFAULT_NOTIFY_RADIUS_KM = 5.0
 
 # Premium slots (Nearby Deals + Brand Deals) are scarce inventory. The cap is
 # admin-configurable (see /admin/ad-settings) so it can be raised later
@@ -40,19 +69,49 @@ DEFAULT_MAX_PREMIUM_NEARBY = 3
 DEFAULT_MAX_PREMIUM_BRAND  = 3
 
 
-async def _ad_price(ad_type: str, tier: str) -> int:
+def notification_addon_applies(ad_type: str, with_notification: bool) -> bool:
+    """Whether the +push add-on should be charged for this booking.
+
+    A `notification` ad is already a push, so adding the add-on to it would
+    charge twice for one send. Returning False here is what makes the add-on
+    silently free (and inert) on that type instead of an error the advertiser
+    has to understand.
+    """
+    return bool(with_notification) and ad_type != "notification"
+
+
+async def _ad_price(ad_type: str, tier: str,
+                    with_notification: bool = False) -> int:
     """Authoritative price for an ad booking — always the current admin-configured
     value (utils.pricing.get_pricing), never the hardcoded AD_PRICES table above,
-    so a price change in the admin panel takes effect on the very next booking."""
+    so a price change in the admin panel takes effect on the very next booking.
+
+    `with_notification` adds the "also announce my ad by push" add-on. It is
+    part of THIS function rather than added by the caller on purpose: the
+    payment link and the ad record are priced in two different routers, and
+    the moment the add-on is applied in only one of them an advertiser either
+    pays ₹100 too little or ₹100 too much.
+    """
     from utils.pricing import get_pricing
     pricing = await get_pricing()
+    base = await _ad_base_price(pricing, ad_type, tier)
+    if notification_addon_applies(ad_type, with_notification):
+        base += int(pricing.get("ad_notification_addon",
+                                NOTIFICATION_ADDON_FALLBACK))
+    return base
+
+
+async def _ad_base_price(pricing: dict, ad_type: str, tier: str) -> int:
+    """The ad's own price, before any add-on."""
     if ad_type == "home_banner":
         return pricing["ad_home_banner"]
+    if ad_type == "notification":
+        return pricing["ad_notification"]
     key = f"ad_{ad_type}_{tier}"
     if key in pricing:
         return pricing[key]
     # Fallback for any ad_type/tier combo without a pricing.py entry (shouldn't
-    # happen with the 4 known ad types, but keeps this from ever raising).
+    # happen with the known ad types, but keeps this from ever raising).
     tiers = AD_PRICES.get(ad_type, {})
     return tiers.get(tier) or tiers.get("standard") or next(iter(tiers.values()), 700)
 
@@ -188,6 +247,17 @@ class CreateAdRequest(BaseModel):
     tags: Optional[str] = None
     offer: Optional[str] = None
     title: Optional[str] = None
+    # ── Notification add-on (available on EVERY ad type) ─────────────────────
+    # "Also announce my ad as a push notification." Priced by _ad_price, and
+    # queued into claimit_db.ad_notifications so the app backend sends it when
+    # the ad actually goes live — not at purchase, which for a booking made on
+    # a Tuesday would announce an ad that doesn't run until Friday.
+    with_notification: bool = False
+    notify_radius_km: Optional[float] = None
+    # Notification copy. Falls back to the ad's own headline/name and offer
+    # when left blank, so the advertiser isn't forced to write it twice.
+    notify_title: Optional[str] = None
+    notify_body: Optional[str] = None
 
 
 @router.get("/ad-cycle")
@@ -204,11 +274,19 @@ async def get_ad_cycle(current_user=Depends(get_current_user)):
 @router.post("/ads/create")
 async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
-    ad_type = body.ad_type
+    ad_type = (body.ad_type or "").strip().lower()
+    # Reject unknown types rather than storing a record no screen can render.
+    if ad_type not in KNOWN_AD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown ad type: {body.ad_type}")
     tier    = (body.tier or "standard").strip().lower()
     if tier not in ("premium", "standard"):
         tier = "standard"
-    amount  = await _ad_price(ad_type, tier)
+    # Single-package types have no Premium, so a "premium" here would be a
+    # tier the advertiser was never charged for.
+    if ad_type in SINGLE_TIER_TYPES:
+        tier = "standard"
+    wants_notification = notification_addon_applies(ad_type, body.with_notification)
+    amount  = await _ad_price(ad_type, tier, body.with_notification)
 
     # Every ad booking now requires a completed Cashfree payment before the
     # ad is created — mirrors the same Payment Links flow already used on
@@ -262,6 +340,28 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
     # it waits, and the read-side activation flips it on when Friday arrives.
     ad_status = "active" if is_live(cycle_start) else "scheduled"
 
+    # Notification radius — only 5 km and 10 km are sold (they match what the
+    # app itself searches and what its "expand radius" button does). Anything
+    # else in the request is a stale or tampered client, so it is clamped to
+    # the default rather than honoured.
+    notify_radius = DEFAULT_NOTIFY_RADIUS_KM
+    try:
+        requested = float(body.notify_radius_km or DEFAULT_NOTIFY_RADIUS_KM)
+        if requested in ALLOWED_NOTIFY_RADII:
+            notify_radius = requested
+    except (TypeError, ValueError):
+        pass
+
+    # A notification ad is a single send, not seven days of inventory, so it
+    # does not wait for the Friday cycle — there is no placement for it to
+    # line up with, and an advertiser who buys a blast expects the blast.
+    # Everything else (including the +push add-on on a card ad) stays on the
+    # weekly cycle so the push and the ad go live together.
+    if ad_type == "notification":
+        pub_date = datetime.utcnow()
+        end_date = pub_date
+        ad_status = "active"
+
     # Resolve S3 keys to presigned URLs
     creative_s3_key  = body.creative_key or ""
     thumbnail_s3_key = body.thumbnail_key or ""
@@ -313,6 +413,12 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         "payment_link_id": body.payment_link_id,
         "views":      0,
         "clicks":     0,
+        # Recorded on every ad so the advertiser's own dashboard and the
+        # admin transaction list can both show what was actually bought,
+        # rather than having to infer the ₹100 difference from the amount.
+        "with_notification": wants_notification,
+        "notify_radius_km":  notify_radius if (
+            wants_notification or ad_type == "notification") else None,
         "created_at": datetime.utcnow(),
     }
 
@@ -368,6 +474,44 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "reviews":      0,
             "deal_group":   "brand" if ad_type == "brand_deals" else "nearby",
             "title":        body.name or "",
+        })
+
+    elif ad_type in ("spot_promos", "special_cards"):
+        # Both use the same card shape as a deal (image + name + location +
+        # offer + category), which is why they share this branch. The
+        # difference is only what happens to them below: spot_promos is
+        # mirrored into the app, special_cards is recorded and charged but
+        # has no app placement built yet.
+        ad_doc.update({
+            "name":         body.name or "",
+            "location":     body.location or "",
+            "offer":        body.offer or "",
+            "description":  body.description or "",
+            "address":      body.address or "",
+            "phone":        body.phone or "",
+            "timing":       body.timing or "",
+            "type":         body.type or "",
+            "distance":     body.distance or "",
+            "tags":         parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "image_s3_keys": deal_image_keys,
+            "image_urls":    deal_image_urls,
+            "cta_link":     body.cta_link or "",
+            "title":        body.name or "",
+        })
+
+    elif ad_type == "notification":
+        # A notification ad has no card and no placement — the message IS the
+        # product. The creative is optional (a small image shown in the
+        # expanded notification on Android), so nothing here requires it.
+        ad_doc.update({
+            "notify_title": (body.notify_title or body.title or "").strip(),
+            "notify_body":  (body.notify_body or body.description or "").strip(),
+            "cta_link":     body.cta_link or "",
+            "image_s3_key": creative_s3_key,
+            "image_url":    creative_url,
+            "title":        (body.notify_title or body.title or "").strip(),
         })
 
     # ── Coordinates, so the ad is visible to the app's 5 km radius search ────
@@ -479,6 +623,102 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
             "created_at":       datetime.utcnow(),
         })
 
+    elif ad_type == "spot_promos":
+        # ONE document, read by all three app pages. The whole point of this
+        # product is that the advertiser buys a single placement and it shows
+        # in the Spot Promos strip on Local Finder, Claimit Select AND Claimit
+        # Privilege — so this must NOT be written once per feature, or the
+        # three pages would drift apart the moment one write failed.
+        await app_spot_promos_collection.insert_one({
+            "web_ad_id":  ad_id,
+            "tier":       tier,
+            "name":       ad_doc.get("name", ""),
+            "location":   ad_doc.get("location", ""),
+            "offer":      ad_doc.get("offer", ""),
+            "description": ad_doc.get("description", ""),
+            "address":    ad_doc.get("address", ""),
+            "phone":      ad_doc.get("phone", ""),
+            "timing":     ad_doc.get("timing", ""),
+            "category":   ad_doc.get("type", ""),
+            "type":       ad_doc.get("type", ""),
+            "distance":   ad_doc.get("distance", ""),
+            "cta_link":   ad_doc.get("cta_link", ""),
+            "tags":       parsed_tags,
+            "image_s3_key": creative_s3_key,
+            "image_url":  creative_url,
+            "image_s3_keys": deal_image_keys,
+            "image_urls":    deal_image_urls,
+            "rating":     4.0,
+            "reviews":    0,
+            "pincode":    body.pincode,
+            "lat":        ad_lat,
+            "lng":        ad_lng,
+            "geo":        ad_geo,
+            "status":     ad_status,
+            "end_date":   end_date.strftime("%d/%m/%Y"),
+            "publish_date": pub_date.strftime("%d/%m/%Y"),
+            "publish_at": pub_date,
+            "ends_at":    end_date,
+            "created_at": datetime.utcnow(),
+        })
+
+    # special_cards is intentionally NOT mirrored anywhere. It is sold,
+    # charged and recorded against the advertiser now; the app-side placement
+    # is a later piece of work, and inventing a collection for it today would
+    # mean guessing a schema the real screen then has to live with.
+
+    # ── Queue the push, if one was bought ────────────────────────────────────
+    # Either the ad type IS a notification, or the advertiser ticked the
+    # add-on. Both end up as one job in the queue the app backend drains.
+    #
+    # This backend deliberately does not send the push itself: resolving "who
+    # is within 5 km" needs the user coordinates and the device tokens, which
+    # live in the app backend's half of the database. Writing a job is the
+    # smallest possible surface — nothing here can choose recipients.
+    if ad_type == "notification" or wants_notification:
+        notify_title = (
+            body.notify_title or ad_doc.get("notify_title") or
+            ad_doc.get("headline") or ad_doc.get("name") or
+            ad_doc.get("shop_name") or ad_doc.get("title") or "Claimit"
+        )
+        notify_body = (
+            body.notify_body or ad_doc.get("notify_body") or
+            ad_doc.get("offer") or ad_doc.get("sub") or
+            ad_doc.get("caption") or ad_doc.get("description") or ""
+        )
+        try:
+            await app_ad_notifications_collection.insert_one({
+                "web_ad_id":  ad_id,
+                "user_id":    user_id,
+                "ad_type":    ad_type,
+                "title":      str(notify_title)[:120],
+                "body":       str(notify_body)[:300],
+                "image_url":  ad_doc.get("image_url", ""),
+                "cta_link":   ad_doc.get("cta_link", ""),
+                "pincode":    body.pincode,
+                "lat":        ad_lat,
+                "lng":        ad_lng,
+                "geo":        ad_geo,
+                "radius_km":  notify_radius,
+                # Sent when the ad goes live, so the push and the placement
+                # appear together. For a standalone notification ad pub_date
+                # is "now" (set above), so it goes out on the next poll.
+                "send_at":    pub_date,
+                "status":     "pending",
+                "attempts":   0,
+                "created_at": datetime.utcnow(),
+            })
+        except Exception as exc:  # noqa: BLE001
+            # The ad itself is already created and paid for. A queue write
+            # failure must not undo that or return an error that makes the
+            # advertiser think the whole booking failed and pay twice — it is
+            # recorded on the ad so it can be re-queued.
+            print(f"⚠️  ad notification queue failed for ad {ad_id}: {exc}")
+            await ads_collection.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {"notification_queue_error": str(exc)[:300]}},
+            )
+
     display_title = (
         ad_doc.get("headline") or ad_doc.get("name") or
         ad_doc.get("shop_name") or ad_doc.get("title") or ""
@@ -501,6 +741,8 @@ async def create_ad(body: CreateAdRequest, current_user=Depends(get_current_user
         "end_date":     ad_doc["end_date"],
         "amount":       amount,
         "status":       ad_status,
+        "with_notification": wants_notification,
+        "notification_queued": ad_type == "notification" or wants_notification,
     }
 
 
@@ -539,6 +781,14 @@ async def get_advertiser_pricing():
         "nearby_deals": {"premium": pricing["ad_nearby_deals_premium"], "standard": pricing["ad_nearby_deals_standard"]},
         "brand_deals":  {"premium": pricing["ad_brand_deals_premium"], "standard": pricing["ad_brand_deals_standard"]},
         "promo_reelz":  {"premium": pricing["ad_promo_reelz_premium"], "standard": pricing["ad_promo_reelz_standard"]},
+        "spot_promos":  {"premium": pricing["ad_spot_promos_premium"], "standard": pricing["ad_spot_promos_standard"]},
+        "special_cards": {"premium": pricing["ad_special_cards_premium"], "standard": pricing["ad_special_cards_standard"]},
+        "notification": {"standard": pricing["ad_notification"]},
+        # Not an ad type — the add-on's price, so the form can show
+        # "+ ₹100" live next to the checkbox on every type instead of
+        # hardcoding a number that drifts from what is charged.
+        "notification_addon": pricing.get("ad_notification_addon",
+                                          NOTIFICATION_ADDON_FALLBACK),
     }
 
 

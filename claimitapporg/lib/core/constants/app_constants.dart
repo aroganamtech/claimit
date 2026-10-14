@@ -4,7 +4,11 @@ class AppConstants {
 
   // 🌐 Production (Vercel) — use this when testing on a real device / LTE
 //   static const String baseUrl = 'https://claimitorgbackend.vercel.app';
-  static const String baseUrl = 'http://16.170.110.232:8001'; //server..................
+  // ELASTIC IP (allocated 10 Oct 2026). The old 16.170.110.232 was a dynamic
+  // address: it would have changed on any stop/start and permanently broken
+  // every APK already installed, since this value is compiled into the app.
+  // 56.228.71.4 is now pinned to the instance and will not move.
+  static const String baseUrl = 'http://56.228.71.4:8001'; //server..................
 
   // 💻 Local dev — only works when phone is on the SAME WiFi as your PC
 //   static const String baseUrl = 'http://10.204.99.28:8001';

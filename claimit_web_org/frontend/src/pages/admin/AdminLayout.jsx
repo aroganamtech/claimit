@@ -8,12 +8,20 @@ const NAV = [
   { label: 'Create Ad',   icon: '➕', path: '/admin/create-ad' },
   { label: 'Shops',       icon: '🏪', path: '/admin/shops' },
   { label: 'Transactions', icon: '💳', path: '/admin/transactions' },
-  { label: 'Bulk Upload', icon: '📥', path: '/admin/bulk-shops' },
-  { label: 'Bulk — Select', icon: '🧑‍💼', path: '/admin/bulk-select' },
-  { label: 'Bulk — Local/Clsf', icon: '🏬', path: '/admin/bulk-classifieds' },
+  // ── Bulk upload: one page per feature ───────────────────────────────
+  // Each of these now carries its own category images, sample sheet and
+  // upload, so nothing has to be hunted for on a shared screen. Names are
+  // spelled out in full — "Clsf" meant nothing to anyone.
+  { label: 'Bulk — Shops',            icon: '🏪', path: '/admin/bulk-shops' },
+  { label: 'Bulk — Claimit Select',   icon: '🧑‍💼', path: '/admin/bulk-select' },
+  { label: 'Bulk — Local Finder',     icon: '🏬', path: '/admin/bulk-local-finder' },
+  { label: 'Bulk — Local Classifieds', icon: '📰', path: '/admin/bulk-classifieds' },
+  { label: 'Bulk — Claimit Privilege', icon: '🎫', path: '/admin/bulk-privilege' },
   { label: 'WhatsApp Campaign', icon: '💚', path: '/admin/whatsapp-campaign' },
-  { label: 'Cat. Images (New)', icon: '🎨', path: '/admin/feature-category-images' },
-  { label: 'Category Images', icon: '🖼', path: '/admin/category-images' },
+  // Kept: the all-features category-image screen, and the older shops-only
+  // one. Both still work; the per-feature panels above are the easy route.
+  { label: 'Category Images — All Features', icon: '🎨', path: '/admin/feature-category-images' },
+  { label: 'Category Images — Shops', icon: '🖼', path: '/admin/category-images' },
   { label: 'Learn Claimit', icon: '🎓', path: '/admin/learn-claimit' },
   { label: 'Reviews',     icon: '⭐', path: '/admin/reviews' },
   { label: 'Tickets',     icon: '🎫', path: '/admin/tickets' },

@@ -16,6 +16,8 @@ import '../widgets/local_finder_bottom_bar.dart';
 import '../../../core/widgets/claimit_bottom_bar.dart';
 import '../../../features/home/screens/home_screen.dart';
 import '../../../core/widgets/spot_promo_card.dart';
+import '../../../core/widgets/spot_promo_sheet.dart';
+import '../../../core/services/spot_promo_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local Finds — "Discover Local Businesses" home. Banner + Register, a 12-zone
@@ -87,6 +89,15 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
     with LocationReloadMixin {
   List<ClassifiedPost> _nearby = [];
   bool _loading = true;
+
+  /// Paid Spot Promos. The SAME list shows on Claimit Select and Claimit
+  /// Privilege — one booking, three pages — so this comes from the shared
+  /// SpotPromoService rather than anything Local Finder-specific.
+  ///
+  /// They are shown only when the search box is empty. A user who typed
+  /// "salon" is asking a question; answering it with paid cards that don't
+  /// match would hide the thing they were looking for.
+  List<SpotPromoDto> _paidPromos = const [];
   Position? _me;
   final Set<String> _liked = {};
 
@@ -138,10 +149,17 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
   }
 
   Future<void> _load() async {
+    // A pull-to-refresh must actually reach the network: the promo cache
+    // would otherwise serve the same list straight back for 3 minutes.
+    SpotPromoService.instance.invalidate();
+    // The paid strip is fetched alongside the rest rather than after it, so
+    // it costs the page no extra wait.
+    final promosFuture = SpotPromoService.instance.fetch();
     final results = await Future.wait([
       ClassifiedService.instance.fetchClassifieds(listingType: 'local_find'),
       lfCurrentPosition(),
     ]);
+    final promos = await promosFuture;
     if (!mounted) return;
     final list = results[0] as List<ClassifiedPost>;
     final me = results[1] as Position?;
@@ -176,6 +194,7 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
     setState(() {
       _nearby = list;
       _me = me;
+      _paidPromos = promos;
       _loading = false;
     });
   }
@@ -279,14 +298,25 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
               const Padding(
                   padding: EdgeInsets.all(28),
                   child: Center(child: CircularProgressIndicator(color: kLfBlue)))
-            else if (_visible.isEmpty)
+            else if (_visible.isEmpty &&
+                (_query.trim().isNotEmpty || _paidPromos.isEmpty))
               _query.trim().isEmpty ? _emptyNearby() : _emptySearch()
-            else
+            else ...[
               // Unfiltered shows the top 10; a search shows everything it
               // matched, because cutting search results at 10 silently hides
               // the thing the user was looking for.
               ...(_query.trim().isEmpty ? _visible.take(10) : _visible)
                   .map(_promoCard),
+              // ── Spot Promos — AFTER the organic list ────────────────────
+              // Identical on Local Finder, Select and Privilege: one booking,
+              // one collection, one endpoint. Hidden when nothing is booked,
+              // and suppressed while searching — a search is the user's
+              // question and must not be padded with unrelated ads.
+              if (_query.trim().isEmpty && _paidPromos.isNotEmpty) ...[
+                _spotPromoHeader(),
+                ..._paidPromos.map(_paidPromoCard),
+              ],
+            ],
             const SizedBox(height: 14),
             _registerButton(context),
           ],
@@ -394,14 +424,19 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
     );
   }
 
-  /// "Spot Promos" with the red underline from the design.
+  /// The ORGANIC local businesses section. Named for what it contains.
+  ///
+  /// Previously titled "Spot Promos", which is why the client saw different
+  /// Spot Promos on each page — the heading named the ad section but the list
+  /// under it was this page's own businesses. Paid promos now have their own
+  /// section (_spotPromoHeader) and are identical across all three pages.
   Widget _nearbyHeader() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GestureDetector(
             onTap: () => context.push('/local-finds/categories'),
             child: const Text(
-              'Spot Promos',
+              'Nearby Businesses',
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w800, color: kLfBlue),
             ),
@@ -409,6 +444,35 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
           const SizedBox(height: 4),
           Container(width: 104, height: 2.5, color: const Color(0xFFE23744)),
         ],
+      );
+
+  /// Heading for the PAID section, labelled so a sponsored card is never
+  /// mistaken for an organic listing.
+  Widget _spotPromoHeader() => Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const SizedBox(height: 16),
+            Row(
+              children: const [
+                Text('Spot Promos',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800,
+                        color: kLfBlue)),
+                SizedBox(width: 8),
+                Text('Sponsored',
+                    style: TextStyle(
+                        fontSize: 10.5, fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(width: 104, height: 2.5, color: Color(0xFFE23744)),
+            const SizedBox(height: 4),
+          ],
+        ),
       );
 
   Widget _emptySearch() => Container(
@@ -490,6 +554,17 @@ class _LocalFindsScreenState extends State<LocalFindsScreen>
       onTap: () => context.push('/classified/detail', extra: b),
     );
   }
+
+  /// One paid Spot Promo. Identical card, identical sheet, on all three
+  /// pages — the mapping lives on the DTO so it cannot diverge between them.
+  Widget _paidPromoCard(SpotPromoDto p) => SpotPromoCard(
+        promo:       p.toCard(),
+        accent:      kLfBlue,
+        isFavourite: _liked.contains(p.id),
+        onFavourite: () => setState(() =>
+            _liked.contains(p.id) ? _liked.remove(p.id) : _liked.add(p.id)),
+        onTap: () => showSpotPromoSheet(context, p, accent: kLfBlue),
+      );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
